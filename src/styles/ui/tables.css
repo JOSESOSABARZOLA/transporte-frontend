@@ -1,0 +1,27 @@
+.app-table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.08rem 0.35rem 0.08rem;
+}
+
+.app-table-pagination-info {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.app-table-pagination-button {
+  min-height: 1.72rem !important;
+  height: 1.72rem;
+  min-width: 4.35rem;
+  padding-inline: 0.58rem !important;
+  font-size: 0.72rem !important;
+}
+
+.app-data-table tbody td {
+  padding-top: var(--app-table-row-padding-y) !important;
+  padding-bottom: var(--app-table-row-padding-y) !important;
+}

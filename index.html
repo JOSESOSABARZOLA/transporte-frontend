@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Montserrat se precarga porque abre el encabezado de cada pantalla: sin esto el
+       antetítulo aparece con la fuente del navegador y salta al pintar. -->
+  <link rel="preload" href="/fuentes/montserrat-latin.woff2" as="font" type="font/woff2" crossorigin />
+  <title>Cuadro de Colores Operativo · AMC</title>
+</head>
+
+<body>
+  <div id="root">
+    <!-- Splash estándar SIGOC: se muestra mientras carga la página (reload) y React
+         lo reemplaza al montar la app. -->
+    <div id="sigoc-splash"
+      style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#ffffff;z-index:9999;">
+      <img src="/sigoc_loader.svg" alt="Cargando SIGOC…" style="width:min(60vw,320px);height:auto;" />
+    </div>
+  </div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

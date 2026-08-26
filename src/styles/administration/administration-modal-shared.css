@@ -1,0 +1,347 @@
+.app-modules-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 1.75rem;
+  background: rgba(71, 85, 105, 0.48);
+}
+
+.app-modules-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 34rem);
+  min-height: 21.5rem;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 1.05rem;
+  background-clip: padding-box;
+}
+
+.app-modules-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem 1.5rem 1rem;
+  border-bottom: 1px solid transparent;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+
+.app-modules-modal-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-modules-modal-title {
+  margin-top: 0.3rem;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.app-modules-modal-meta {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.app-modules-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding-top: 0.1rem;
+}
+
+.app-modules-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.app-modules-step-dot {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.app-modules-step-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition:
+    color 180ms ease,
+    opacity 180ms ease;
+}
+
+.app-modules-step-line {
+  display: inline-flex;
+  width: 1.6rem;
+  height: 0.16rem;
+  border-radius: 9999px;
+  transition: background-color 180ms ease, opacity 180ms ease;
+}
+
+.app-modules-modal-close {
+  display: inline-flex;
+  height: 2.45rem;
+  width: 2.45rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 0.8rem;
+  background: transparent;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.app-modules-modal-close:disabled {
+  opacity: 0.7;
+}
+
+.app-modules-row-action {
+  min-height: 2.25rem;
+  min-width: 2.25rem;
+}
+
+
+.app-modules-modal-body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 1rem;
+  min-height: 13.5rem;
+  padding: 1rem 1.5rem 1.35rem;
+}
+
+.app-modules-modal-content {
+  display: grid;
+  align-content: start;
+  gap: 0.85rem;
+  min-height: 0;
+}
+
+.app-modules-modal-content-review {
+  align-content: center;
+  min-height: 0;
+}
+
+.app-modules-modal-body-review {
+  gap: 1rem;
+}
+
+.app-modules-modal-field .label {
+  padding-bottom: 0.45rem;
+}
+
+.app-modules-modal-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.app-modules-modal-input {
+  height: 3.15rem;
+  border-radius: 0.85rem;
+  font-size: 0.96rem;
+  font-weight: 500;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.app-modules-modal-input::placeholder {
+  opacity: 1;
+}
+
+.app-modules-modal-error {
+  line-height: 1.45;
+}
+
+.app-modules-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding-top: 0;
+}
+
+.app-modules-modal-actions .btn {
+  min-width: 8.5rem;
+}
+
+.app-modules-modal-secondary,
+.app-modules-modal-cancel,
+.app-modules-modal-submit {
+  min-height: 2.6875rem;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 0.85rem;
+  padding-inline: 1.35rem;
+  font-size: 0.93rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
+}
+
+.app-modules-modal-secondary:disabled,
+.app-modules-modal-cancel:disabled,
+.app-modules-modal-submit:disabled {
+  opacity: 0.88;
+}
+
+.app-modules-review-card {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  padding: 0.95rem 1rem 1rem;
+}
+
+.app-modules-review-status {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 0.45rem;
+  border-radius: 9999px;
+  padding: 0.32rem 0.62rem;
+}
+
+.app-modules-review-status-icon {
+  display: inline-flex;
+  height: 1.15rem;
+  width: 1.15rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.app-modules-review-status-copy {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.app-modules-review-copy {
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.app-modules-review-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.app-modules-review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.85rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid transparent;
+}
+
+.app-modules-review-row:first-child {
+  padding-top: 0.1rem;
+}
+
+.app-modules-review-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.app-modules-review-row-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.app-modules-review-row-value {
+  text-align: right;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .app-modules-modal {
+    min-height: auto;
+  }
+
+  .app-modules-modal-header {
+    flex-wrap: wrap;
+  }
+
+  .app-modules-modal-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .app-modules-step-label {
+    display: none;
+  }
+
+  .app-modules-step-line {
+    width: 1rem;
+  }
+
+  .app-modules-modal-body {
+    min-height: 11.75rem;
+  }
+
+  .app-modules-review-row {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .app-modules-review-row-value {
+    text-align: left;
+  }
+
+  .app-modules-modal-actions {
+    justify-content: stretch;
+  }
+
+  .app-modules-modal-actions .btn {
+    width: 100%;
+  }
+}

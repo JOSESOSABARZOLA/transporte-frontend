@@ -1,0 +1,31 @@
+# App: Cuadro de Colores
+# Archivo: .dockerignore
+# Responsabilidad: Reducir el contexto de build y evitar que entren archivos indebidos.
+#
+# El Dockerfile hace `COPY . .`, de modo que SIN este archivo entraban al contexto de
+# construccion node_modules completo -con binarios compilados para la maquina de
+# desarrollo, inservibles dentro de la imagen-, el historial de git y los archivos de
+# entorno. Ademas de tardar, .env.dev quedaba dentro de una capa intermedia.
+
+# Dependencias y build: se reinstalan y se regeneran dentro de la imagen
+node_modules
+dist
+
+# Control de versiones y kit local
+.git
+.gitignore
+.claude
+
+# Entorno: los valores llegan por ARG en tiempo de construccion, no por archivo
+.env
+.env.*
+
+# Documentacion y notas que el runtime no necesita
+docs
+*.md
+
+# Editor y sistema operativo
+.vscode
+.idea
+Thumbs.db
+.DS_Store

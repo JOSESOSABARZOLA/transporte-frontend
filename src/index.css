@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@import "./styles/foundation/tipografia.css";
+@import "./styles/foundation/design-tokens.css";
+@import "./styles/layout/app-shell-layout.css";
+@import "./styles/layout/app-shell-panels.css";
+@import "./styles/layout/app-sidebar.css";
+@import "./styles/ui/page-header.css";
+@import "./styles/ui/tables.css";
+@import "./styles/ui/confirm-dialog.css";
+@import "./styles/administration/administration-feedback.css";
+@import "./styles/administration/administration-table.css";
+@import "./styles/administration/administration-modal-shared.css";
+@import "./styles/administration/administration-modal-tabs.css";
+@import "./styles/auth/auth.css";
+@import "./styles/layout/app-shell-theme-light.css";
+@import "./styles/layout/app-shell-theme-dark.css";
+@import "./styles/ui/panels-theme.css";
+@import "./styles/administration/administration-theme-light.css";
+@import "./styles/administration/administration-theme-dark.css";
+
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f1f3f6;
+  --color-base-300: #d6deef;
+  --color-base-content: #26365f;
+  --color-primary: #1b77bb;
+  --color-primary-content: #ffffff;
+  --color-secondary: #20347d;
+  --color-secondary-content: #ffffff;
+  --color-accent: #3744d0;
+  --color-accent-content: #ffffff;
+  --color-neutral: #72b9e7;
+  --color-neutral-content: #16355c;
+  --color-success: #6ed0bd;
+  --color-success-content: #143a34;
+  --color-info: #8fa1ff;
+  --color-info-content: #1f2b63;
+  --color-warning: #f48a42;
+  --color-warning-content: #ffffff;
+  --color-error: #cb1f03;
+  --color-error-content: #fff;
+}
+
+@plugin "daisyui/theme" {
+  name: "dark";
+  prefersdark: false;
+  color-scheme: dark;
+  --color-base-100: #0d1630;
+  --color-base-200: #121f40;
+  --color-base-300: #233766;
+  --color-base-content: #edf4ff;
+  --color-primary: #1b77bb;
+  --color-primary-content: #ffffff;
+  --color-secondary: #20347d;
+  --color-secondary-content: #ffffff;
+  --color-accent: #3744d0;
+  --color-accent-content: #ffffff;
+  --color-neutral: #72b9e7;
+  --color-neutral-content: #0f2340;
+  --color-success: #6ed0bd;
+  --color-success-content: #0d2924;
+  --color-info: #8fa1ff;
+  --color-info-content: #121c46;
+  --color-warning: #f48a42;
+  --color-warning-content: #2d1605;
+  --color-error: #ea3446;
+  --color-error-content: #ffffff;
+}
+
+@import "./styles/ui/avisos-y-distintivos.css";

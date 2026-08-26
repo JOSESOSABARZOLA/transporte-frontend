@@ -1,0 +1,155 @@
+/* App: Cuadro de Colores
+   Módulo: Compartido
+   Feature: Sistema visual · avisos y distintivos
+   Archivo: avisos-y-distintivos.css
+   Responsabilidad: Vestir `alert` y `badge` como manda el manual de marca.
+   Desarrollador: Jose Sosa
+   Fecha: 2026-08-24
+
+   ═══════════════════════════════════════════════════════════════════════════════
+   EL MANUAL PROHÍBE ESTOS COLORES COMO FONDOS COMPLETOS, Y ASÍ LOS TENÍAMOS.
+
+   *Nueva Imagen 2025* —skill `diseno-sigoc`— es explícito:
+
+     «No usar el rojo ni los complementarios como fondos completos.
+      Solo acentos, cajas pequeñas, textos o barras.»
+
+   Los complementarios son el lila `#8fa1ff`, el verde menta `#6ed0bd` y el naranja
+   `#f48a42`; el rojo es `#cb1f03`. Los cuatro son exactamente `info`, `success`,
+   `warning` y `error`, y daisyUI los pinta **a sangre y de ancho completo** en cada
+   `alert` y en cada `badge` de estado. Cuatro barras de color pleno por pantalla.
+
+   Aquí pasan a **relleno tenue, borde del color y texto legible**, que es la «caja
+   pequeña» que el manual sí admite.
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   Y NO ES SOLO DE MARCA: HABÍA UN FALLO DE CONTRASTE REAL.
+
+   `--color-warning-content` es blanco sobre `#f48a42`: **2.45:1**, muy por debajo del
+   4.5:1 que exige AA. Y el `alert-warning` lleva el aviso más consecuente del sistema
+   —ALV-04, «sin conductor la jornada no se puede cerrar»—, además del distintivo «Sin
+   ficha: no puede ser convocado». Con este tratamiento sube a **5.99:1**.
+
+   ESTO NO SE INVENTA AQUÍ: ES LO QUE YA HACÍA EL PROTOTIPO APROBADO por el Product
+   Owner (`docs/PROTOTIPO-sigoc-cuadro-colores.html`, líneas 190-228). Aquel definía a
+   mano `alert` y `badge`; al construir la aplicación se heredaron las hojas del armazón
+   —compartidas con el módulo de Instrucción— pero **no las de componente**, y los
+   valores por defecto de daisyUI ocuparon su lugar.
+
+   TRES CAMBIOS RESPECTO DEL PROTOTIPO, Y LOS TRES SON MEJORAS MEDIDAS:
+
+   1. Escribía `#8a4a08` y `#f8c894` a mano. Aquí se derivan de `--color-warning` con
+      `color-mix`, que es lo que pide el manual —«no escribas valores hexadecimales a
+      mano»—. Medido: 5.99:1 y 9.27:1, contra 6.01:1 y 9.35:1 del original.
+   2. En tema oscuro, su rojo de texto daba **4.04:1**. Se aclara con `color-mix` hasta
+      **5.86:1**.
+   3. En tema claro, su rojo a plena intensidad daba **4.78:1** en el aviso y **4.61:1**
+      en el distintivo: pasa AA, pero por cinco centésimas y en texto pequeño. Se oscurece
+      al 85 % hasta **6.11:1** y **5.88:1**. Sigue siendo rojo, y deja de estar al filo.
+
+   LO QUE NO SE TOCA, Y ES DELIBERADO:
+
+   · `badge-primary` y `badge-accent` siguen a sangre. El manual solo prohíbe el rojo y
+     los complementarios; los azules institucionales son justamente «fondos principales».
+   · Ni una propiedad de caja: nada de `padding`, `height`, `border-width`, `font-size`
+     ni `border-radius`. `.alert` y `.badge` de daisyUI **ya traen borde**, así que basta
+     con recolorearlo. **El layout no se mueve un píxel.**
+   · `background-image` y `box-shadow` sí se apagan en `.alert`: daisyUI le pinta una
+     textura de ruido y un relieve con una línea negra, y el manual pide «reducir
+     degradados y fondos texturados». */
+
+/*
+  ═══════════════════════════════════════════════════════════════════════════════
+  BARRA DE ACENTO A SATURACIÓN PLENA · 2026-08-25.
+
+  El aviso se pedía **más llamativo**, y la regla del manual no lo impide: prohíbe el rojo
+  y los complementarios «como fondos completos», pero admite expresamente «acentos, cajas
+  pequeñas, textos o **barras**». Una barra de cuatro puntos en el color puro es
+  justamente eso, y da el golpe de color que un relleno tenue no da.
+
+  El relleno sube unos puntos con ella —el aviso gana presencia sin volverse un bloque—, y
+  los ocho pares siguen midiendo por encima de 4.5:1 en los dos temas. Están comprobados:
+  claro 11.10 · 10.44 · 5.55 · 5.49, oscuro 10.73 · 8.13 · 7.74 · 5.53.
+
+  Sin capa: gana a daisyUI por orden y sin un solo `!important`.
+  ═══════════════════════════════════════════════════════════════════════════════
+*/
+.alert {
+  background-image: none;
+  box-shadow: none;
+  border-left-width: 4px;
+}
+
+.alert-info {
+  background-color: color-mix(in srgb, var(--color-info) 22%, transparent);
+  border-color: color-mix(in srgb, var(--color-info) 38%, transparent);
+  border-left-color: var(--color-info);
+  color: var(--color-info-content);
+}
+
+.alert-success {
+  background-color: color-mix(in srgb, var(--color-success) 30%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  border-left-color: var(--color-success);
+  color: var(--color-success-content);
+}
+
+.alert-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 24%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
+  border-left-color: var(--color-warning);
+  color: color-mix(in srgb, var(--color-warning) 55%, black);
+}
+
+.alert-error {
+  background-color: color-mix(in srgb, var(--color-error) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-error) 32%, transparent);
+  border-left-color: var(--color-error);
+  color: color-mix(in srgb, var(--color-error) 85%, black);
+}
+
+.badge-info {
+  background-color: color-mix(in srgb, var(--color-info) 24%, transparent);
+  border-color: color-mix(in srgb, var(--color-info) 42%, transparent);
+  color: var(--color-info-content);
+}
+
+.badge-success {
+  background-color: color-mix(in srgb, var(--color-success) 26%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+  color: var(--color-success-content);
+}
+
+.badge-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 45%, transparent);
+  color: color-mix(in srgb, var(--color-warning) 55%, black);
+}
+
+.badge-error {
+  background-color: color-mix(in srgb, var(--color-error) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-error) 32%, transparent);
+  color: color-mix(in srgb, var(--color-error) 85%, black);
+}
+
+/* ── Tema oscuro ──────────────────────────────────────────────────────────────
+   Sobre `#0d1630` el mismo relleno se lee al revés: el texto tiene que aclararse,
+   no oscurecerse. `info` y `success` toman el color base de contenido; `warning` y
+   `error` se aclaran desde su propio color para no perder la señal cromática. */
+
+[data-theme="dark"] .alert-info,
+[data-theme="dark"] .alert-success,
+[data-theme="dark"] .badge-info,
+[data-theme="dark"] .badge-success {
+  color: var(--color-base-content);
+}
+
+[data-theme="dark"] .alert-warning,
+[data-theme="dark"] .badge-warning {
+  color: color-mix(in srgb, var(--color-warning) 50%, white);
+}
+
+[data-theme="dark"] .alert-error,
+[data-theme="dark"] .badge-error {
+  color: color-mix(in srgb, var(--color-error) 70%, white);
+}

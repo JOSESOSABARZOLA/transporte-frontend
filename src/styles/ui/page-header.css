@@ -1,0 +1,85 @@
+.page-heading-kicker {
+  color: var(--color-primary);
+}
+
+.page-heading-title {
+  color: var(--color-base-content);
+}
+
+.page-heading-subtitle {
+  color: color-mix(in srgb, var(--color-base-content) 88%, transparent);
+}
+
+/*
+  ═══════════════════════════════════════════════════════════════════════════════
+  EL TOPE SUBIÓ DE 80rem A 110rem EL 2026-08-26, Y SE APARTA DE LA PLANTILLA.
+
+  Con 80rem —1280 px— el contenido quedaba recortado y centrado, y en un monitor de
+  1920 sobraban 157 px a cada lado: la ventana da 1594 px útiles tras descontar la barra
+  lateral (16.375rem) y el relleno del <main> (lg:px-8).
+
+  POR QUÉ NADIE LO VIO ANTES. El tope solo aprieta por encima de 1606 px de ventana, y
+  toda la verificación del diseño se hizo a 1440 px —así está escrito en
+  FormularioOperativo.tsx y en FASE5 §9.3—. A 1440 el disponible es 1114 px: por debajo
+  del tope, sin un píxel desperdiciado. El defecto solo existía en pantallas grandes.
+
+  SE APARTA DE DOS SITIOS, Y ES DELIBERADO:
+
+    · del prototipo aprobado por el Product Owner, que lleva el mismo 80rem;
+    · de la plantilla corporativa que este módulo comparte con Instrucción, donde
+      page-header.css es byte a byte idéntico —lo era en 16 hojas de src/styles/—.
+
+  Si alguien vuelve a alinear las hojas con Instrucción, esta línea es la que hay que
+  conservar. No es un descuido: lo pidió el negocio el 2026-08-26.
+
+  POR QUÉ 110rem Y NO «SIN TOPE». 1760 px cubre entero un monitor de 1920 y deja tope en
+  uno ultraancho, donde el área de Observaciones se convertiría en una línea de texto de
+  dos metros. La medida de lectura sigue importando aunque el hueco exista.
+  ═══════════════════════════════════════════════════════════════════════════════
+*/
+.app-page-shell {
+  display: grid;
+  width: 100%;
+  max-width: 110rem;
+  margin-inline: auto;
+  align-content: start;
+  gap: 1.5rem;
+  min-height: calc(100dvh - 11rem);
+}
+
+.app-page-header-actions {
+  justify-content: flex-start;
+}
+
+@media (max-width: 767px) {
+  .app-page-shell {
+    gap: 1.25rem;
+    min-height: auto;
+  }
+}
+
+@media (min-width: 768px) {
+  .app-page-header-actions {
+    justify-content: flex-end;
+  }
+}
+
+[data-theme="light"] .page-heading-title {
+  color: var(--color-secondary);
+}
+
+[data-theme="light"] .page-heading-subtitle {
+  color: #5a6d99;
+}
+
+[data-theme="dark"] .page-heading-kicker {
+  color: #72b9e7;
+}
+
+[data-theme="dark"] .page-heading-title {
+  color: #f4f8ff;
+}
+
+[data-theme="dark"] .page-heading-subtitle {
+  color: rgba(237, 244, 255, 0.76);
+}

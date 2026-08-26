@@ -1,0 +1,115 @@
+/* Tab Container */
+.app-modules-tabs-container {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+/* Tab Navigation */
+.app-modules-tabs-container > .flex {
+  display: flex;
+  gap: 0;
+  padding: 0.5rem 1.5rem;
+  border-bottom: 1px solid transparent;
+}
+
+/* Tab Label Styling */
+.app-modules-tab-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.8rem 1.2rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
+  border: none;
+  border-bottom: 0.16rem solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    border-bottom-color 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease;
+  white-space: nowrap;
+  user-select: none;
+  position: relative;
+}
+
+/* Tab Content */
+.app-modules-tab-content {
+  padding: 1.5rem;
+  animation: fadeIn 180ms ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Light Theme */
+[data-theme="light"] .app-modules-tabs-container {
+  border-bottom-color: rgba(90, 109, 153, 0.12);
+}
+
+[data-theme="light"] .app-modules-tabs-container > .flex {
+  background: #ffffff;
+  border-bottom-color: rgba(90, 109, 153, 0.12);
+}
+
+[data-theme="light"] .app-modules-tab-label {
+  color: rgba(32, 52, 125, 0.72);
+  background: transparent;
+}
+
+[data-theme="light"] .app-modules-tab-label:hover:not(.active) {
+  background: rgba(114, 185, 231, 0.08);
+  color: #20347d;
+}
+
+[data-theme="light"] .app-modules-tab-label.active {
+  color: #1b77bb;
+  border-bottom-color: #1b77bb;
+  background: rgba(27, 119, 187, 0.04);
+}
+
+[data-theme="light"] .app-modules-tab-content {
+  background: #ffffff;
+  color: #263e5f;
+}
+
+/* Dark Theme */
+[data-theme="dark"] .app-modules-tabs-container {
+  border-bottom-color: var(--app-shell-dark-panel-border);
+}
+
+[data-theme="dark"] .app-modules-tabs-container > .flex {
+  background: var(--app-shell-dark-panel-surface);
+  border-bottom-color: var(--app-shell-dark-panel-border);
+}
+
+[data-theme="dark"] .app-modules-tab-label {
+  color: rgba(224, 233, 255, 0.72);
+  background: transparent;
+}
+
+[data-theme="dark"] .app-modules-tab-label:hover:not(.active) {
+  background: rgba(114, 185, 231, 0.08);
+  color: rgba(224, 233, 255, 0.96);
+}
+
+[data-theme="dark"] .app-modules-tab-label.active {
+  color: #72b9e7;
+  border-bottom-color: #72b9e7;
+  background: rgba(114, 185, 231, 0.08);
+}
+
+[data-theme="dark"] .app-modules-tab-content {
+  background: var(--app-shell-dark-panel-surface);
+  color: rgba(224, 233, 255, 0.86);
+}

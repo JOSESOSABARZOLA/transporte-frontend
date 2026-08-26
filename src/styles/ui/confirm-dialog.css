@@ -1,0 +1,174 @@
+.app-confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 71;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.75rem;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.app-confirm-dialog {
+  width: min(100%, 28rem);
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+}
+
+.app-confirm-dialog-header {
+  padding: 1.2rem 1.35rem 0.8rem;
+  border-bottom: 1px solid transparent;
+}
+
+.app-confirm-dialog-kicker {
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-confirm-dialog-title {
+  margin-top: 0.28rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.app-confirm-dialog-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1.15rem 1.35rem 1.35rem;
+}
+
+.app-confirm-dialog-copy {
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.app-confirm-dialog-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.app-confirm-dialog-actions .btn {
+  min-width: 8.5rem;
+}
+
+[data-theme="light"] .app-confirm-dialog {
+  background: #ffffff;
+  border-color: rgba(90, 109, 153, 0.2);
+  box-shadow:
+    0 20px 42px rgba(32, 52, 125, 0.16),
+    0 8px 18px rgba(15, 23, 42, 0.07);
+  color: var(--color-base-content);
+}
+
+[data-theme="light"] .app-confirm-dialog-header {
+  background: #ffffff;
+  border-color: rgba(90, 109, 153, 0.12);
+}
+
+[data-theme="light"] .app-confirm-dialog-kicker {
+  color: #5a6d99;
+}
+
+[data-theme="light"] .app-confirm-dialog-title {
+  color: #20347d;
+}
+
+[data-theme="light"] .app-confirm-dialog-copy {
+  color: rgba(38, 54, 95, 0.86);
+}
+
+[data-theme="light"] .app-confirm-dialog-secondary {
+  border-color: rgba(203, 31, 3, 0.16);
+  background: #ea3446;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+[data-theme="light"] .app-confirm-dialog-secondary:hover,
+[data-theme="light"] .app-confirm-dialog-secondary:focus,
+[data-theme="light"] .app-confirm-dialog-secondary:focus-visible {
+  background: #cb1f03;
+  border-color: rgba(203, 31, 3, 0.22);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+[data-theme="light"] .app-confirm-dialog-primary {
+  border-color: rgba(27, 119, 187, 0.16);
+  background: #1b77bb;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+[data-theme="light"] .app-confirm-dialog-primary:hover,
+[data-theme="light"] .app-confirm-dialog-primary:focus,
+[data-theme="light"] .app-confirm-dialog-primary:focus-visible {
+  background: #166ca7;
+  border-color: rgba(27, 119, 187, 0.24);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .app-confirm-dialog {
+  background: var(--app-shell-dark-panel-surface) !important;
+  background-image: none !important;
+  border-color: var(--app-shell-dark-panel-border) !important;
+  box-shadow: var(--app-shell-dark-panel-shadow) !important;
+  color: var(--app-shell-chrome-fg) !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-header {
+  background: var(--app-shell-dark-panel-surface-strong) !important;
+  border-color: var(--app-shell-dark-panel-divider) !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-kicker {
+  color: var(--app-shell-dark-panel-muted-text);
+}
+
+[data-theme="dark"] .app-confirm-dialog-title {
+  color: var(--app-shell-chrome-fg) !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-copy {
+  color: rgba(224, 233, 255, 0.8) !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-secondary {
+  border-color: rgba(234, 52, 70, 0.2) !important;
+  background: #cb1f03 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-secondary:hover,
+[data-theme="dark"] .app-confirm-dialog-secondary:focus,
+[data-theme="dark"] .app-confirm-dialog-secondary:focus-visible {
+  background: #a51902 !important;
+  border-color: rgba(234, 52, 70, 0.26) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-primary {
+  border-color: rgba(27, 119, 187, 0.2) !important;
+  background: #1b77bb !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .app-confirm-dialog-primary:hover,
+[data-theme="dark"] .app-confirm-dialog-primary:focus,
+[data-theme="dark"] .app-confirm-dialog-primary:focus-visible {
+  background: #166ca7 !important;
+  border-color: rgba(114, 185, 231, 0.24) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}

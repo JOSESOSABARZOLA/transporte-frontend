@@ -1,0 +1,65 @@
+/* Shared Shell Layout */
+.bg-system {
+  background-color: var(--app-shell-background);
+  isolation: isolate;
+}
+
+.bg-system::before {
+  content: "";
+  position: fixed;
+  right: 0;
+  bottom: -20px;
+  width: max(100vw, calc(100vh * 1920 / 1313));
+  aspect-ratio: 1920 / 1313;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("../../assets/BACKGROUND_SYSTEM.png");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: right bottom;
+  background-color: var(--app-shell-background);
+}
+
+.app-shell-frame {
+  min-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .app-shell-frame {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+}
+
+.app-shell-main-column {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell-main-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.app-shell-sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.app-shell-overlay {
+  z-index: 1;
+  background-image: linear-gradient(
+    to bottom,
+    var(--app-shell-overlay-start),
+    var(--app-shell-overlay-middle),
+    var(--app-shell-overlay-end)
+  );
+}

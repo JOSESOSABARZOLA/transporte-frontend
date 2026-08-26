@@ -1,0 +1,25 @@
+node_modules
+sql
+
+# Environment (secretos - no versionar)
+.env
+.env.local
+.env.*.local
+# .env.dev dejo de versionarse el 2026-08-19. Se describe a si mismo como "modo LOCAL",
+# asi que era el archivo donde alguien acabaria escribiendo una clave real, y estaba
+# rastreado. Las cuatro VITE_ tienen valor por defecto en config/env.ts, de modo que un
+# clon nuevo arranca sin el; para personalizar, copie .env.example.
+.env.dev
+
+# Build
+dist/
+
+# Claude Code: versionar skills/agents del proyecto, ignorar config local
+.claude/settings.local.json
+
+# Herramientas de trabajo personales, no del producto. Las skills propias del
+# proyecto sí se versionan; lo que se ignora aquí es lo que instala cada quien.
+.agents/
+.claude/skills/frontend-design/
+.claude/skills/impeccable/
+skills-lock.json

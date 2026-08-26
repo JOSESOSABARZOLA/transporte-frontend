@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 1448 1086" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="sigocTitle sigocDesc">
+  <title id="sigocTitle">SIGOC AMC loading animation</title>
+  <desc id="sigocDesc">Animated transparent SVG loader where the SIGOC logo renders from data particles over a subtle gray skyline.</desc>
+  <defs>
+    <linearGradient id="sigocBlue" x1="316" y1="0" x2="1132" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B347F"/>
+      <stop offset="0.55" stop-color="#0E49B8"/>
+      <stop offset="1" stop-color="#072D78"/>
+    </linearGradient>
+    <linearGradient id="scanGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#38BDF8" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#38BDF8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="tinyGlow" x="-80%" y="-80%" width="260%" height="260%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="logoReveal">
+      <rect x="305" y="304" width="0" height="226">
+        <animate attributeName="width" dur="3s" repeatCount="indefinite" values="0;0;830;830;0" keyTimes="0;0.08;0.74;0.9;1" calcMode="spline" keySplines="0.25 0.1 0.25 1;0.25 0.1 0.25 1;0.4 0 0.2 1;0.4 0 1 1"/>
+      </rect>
+    </clipPath>
+    <clipPath id="lineClip">
+      <rect x="330" y="560" width="0" height="55">
+        <animate attributeName="width" dur="3s" repeatCount="indefinite" values="0;0;780;780;0" keyTimes="0;0.08;0.74;0.9;1" calcMode="spline" keySplines="0.25 0.1 0.25 1;0.25 0.1 0.25 1;0.4 0 0.2 1;0.4 0 1 1"/>
+      </rect>
+    </clipPath>
+  </defs>
+  <style>
+    .brand{font-family:Montserrat,Aptos,Segoe UI,Arial,sans-serif;font-weight:600;letter-spacing:48px}.amc{font-family:Montserrat,Aptos,Segoe UI,Arial,sans-serif;font-weight:400;letter-spacing:34px}.progress{stroke-dasharray:100;stroke-dashoffset:100;animation:sigocDraw 3s cubic-bezier(.22,.61,.36,1) infinite}.halo{transform-box:fill-box;transform-origin:center;animation:sigocPulse 3s ease-in-out infinite}.h2{animation-delay:.28s}.h3{animation-delay:.56s}.h4{animation-delay:.84s}.h5{animation-delay:1.12s}.shimmer{animation:sigocShimmer 3s ease-in-out infinite}.particle{animation:sigocFlicker .9s ease-in-out infinite alternate}.p2{animation-delay:.16s}.p3{animation-delay:.32s}.p4{animation-delay:.48s}@keyframes sigocDraw{0%,8%{stroke-dashoffset:100}74%,90%{stroke-dashoffset:0}100%{stroke-dashoffset:100}}@keyframes sigocPulse{0%,10%,100%{opacity:.05;transform:scale(.55)}18%,82%{opacity:.85;transform:scale(1.08)}90%{opacity:.18;transform:scale(.75)}}@keyframes sigocShimmer{0%,9%,91%,100%{opacity:0}18%,74%{opacity:.42}84%{opacity:.12}}@keyframes sigocFlicker{from{opacity:.25}to{opacity:1}}
+  </style>
+  <g id="skyline" opacity="0.42">
+    <path d="M0 910 C70 856 140 890 218 822 C300 752 382 835 454 798 C543 754 616 845 708 808 C790 774 850 845 926 807 C984 778 1038 806 1095 768 C1186 706 1300 790 1448 732 L1448 1086 L0 1086 Z" fill="#D6D9DE" fill-opacity="0.42"/>
+    <path d="M0 962 H152 L152 914 H186 L186 962 H230 L230 895 H265 L265 962 H315 L315 938 H358 L358 962 H465 L465 920 H508 L508 962 H1015 L1015 862 H1047 L1047 962 H1082 L1082 815 H1120 L1120 962 H1162 L1162 752 C1162 735 1178 715 1195 715 C1213 715 1229 735 1229 752 L1229 962 H1274 L1274 800 H1315 L1315 962 H1367 L1367 750 H1400 L1400 962 H1448 V1086 H0 Z" fill="#D2D5DA" fill-opacity="0.42"/>
+    <path d="M24 926 C92 875 156 909 234 835 C300 770 388 851 458 811 C540 766 616 849 710 814 C790 781 850 850 928 813 C982 789 1042 812 1090 776 M1168 754 C1188 714 1210 714 1230 754 M1168 754 H1230 M1032 858 V798 M1110 816 V748 M1196 714 V660 M1295 801 V735 M1384 751 V684" stroke="#FFFFFF" stroke-opacity="0.58" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="logo" transform="translate(0 -6)">
+    <text class="brand" x="724" y="496" text-anchor="middle" font-size="168" fill="none" stroke="#0B347F" stroke-opacity="0.22" stroke-width="2.4">SIGOC</text>
+    <text class="brand" x="724" y="496" text-anchor="middle" font-size="168" fill="url(#sigocBlue)" clip-path="url(#logoReveal)">SIGOC</text>
+    <rect class="shimmer" x="306" y="315" width="45" height="196" fill="url(#scanGrad)">
+      <animate attributeName="x" dur="3s" repeatCount="indefinite" values="306;306;1096;1096;306" keyTimes="0;0.08;0.74;0.9;1" calcMode="spline" keySplines="0.25 0.1 0.25 1;0.25 0.1 0.25 1;0.4 0 0.2 1;0.4 0 1 1"/>
+    </rect>
+    <g filter="url(#tinyGlow)">
+      <g>
+        <animateTransform attributeName="transform" type="translate" dur="3s" repeatCount="indefinite" values="315 0;315 0;1090 0;1090 0;315 0" keyTimes="0;0.08;0.74;0.9;1" calcMode="spline" keySplines="0.25 0.1 0.25 1;0.25 0.1 0.25 1;0.4 0 0.2 1;0.4 0 1 1"/>
+        <circle class="particle" cx="-18" cy="364" r="3.1" fill="#0B5FD7"/>
+        <circle class="particle p2" cx="12" cy="392" r="2.4" fill="#1BA9FF"/>
+        <circle class="particle p3" cx="-35" cy="421" r="2.2" fill="#0E49B8"/>
+        <circle class="particle p4" cx="23" cy="455" r="3.3" fill="#38BDF8"/>
+        <circle class="particle p2" cx="-9" cy="489" r="2" fill="#0B347F"/>
+        <rect class="particle" x="-72" y="382" width="46" height="4" rx="2" fill="#38BDF8" fill-opacity="0.38"/>
+        <rect class="particle p3" x="-92" y="430" width="62" height="3" rx="1.5" fill="#0E49B8" fill-opacity="0.32"/>
+        <rect class="particle p4" x="-58" y="474" width="34" height="3" rx="1.5" fill="#38BDF8" fill-opacity="0.42"/>
+      </g>
+    </g>
+    <line x1="360" y1="590" x2="1088" y2="590" stroke="#0B347F" stroke-opacity="0.28" stroke-width="4" stroke-linecap="round"/>
+    <line class="progress" x1="360" y1="590" x2="1088" y2="590" pathLength="100" stroke="#1BA9FF" stroke-width="5" stroke-linecap="round" clip-path="url(#lineClip)" filter="url(#tinyGlow)"/>
+    <g fill="#0B347F">
+      <circle cx="360" cy="590" r="13"/><circle cx="542" cy="590" r="13"/><circle cx="724" cy="590" r="13"/><circle cx="906" cy="590" r="13"/><circle cx="1088" cy="590" r="13"/>
+    </g>
+    <g filter="url(#softGlow)">
+      <circle class="halo h1" cx="360" cy="590" r="18" fill="#26AFFF"/><circle class="halo h2" cx="542" cy="590" r="18" fill="#26AFFF"/><circle class="halo h3" cx="724" cy="590" r="18" fill="#26AFFF"/><circle class="halo h4" cx="906" cy="590" r="18" fill="#26AFFF"/><circle class="halo h5" cx="1088" cy="590" r="18" fill="#26AFFF"/>
+      <circle cx="360" cy="590" r="8" fill="#EAF9FF"><animate attributeName="cx" dur="3s" repeatCount="indefinite" values="360;360;1088;1088;360" keyTimes="0;0.08;0.74;0.9;1" calcMode="spline" keySplines="0.25 0.1 0.25 1;0.25 0.1 0.25 1;0.4 0 0.2 1;0.4 0 1 1"/></circle>
+    </g>
+    <text class="amc" x="724" y="710" text-anchor="middle" font-size="56" fill="#0B347F" fill-opacity="0.95">AMC</text>
+  </g>
+</svg>
