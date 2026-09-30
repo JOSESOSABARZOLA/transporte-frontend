@@ -41,7 +41,7 @@ const TablaConductores: FC<TablaConductoresProps> = ({
   mensajeVacio,
 }) => (
   <div className="overflow-x-auto">
-    <table className="table table-sm">
+    <table className="table table-sm table-zebra">
       <thead>
         <tr className="text-xs uppercase tracking-wider text-base-content/70">
           <th scope="col">Cédula</th>
@@ -67,7 +67,7 @@ const TablaConductores: FC<TablaConductoresProps> = ({
           conductores.map((conductor) => (
             <tr
               key={conductor.id}
-              className={conductor.activo ? "hover:bg-info/10" : "opacity-60"}
+              className={conductor.activo ? "hover:bg-primary/5" : "opacity-60"}
             >
               <td className="px-3 py-1 align-top font-mono text-xs">
                 {conductor.cedula}

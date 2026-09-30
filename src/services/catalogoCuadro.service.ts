@@ -16,13 +16,17 @@ import httpClient from "../api/httpClient";
 import type { RolDepartamental } from "../config/env";
 import type {
   ActualizarInstitucion,
+  AreaPersonal,
+  AreasDeFormulario,
   ActualizarPunto,
   ActualizarTipoControl,
+  ActualizarZonal,
   BajaCatalogo,
   CatalogosFormulario,
   CrearInstitucion,
   CrearPunto,
   CrearTipoControl,
+  CrearZonal,
   EstadoVentana,
   Formulario,
   Institucion,
@@ -64,8 +68,14 @@ const obtenerPuntos = async (
 };
 
 /** `GET /zonales`. Las once filas: las diez zonales más el ámbito distrital. */
-const listarZonales = async (): Promise<Zonal[]> => {
-  const { data } = await httpClient.get<Zonal[]>("/zonales");
+/**
+ * `GET /zonales`. Por omisión solo las vigentes; `incluirInactivas` trae también las
+ * desactivadas, que es lo que P-08 necesita para poder reactivarlas.
+ */
+const listarZonales = async (incluirInactivas = false): Promise<Zonal[]> => {
+  const { data } = await httpClient.get<Zonal[]>("/zonales", {
+    params: incluirInactivas ? { incluirInactivas: "true" } : undefined,
+  });
   return data;
 };
 
@@ -135,6 +145,36 @@ const desactivarPunto = async (id: number): Promise<BajaCatalogo> => {
   return data;
 };
 
+/**
+ * Alta de zonal. El código lo autogenera el servidor del nombre; aquí solo viaja el
+ * nombre. La reactivación es un `PUT` con `activo: true`, como en los demás catálogos.
+ */
+const crearZonal = async (zonal: CrearZonal): Promise<Zonal> => {
+  const { data } = await httpClient.post<Zonal>(
+    "/administracion/catalogos/zonales",
+    zonal,
+  );
+  return data;
+};
+
+const actualizarZonal = async (
+  id: number,
+  cambios: ActualizarZonal,
+): Promise<Zonal> => {
+  const { data } = await httpClient.put<Zonal>(
+    `/administracion/catalogos/zonales/${id}`,
+    cambios,
+  );
+  return data;
+};
+
+const desactivarZonal = async (id: number): Promise<BajaCatalogo> => {
+  const { data } = await httpClient.delete<BajaCatalogo>(
+    `/administracion/catalogos/zonales/${id}`,
+  );
+  return data;
+};
+
 const crearTipoControl = async (
   tipo: CrearTipoControl,
 ): Promise<TipoControl> => {
@@ -191,12 +231,94 @@ const desactivarInstitucion = async (id: number): Promise<BajaCatalogo> => {
   return data;
 };
 
+/**
+ * BAJA FÍSICA (eliminación definitiva) de un valor de catálogo (2026-09-24). Borra la fila,
+ * y SOLO si nunca se usó en un operativo (y, en la zonal, si no tiene puntos): si está en uso,
+ * el servidor responde 409 con el motivo, que se muestra tal cual (regla 7). Para lo usado, se
+ * desactiva. Cada `eliminar*` pega a `.../:id/permanente`, distinto del `DELETE` que desactiva.
+ */
+type EliminacionCatalogo = { id: number; mensaje: string };
+
+const eliminarZonal = async (id: number): Promise<EliminacionCatalogo> => {
+  const { data } = await httpClient.delete<EliminacionCatalogo>(
+    `/administracion/catalogos/zonales/${id}/permanente`,
+  );
+  return data;
+};
+
+const eliminarPunto = async (id: number): Promise<EliminacionCatalogo> => {
+  const { data } = await httpClient.delete<EliminacionCatalogo>(
+    `/administracion/catalogos/puntos/${id}/permanente`,
+  );
+  return data;
+};
+
+const eliminarTipoControl = async (
+  id: number,
+): Promise<EliminacionCatalogo> => {
+  const { data } = await httpClient.delete<EliminacionCatalogo>(
+    `/administracion/catalogos/tipos-control/${id}/permanente`,
+  );
+  return data;
+};
+
+const eliminarInstitucion = async (
+  id: number,
+): Promise<EliminacionCatalogo> => {
+  const { data } = await httpClient.delete<EliminacionCatalogo>(
+    `/administracion/catalogos/instituciones/${id}/permanente`,
+  );
+  return data;
+};
+
+/**
+ * `PUT /administracion/formularios/:codigo/areas`. Solo el ADMINISTRADOR.
+ *
+ * SE MANDA EL CONJUNTO ENTERO, no un alta ni una baja. Con operaciones sueltas existe el
+ * instante en que el formulario se queda sin ninguna área, y ese estado deja el selector
+ * de personal de P-01 vacío sin explicarlo. El servidor iguala lo que hay a lo que llega.
+ *
+ * Devuelve lo que quedó, incluida la marca de compartida —que el servidor conserva y este
+ * contrato no envía—, para que el panel repinte con el estado real y no con el supuesto.
+ */
+const reemplazarAreas = async (
+  codigo: string,
+  areas: AreaPersonal[],
+): Promise<AreasDeFormulario> => {
+  const { data } = await httpClient.put<AreasDeFormulario>(
+    `/administracion/formularios/${codigo}/areas`,
+    { areas },
+  );
+  return data;
+};
+
+/**
+ * `GET /administracion/catalogos/:codigo`. PV-36.
+ *
+ * Como `obtenerCatalogos`, pero INCLUYE LOS DESACTIVADOS, con su bandera `activo`, para
+ * poder reactivarlos. Es solo de P-08: el registro de operativos usa `obtenerCatalogos`,
+ * que filtra lo vigente. Reactivar es un `PUT` con `activo: true` de los que ya existen.
+ */
+const obtenerCatalogosAdmin = async (
+  codigo: string,
+): Promise<CatalogosFormulario> => {
+  const { data } = await httpClient.get<CatalogosFormulario>(
+    `/administracion/catalogos/${codigo}`,
+  );
+  return data;
+};
+
 export const CatalogoCuadroService = {
   listarPermitidos,
+  reemplazarAreas,
   obtenerCatalogos,
+  obtenerCatalogosAdmin,
   obtenerPuntos,
   listarZonales,
   obtenerMiVentana,
+  crearZonal,
+  actualizarZonal,
+  desactivarZonal,
   crearPunto,
   actualizarPunto,
   desactivarPunto,
@@ -206,4 +328,8 @@ export const CatalogoCuadroService = {
   crearInstitucion,
   actualizarInstitucion,
   desactivarInstitucion,
+  eliminarZonal,
+  eliminarPunto,
+  eliminarTipoControl,
+  eliminarInstitucion,
 };

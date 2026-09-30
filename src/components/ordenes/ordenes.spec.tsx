@@ -28,6 +28,9 @@ vi.mock("../../services/documento.service.ts", () => ({
     consultarMatriz: vi.fn(),
     emitirOrdenes: vi.fn(),
     consultarOrdenesDeOperativo: vi.fn(),
+    verOrdenMemorando: vi.fn(),
+    obtenerDatosMemorando: vi.fn(),
+    generarMemorandoEditado: vi.fn(),
   },
 }));
 vi.mock("../../services/operativo.service.ts", () => ({
@@ -160,6 +163,52 @@ describe("casos 1 y 3 · una hoja por persona, y ninguna nombra a las otras", ()
     );
 
     expect(screen.getByText("Sustituida")).toBeInTheDocument();
+  });
+
+  it("«Ver PDF» abre el visor del memorando (ya no descarga)", async () => {
+    // El memorando queda «cargando» a propósito: la prueba comprueba el CABLEADO —que el
+    // botón abre el visor y pide el PDF— sin ejercitar el render de react-pdf en jsdom.
+    vi.mocked(DocumentoService.verOrdenMemorando).mockReturnValue(
+      new Promise<Blob>(() => {}),
+    );
+    render(<VistaPreviaOrden ordenes={[orden("YUNDA JESSICA")]} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ver PDF" }));
+
+    expect(
+      screen.getByRole("dialog", { name: /Orden de servicio/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Cargando el documento…")).toBeInTheDocument();
+    expect(DocumentoService.verOrdenMemorando).toHaveBeenCalled();
+  });
+
+  it("«Editar» abre el editor con vista previa (editar → previsualizar → generar)", async () => {
+    vi.mocked(DocumentoService.obtenerDatosMemorando).mockResolvedValue({
+      numeroMemorando: "XXXX",
+      ciudadFecha: "Quito, D.M., 22 de septiembre de 2026",
+      para: { nombre: "YUNDA JESSICA", cargo: "Agente", dependencia: "XXXX" },
+      numeroOrden: "XXXX",
+      fechaEmision: "22/09/2026",
+      direccionResponsable: "DMI",
+      operativos: [],
+      firmante: { nombre: "XXXX", cargo: "XXXX", dependencia: "XXXX" },
+      nut: "XXXX",
+      elaboradoPor: "XXXX",
+      siglasUnidad: "XXXX",
+      apartados: [],
+    });
+    render(<VistaPreviaOrden ordenes={[orden("YUNDA JESSICA")]} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+
+    // El editor ofrece «Previsualizar» y muestra el hueco de la vista previa (aún sin PDF).
+    expect(
+      await screen.findByRole("button", { name: "Previsualizar" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Vista previa")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Pulse «Previsualizar» para ver el documento/),
+    ).toBeInTheDocument();
   });
 });
 
@@ -331,17 +380,27 @@ describe("el adicional en la lista de emisión", () => {
   const ordinario: FilaMatriz = {
     id: 1,
     identificador: "OCPMO-001-21-AGO-2026",
+    grupoRegistro: null,
     esAdicional: false,
     origen: null,
     horario: "08H00 A 12H00",
-    personal: [{ funcionarioId: 1, nombre: "YUNDA JESSICA", esResponsable: true }],
+    personal: [
+      {
+        funcionarioId: 1,
+        nombre: "YUNDA JESSICA",
+        telefono: null,
+        esResponsable: true,
+        horaInicio: "08:00",
+        horaFin: "12:00",
+      },
+    ],
     zonales: [],
     puntoEncuentro: "",
     tipoControl: "",
     instituciones: [],
     conductor: null,
     placa: null,
-    observaciones: null,
+    observaciones: [],
     estadoTransporte: "ASIGNADO",
     esNocturno: false,
     alertas: [],
@@ -462,5 +521,158 @@ describe("P-05 abre en la jornada que se está armando", () => {
         "2026-08-22",
       ),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EMITIR TODA LA JORNADA CON UN SOLO CLIC · 2026-09-23
+
+   Un botón «Emitir todas» reemplaza el ir operativo por operativo. Abarca solo los
+   EMISIBLES —los que cada fila ofrecería—: con personal y el cuadro cerrado. Lo hace de
+   uno en uno con el mismo endpoint por operativo (el servidor no tiene uno masivo).
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+describe("emitir todas las órdenes de la jornada con un solo clic", () => {
+  const fila = (
+    id: number,
+    identificador: string,
+    nombres: string[],
+  ): FilaMatriz => ({
+    id,
+    identificador,
+    grupoRegistro: null,
+    esAdicional: false,
+    origen: null,
+    horario: "08H00 A 12H00",
+    personal: nombres.map((nombre, indice) => ({
+      funcionarioId: id * 10 + indice,
+      nombre,
+      telefono: null,
+      esResponsable: indice === 0,
+      horaInicio: "08:00",
+      horaFin: "12:00",
+    })),
+    zonales: [],
+    puntoEncuentro: "",
+    tipoControl: "",
+    instituciones: [],
+    conductor: null,
+    placa: null,
+    observaciones: [],
+    estadoTransporte: "ASIGNADO",
+    esNocturno: false,
+    alertas: [],
+  });
+
+  const matrizDeLaJornada = (
+    filas: FilaMatriz[],
+    estado: "CERRADO" | "BORRADOR" = "CERRADO",
+  ): Matriz =>
+    ({
+      cabecera: {
+        estado,
+        ordenTrabajo: "AMC-2026-08-22",
+        fechaNatural: "viernes 22 de agosto de 2026",
+      },
+      secciones: [
+        {
+          numero: 2,
+          codigo: "PMO",
+          nombre: "PLANIFICACIÓN Y MONITOREO",
+          colorFondo: "#2e7d32",
+          colorAcento: "#000000",
+          colorNombre: "verde",
+          responsable: "DMIP Operativos",
+          esPatrulla: false,
+          admiteAdicionales: true,
+          totalOperativos: filas.length,
+          filas,
+          evidencia: null,
+        },
+      ],
+    }) as unknown as Matriz;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("emite cada operativo con personal —y no el que no lo tiene— tras confirmar", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizDeLaJornada([
+        fila(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"]),
+        fila(2, "OCPMO-002-22-AGO-2026", ["CAMPAÑA JUAN"]),
+        fila(3, "OCPMO-003-22-AGO-2026", []),
+      ]),
+    );
+    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([]);
+
+    render(<OrdenesServicioPage />);
+
+    const boton = await screen.findByRole("button", { name: /Emitir todas/ });
+    expect(boton).toBeEnabled();
+
+    await userEvent.click(boton);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sí, emitir todas" }),
+    );
+
+    // Uno por operativo con personal; el que no tiene personal no es emisible.
+    await vi.waitFor(() => {
+      expect(DocumentoService.emitirOrdenes).toHaveBeenCalledWith(1);
+      expect(DocumentoService.emitirOrdenes).toHaveBeenCalledWith(2);
+    });
+    expect(DocumentoService.emitirOrdenes).not.toHaveBeenCalledWith(3);
+    expect(DocumentoService.emitirOrdenes).toHaveBeenCalledTimes(2);
+  });
+
+  it("está deshabilitado mientras el cuadro no esté cerrado", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizDeLaJornada(
+        [fila(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"])],
+        "BORRADOR",
+      ),
+    );
+
+    render(<OrdenesServicioPage />);
+
+    const boton = await screen.findByRole("button", { name: /Emitir todas/ });
+    expect(boton).toBeDisabled();
+  });
+
+  it("la orden que falla se muestra como «no generada» y se puede reenviar", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizDeLaJornada([
+        fila(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"]),
+        fila(2, "OCPMO-002-22-AGO-2026", ["CAMPAÑA JUAN"]),
+      ]),
+    );
+    // El segundo falla al emitir en bloque; el primero sale.
+    vi.mocked(DocumentoService.emitirOrdenes).mockImplementation(
+      (id: number) =>
+        id === 2 ? Promise.reject(new Error("boom")) : Promise.resolve([]),
+    );
+
+    render(<OrdenesServicioPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Emitir todas/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sí, emitir todas" }),
+    );
+
+    // Aparece el panel con la orden no generada del operativo que falló.
+    await screen.findByText("Órdenes no generadas (1)");
+    expect(screen.getByText("Orden no generada")).toBeInTheDocument();
+
+    // El reenvío de esa —y solo esa— sí sale: desaparece de la lista.
+    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([]);
+    await userEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByText("Órdenes no generadas (1)")).toBeNull(),
+    );
+    // Se volvió a emitir el operativo 2 (dos veces en total: el bloque y el reenvío).
+    expect(DocumentoService.emitirOrdenes).toHaveBeenCalledWith(2);
   });
 });

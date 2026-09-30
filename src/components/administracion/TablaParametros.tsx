@@ -50,7 +50,7 @@ const TablaParametros: FC<TablaParametrosProps> = ({
   onGuardar,
 }) => (
   <div className="overflow-x-auto">
-    <table className="table table-sm">
+    <table className="table table-sm table-zebra">
       <thead>
         <tr className="text-xs uppercase tracking-wider text-base-content/70">
           <th scope="col">Parámetro</th>
@@ -107,7 +107,7 @@ const FilaParametro: FC<{
   const cambiado = valor.trim() !== parametro.valor;
 
   return (
-    <tr className="hover:bg-info/10">
+    <tr className="hover:bg-primary/5">
       <td className="px-3 py-2 align-top">
         <span className="block font-mono text-xs font-semibold">
           {parametro.clave}

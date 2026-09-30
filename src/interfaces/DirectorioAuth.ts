@@ -26,6 +26,8 @@
  * Tampoco sabe el área, ni el cargo, ni el teléfono.
  */
 
+import type { RolDepartamental } from "../config/env.ts";
+
 /**
  * Lo que Auth sabe del inspector. `null` si esa persona no lo es.
  *
@@ -46,6 +48,13 @@ export interface FichaDelDirectorio {
   nombres: string;
   area: string;
   tipoContrato: string;
+  activo: boolean;
+}
+
+/** La cuenta del cuadro de esa persona, si la tiene. */
+export interface CuentaDelDirectorio {
+  id: number;
+  roles: RolDepartamental[];
   activo: boolean;
 }
 
@@ -74,6 +83,17 @@ export interface FilaDirectorio {
    * asignar, ni reglas de descanso que aplicar, ni orden de servicio que emitir.
    */
   ficha: FichaDelDirectorio | null;
+  /**
+   * La cuenta del cuadro, si la tiene. 2026-09-01.
+   *
+   * NO ES LO MISMO QUE LA FICHA. La ficha dice que se le puede **convocar a un
+   * operativo**; la cuenta, que puede **entrar al sistema**. Hay gente con una y no la
+   * otra en los dos sentidos: un inspector sale a operativos y nunca entra al cuadro;
+   * quien administra entra y no sale a ninguno.
+   *
+   * La cruza el servidor por el usuario de Auth, que es la llave del canje.
+   */
+  cuenta: CuentaDelDirectorio | null;
 }
 
 /**

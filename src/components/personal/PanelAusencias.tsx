@@ -25,7 +25,10 @@
 import { ErrorMessage, Field, Form, Formik } from "formik";
 import type { FC } from "react";
 
+import Iconos from "../common/Iconos.tsx";
+import MarcoModal from "../common/MarcoModal.tsx";
 import { SelectInput, TextInput } from "../forms/FormikField.tsx";
+import EnfocarPrimerError from "../forms/EnfocarPrimerError.tsx";
 import { esquemaAusencia } from "../../config/validationSchemas.ts";
 import type {
   Disponibilidad,
@@ -116,22 +119,16 @@ const PanelAusencias: FC<PanelAusenciasProps> = ({
   const vigente = ausenciaVigente(ausencias, hoy);
 
   return (
-    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-      <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
-          Ausencias de {nombreCompleto(funcionario)}
-        </h2>
-        <button
-          type="button"
-          className="btn btn-sm app-modules-panel-action"
-          onClick={onCerrar}
-          disabled={guardando}
-        >
-          Cerrar
-        </button>
-      </div>
-
-      <div className="app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6">
+    <MarcoModal
+      abierto
+      etiqueta={`Ausencias de ${nombreCompleto(funcionario)}`}
+      ancho="2xl"
+      /* Mientras se guarda, Escape y el aspa desaparecen: no se interrumpe la escritura. */
+      onCerrar={guardando ? undefined : onCerrar}
+      antetitulo="Personal y disponibilidad"
+      titulo={`Ausencias de ${nombreCompleto(funcionario)}`}
+    >
+      <div className="flex flex-col gap-4">
         {vigente && (
           <div className="alert alert-warning">
             <span>
@@ -159,6 +156,7 @@ const PanelAusencias: FC<PanelAusenciasProps> = ({
           }}
         >
           <Form className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <EnfocarPrimerError />
             <Field
               name="estado"
               component={SelectInput}
@@ -190,14 +188,24 @@ const PanelAusencias: FC<PanelAusenciasProps> = ({
                 className="btn btn-primary btn-sm"
                 disabled={guardando}
               >
-                {guardando ? "Registrando…" : "Registrar ausencia"}
+                {guardando ? (
+                  <>
+                    <span
+                      className="loading loading-spinner loading-sm"
+                      aria-hidden="true"
+                    />
+                    Registrando…
+                  </>
+                ) : (
+                  "Registrar ausencia"
+                )}
               </button>
             </div>
           </Form>
         </Formik>
 
         <div className="overflow-x-auto">
-          <table className="table table-sm">
+          <table className="table table-sm table-zebra">
             <thead>
               <tr className="text-xs uppercase tracking-wider text-base-content/70">
                 <th scope="col">Situación</th>
@@ -246,7 +254,9 @@ const PanelAusencias: FC<PanelAusenciasProps> = ({
                         onClick={() => onRetirar(periodo.id)}
                         disabled={guardando}
                       >
-                        Retirar
+                        {/* El icono acompaña al rótulo, no lo sustituye (regla 13). */}
+                        <Iconos nombre="eliminar" />
+                        Eliminar
                       </button>
                     </td>
                   </tr>
@@ -256,7 +266,7 @@ const PanelAusencias: FC<PanelAusenciasProps> = ({
           </table>
         </div>
       </div>
-    </div>
+    </MarcoModal>
   );
 };
 

@@ -37,6 +37,19 @@ export interface CrearConductor {
    * no se puede asignar desde aquella pantalla. Por eso conviene asignarlo al dar de alta.
    */
   vehiculoHabitualId?: number;
+
+  /**
+   * Los tres del 2026-08-31, del levantamiento con la DAF.
+   *
+   * OMITIRLOS SIGNIFICA «NO CONSTA», y no es lo mismo que un valor por defecto: sin
+   * `tipoContrato` la regla que impide conducir de noche a quien es de nombramiento **no
+   * se aplica** a ese conductor. Enviar cadena vacía en lugar de omitirlos haría que el
+   * servidor rechazara el enumerado.
+   */
+  sector?: "NORTE" | "SUR" | "CENTRO" | "VALLE";
+  /** RN-DAF-04. Quien lo tiene se lleva el vehículo a casa y al día siguiente repite. */
+  parqueaderoAutorizado?: boolean;
+  tipoContrato?: "NOMBRAMIENTO" | "CONTRATO";
 }
 
 /**
@@ -99,4 +112,20 @@ export interface FiltrosFlota {
   busqueda?: string;
   /** `""` todos · `activos` · `inactivos`. */
   estado?: "" | "activos" | "inactivos";
+}
+
+/**
+ * Zonal donde puede quedar un vehiculo al terminar la jornada. RN-DAF-03.
+ *
+ * EL CATALOGO NACE VACIO: la evidencia se contradice -cinco zonales en la hoja de agosto,
+ * cuatro en la reunion- y es la pregunta Q-01. Lo carga el administrador cuando el negocio
+ * confirme la lista; sembrarlo habria convertido una suposicion en dato maestro.
+ */
+export interface CrearUbicacion {
+  nombre: string;
+}
+
+export interface ActualizarUbicacion {
+  nombre?: string;
+  activo?: boolean;
 }

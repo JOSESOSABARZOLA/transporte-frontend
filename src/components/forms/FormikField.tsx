@@ -74,7 +74,11 @@ const clasesDeControl = (
   hayError: boolean,
   extra: string,
 ): string =>
-  `app-modules-modal-input ${base} w-full transition-all ${
+  // Sin `transition-all`, retirado el 2026-09-02. Animaba TODAS las propiedades del
+  // control —alto, relleno, posición— cuando lo único que cambia al enfocar o al errar
+  // es el color del borde; y por ser una utilidad ganaba a la transición dirigida de
+  // `styles/ui/refinamiento.css`, que es la que se quiere.
+  `app-modules-modal-input ${base} w-full ${
     hayError ? `${base}-error` : `focus:${base}-primary`
   } ${extra}`;
 
@@ -147,11 +151,15 @@ export const CampoEnvoltura: React.FC<EnvolturaProps> = ({
       `aria-describedby` y con `role="alert"` para que se anuncie al aparecer.
     */}
     {error && (
-      <div className="label">
+      // `.label` de daisyUI es `white-space: nowrap`: un mensaje largo de Yup no envolvía
+      // y desbordaba el modal en pantallas angostas. `whitespace-normal` en el rótulo y
+      // `min-w-0` en el hijo lo devuelven al flujo (§2.2, mismo remedio que las casillas de
+      // rol del formulario de cuenta).
+      <div className="label whitespace-normal">
         <span
           id={`${id}-error`}
           role="alert"
-          className="label-text-alt text-error"
+          className="label-text-alt text-error min-w-0"
         >
           {error}
         </span>
@@ -182,8 +190,8 @@ const atributosDeCampo = (
   "aria-describedby": error ? `${nombre}-error` : undefined,
 });
 
-/** Los cinco tipos de entrada de texto que comparten implementación. */
-type TipoTexto = "text" | "number" | "email" | "tel";
+/** Los tipos de entrada de texto que comparten implementación. */
+type TipoTexto = "text" | "number" | "email" | "tel" | "date";
 
 /**
  * Campo de entrada de texto, parametrizado por su tipo.
@@ -251,6 +259,21 @@ export const PhoneInput: React.FC<BaseFieldProps> = (props) => (
   <CampoTexto
     {...props}
     tipo="tel"
+  />
+);
+
+/**
+ * Campo de fecha que **conserva la cadena** `AAAA-MM-DD`.
+ *
+ * Distinto de `DateInput`: éste NO convierte a `Date`. Es para las fechas de calendario
+ * que viajan como texto (regla 12 de CLAUDE.md), donde un `Date` en Quito —UTC−5— las
+ * desplazaría un día. Rinde el selector de fecha nativo —y su teclado en táctil— sin tocar
+ * el valor: el control nativo entrega y recibe `AAAA-MM-DD`, que es justo lo que se guarda.
+ */
+export const DateTextInput: React.FC<BaseFieldProps> = (props) => (
+  <CampoTexto
+    {...props}
+    tipo="date"
   />
 );
 
@@ -458,7 +481,7 @@ export const FileInput: React.FC<FileInputProps> = ({
       />
       {nombreArchivo && (
         <label className="label py-1">
-          <span className="label-text-alt text-success text-xs">
+          <span className="label-text-alt text-base-content text-xs">
             ✓{" "}
             {nombreArchivo.length > 40
               ? `${nombreArchivo.substring(0, 40)}...`

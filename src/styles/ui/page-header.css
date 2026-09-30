@@ -3,48 +3,40 @@
 }
 
 .page-heading-title {
-  color: var(--color-base-content);
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .page-heading-subtitle {
-  color: color-mix(in srgb, var(--color-base-content) 88%, transparent);
+  font-size: 0.875rem;
+  opacity: 0.7;
 }
 
-/*
-  ═══════════════════════════════════════════════════════════════════════════════
-  EL TOPE SUBIÓ DE 80rem A 110rem EL 2026-08-26, Y SE APARTA DE LA PLANTILLA.
+.page-data-header {
+  display: flex;
+  flex-direction: row;
+  gap: 1.5rem;
+  margin-bottom: 0;
+  margin-top: 1rem;
+}
 
-  Con 80rem —1280 px— el contenido quedaba recortado y centrado, y en un monitor de
-  1920 sobraban 157 px a cada lado: la ventana da 1594 px útiles tras descontar la barra
-  lateral (16.375rem) y el relleno del <main> (lg:px-8).
-
-  POR QUÉ NADIE LO VIO ANTES. El tope solo aprieta por encima de 1606 px de ventana, y
-  toda la verificación del diseño se hizo a 1440 px —así está escrito en
-  FormularioOperativo.tsx y en FASE5 §9.3—. A 1440 el disponible es 1114 px: por debajo
-  del tope, sin un píxel desperdiciado. El defecto solo existía en pantallas grandes.
-
-  SE APARTA DE DOS SITIOS, Y ES DELIBERADO:
-
-    · del prototipo aprobado por el Product Owner, que lleva el mismo 80rem;
-    · de la plantilla corporativa que este módulo comparte con Instrucción, donde
-      page-header.css es byte a byte idéntico —lo era en 16 hojas de src/styles/—.
-
-  Si alguien vuelve a alinear las hojas con Instrucción, esta línea es la que hay que
-  conservar. No es un descuido: lo pidió el negocio el 2026-08-26.
-
-  POR QUÉ 110rem Y NO «SIN TOPE». 1760 px cubre entero un monitor de 1920 y deja tope en
-  uno ultraancho, donde el área de Observaciones se convertiría en una línea de texto de
-  dos metros. La medida de lectura sigue importando aunque el hueco exista.
-  ═══════════════════════════════════════════════════════════════════════════════
-*/
+/* Contenedor de página propio de transporte (resolucion usa `page-data-header`).
+   Es un grid de una sola columna a ancho completo, sin tope de lectura: el negocio
+   pidió el 2026-09-14 que las páginas aprovechen todo el ancho del área de contenido.
+   `min-width: 0` en cada hijo evita que un elemento ancho (una tabla, un distintivo
+   largo) arrastre a sus hermanos y recorte el subtítulo. */
 .app-page-shell {
   display: grid;
   width: 100%;
-  max-width: 110rem;
-  margin-inline: auto;
+  max-width: none;
   align-content: start;
   gap: 1.5rem;
   min-height: calc(100dvh - 11rem);
+}
+
+.app-page-shell > * {
+  min-width: 0;
 }
 
 .app-page-header-actions {

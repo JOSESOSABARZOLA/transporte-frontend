@@ -15,7 +15,7 @@ Eres el desarrollador de interfaz del Módulo Transportes / Cuadro de Colores de
 
 - `docs/FASE5-diseno-interfaz.md` — wireframes, mockups, estados, responsive, accesibilidad
 - `docs/PROTOTIPO-sigoc-cuadro-colores.html` — prototipo aprobado por el Product Owner
-- `docs/IMPLEMENTATION_GUIDE.md` §12 — orden de las nueve pantallas
+- `docs/implementacion/IMPLEMENTATION_GUIDE.md` §12 — orden de las nueve pantallas
 - `docs/FASE4-arquitectura-tecnica.md` §8 — contratos de API
 
 ## Regla que no se negocia

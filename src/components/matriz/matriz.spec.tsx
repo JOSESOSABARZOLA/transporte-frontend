@@ -41,13 +41,30 @@ import type { FilaMatriz, SeccionMatriz } from "../../interfaces/Documento.ts";
 const fila = (parcial: Partial<FilaMatriz> = {}): FilaMatriz => ({
   id: 1,
   identificador: "ICNECU-001-31-JUL-2026",
+  grupoRegistro: null,
   // Adicional del día · 2026-08-20. La fila ordinaria no nace de ninguno.
   esAdicional: false,
   origen: null,
   horario: "18H00 A 23H30",
   personal: [
-    { funcionarioId: 1, nombre: "YUNDA JESSICA", esResponsable: true },
-    { funcionarioId: 2, nombre: "CAMPAÑA JUAN", esResponsable: false },
+    {
+      funcionarioId: 1,
+      nombre: "YUNDA JESSICA",
+      telefono: "97 969 0786",
+      esResponsable: true,
+      // Ventana efectiva: heredan el horario del operativo (el caso normal).
+      horaInicio: "18:00",
+      horaFin: "23:30",
+    },
+    // Sin teléfono a propósito: el maestro admite `null` y hay fichas reales así.
+    {
+      funcionarioId: 2,
+      nombre: "CAMPAÑA JUAN",
+      telefono: null,
+      esResponsable: false,
+      horaInicio: "18:00",
+      horaFin: "23:30",
+    },
   ],
   zonales: ["DMQ"],
   puntoEncuentro: "AMC Matriz",
@@ -55,7 +72,7 @@ const fila = (parcial: Partial<FilaMatriz> = {}): FilaMatriz => ({
   instituciones: ["AMC"],
   conductor: null,
   placa: null,
-  observaciones: null,
+  observaciones: [],
   estadoTransporte: "PENDIENTE",
   esNocturno: true,
   alertas: [],
@@ -102,7 +119,8 @@ describe("caso 2 · el banner no es solo color", () => {
       />,
     );
 
-    const banner = container.querySelector<HTMLElement>("td[colspan='11']");
+    // Doce desde el 2026-08-27, con la columna de teléfono. El banner las abarca todas.
+    const banner = container.querySelector<HTMLElement>("td[colspan='12']");
 
     expect(banner).not.toBeNull();
     // Regla 3: no existe una clase por formulario, el color es un dato.
@@ -217,14 +235,257 @@ describe("casos 4 y 5 · la celda alertada lleva siempre su motivo", () => {
 
     const celda = container.querySelector<HTMLElement>("td.ring-error");
 
-    // FASE5 §5.3. `border` desplazaría el contenido de las celdas vecinas y dejaría la
-    // fila crítica desalineada respecto de las demás.
+    // FASE5 §5.3. La crítica se marca con `ring`, no con un `border` DE COLOR propio, que
+    // desplazaría el contenido y desalinearía la fila. El `border-t` que la celda pueda
+    // llevar es el SEPARADOR DE OPERATIVO (`BORDE_OPERATIVO` de TablaMatriz): va en todas las
+    // celdas del renglón por igual y no desalinea, así que se excluye solo el borde de color.
     expect(celda?.className).toContain("ring-1");
     expect(celda?.className).toContain("ring-inset");
-    expect(celda?.className).not.toContain("border");
+    expect(celda?.className).not.toMatch(/border-(error|warning)/);
     expect(celda).toHaveAttribute(
       "title",
       "Operativo nocturno sin conductor: impide cerrar la jornada.",
+    );
+  });
+});
+
+describe("agrupación de las copias del formulario 8", () => {
+  it("junta los operativos idénticos de una persona: identificador por fila, personal fusionado con «(n)»", () => {
+    const persona = {
+      funcionarioId: 9,
+      nombre: "SOSA JOSE",
+      telefono: null,
+      esResponsable: false,
+      horaInicio: "08:00",
+      horaFin: "12:00",
+    };
+    // Tres operativos idénticos salvo el identificador: las copias que genera el 8.
+    const comun = {
+      horario: "08H00 A 12H00",
+      personal: [persona],
+      zonales: ["DMQ"],
+      puntoEncuentro: "AMC",
+      tipoControl: "X",
+      instituciones: ["AMC"],
+      conductor: null,
+      placa: null,
+      observaciones: [],
+      estadoTransporte: "PENDIENTE" as const,
+      esNocturno: false,
+      esAdicional: false,
+      origen: null,
+      alertas: [],
+    };
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            totalOperativos: 3,
+            filas: [
+              fila({ ...comun, id: 1, identificador: "IG-001" }),
+              fila({ ...comun, id: 2, identificador: "IG-002" }),
+              fila({ ...comun, id: 3, identificador: "IG-003" }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    // Los tres identificadores, cada uno en su fila.
+    expect(screen.getByText("IG-001")).toBeInTheDocument();
+    expect(screen.getByText("IG-002")).toBeInTheDocument();
+    expect(screen.getByText("IG-003")).toBeInTheDocument();
+    // El personal aparece UNA sola vez, con el conteo de operativos del grupo.
+    const celdaPersonal = screen.getByText("SOSA JOSE (3)").closest("td");
+    expect(celdaPersonal).toBeInTheDocument();
+    // La celda fusionada va CENTRADA en el bloque (vertical y horizontal).
+    expect(celdaPersonal?.className).toContain("align-middle");
+    expect(celdaPersonal?.className).toContain("text-center");
+  });
+});
+
+describe("agrupación de la patrulla (formulario 6)", () => {
+  it("junta las personas del mismo grupoRegistro, cada una con su código, y fusiona el resto", () => {
+    // A diferencia del 8, son personas DISTINTAS de una misma patrulla: cada una con su código por
+    // área (IGNECU/ITNECU/INECU), sin «(n)», y el resto del operativo fusionado con `rowSpan`.
+    const persona = (funcionarioId: number, nombre: string) => ({
+      funcionarioId,
+      nombre,
+      telefono: null,
+      esResponsable: false,
+      horaInicio: "20:00",
+      horaFin: "02:00",
+    });
+    const comun = {
+      grupoRegistro: "lote-1",
+      horario: "20H00 A 02H00",
+      zonales: ["DMQ"],
+      puntoEncuentro: "AMC Matriz",
+      tipoControl: "Alertas ECU 911",
+      instituciones: ["AMC"],
+      conductor: null,
+      placa: null,
+      observaciones: [],
+      estadoTransporte: "PENDIENTE" as const,
+      esNocturno: true,
+      esAdicional: false,
+      origen: null,
+      alertas: [],
+    };
+
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            totalOperativos: 3,
+            filas: [
+              fila({
+                ...comun,
+                id: 1,
+                identificador: "IGNECU-001",
+                personal: [persona(1, "BENAVIDES FERNANDO")],
+              }),
+              fila({
+                ...comun,
+                id: 2,
+                identificador: "ITNECU-001",
+                personal: [persona(2, "CAMPAÑA JUAN")],
+              }),
+              fila({
+                ...comun,
+                id: 3,
+                identificador: "INECU-001",
+                personal: [persona(3, "DIAZ ANA")],
+              }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    // Cada persona con su propio código, uno por fila; y su nombre, sin «(n)».
+    for (const codigo of ["IGNECU-001", "ITNECU-001", "INECU-001"]) {
+      expect(screen.getByText(codigo)).toBeInTheDocument();
+    }
+    for (const nombre of ["BENAVIDES FERNANDO", "CAMPAÑA JUAN", "DIAZ ANA"]) {
+      expect(screen.getByText(nombre)).toBeInTheDocument();
+    }
+
+    // El resto se fusiona: el punto de encuentro aparece UNA vez, abarcando las tres filas.
+    const puntos = screen.getAllByText("AMC Matriz");
+    expect(puntos).toHaveLength(1);
+    expect(puntos[0].closest("td")?.getAttribute("rowspan")).toBe("3");
+  });
+
+  it("el registro del 8 (varias personas con copias) agrupa cada nombre con su «(n)»", () => {
+    // Cada inspector con sus copias, todos en el mismo lote: el nombre se fusiona por persona con
+    // el total de operativos de esa persona, y su celda abarca sus códigos.
+    const persona = (funcionarioId: number, nombre: string) => ({
+      funcionarioId,
+      nombre,
+      telefono: null,
+      esResponsable: false,
+      horaInicio: "08:00",
+      horaFin: "12:30",
+    });
+    const comun = {
+      grupoRegistro: "lote-8",
+      horario: "08H00 A 12H30",
+      zonales: ["DMQ"],
+      puntoEncuentro: "AMC Matriz",
+      tipoControl: "Alertas ECU 911",
+      instituciones: ["AMC"],
+      conductor: null,
+      placa: null,
+      observaciones: [],
+      estadoTransporte: "PENDIENTE" as const,
+      esNocturno: false,
+      esAdicional: false,
+      origen: null,
+      alertas: [],
+    };
+
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            totalOperativos: 4,
+            filas: [
+              fila({ ...comun, id: 1, identificador: "IG-001", personal: [persona(1, "VILLAVICENCIO VACA MIGUEL ANGEL")] }),
+              fila({ ...comun, id: 2, identificador: "IG-002", personal: [persona(1, "VILLAVICENCIO VACA MIGUEL ANGEL")] }),
+              fila({ ...comun, id: 3, identificador: "IT-001", personal: [persona(2, "ALVARADO")] }),
+              fila({ ...comun, id: 4, identificador: "IT-002", personal: [persona(2, "ALVARADO")] }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    // Un nombre por persona con «(2)», cada celda abarcando sus dos códigos y CENTRADA.
+    const villa = screen.getByText("VILLAVICENCIO VACA MIGUEL ANGEL (2)");
+    const celdaVilla = villa.closest("td");
+    expect(celdaVilla?.getAttribute("rowspan")).toBe("2");
+    expect(celdaVilla?.className).toContain("align-middle");
+    expect(celdaVilla?.className).toContain("text-center");
+    const alv = screen.getByText("ALVARADO (2)");
+    expect(alv.closest("td")?.getAttribute("rowspan")).toBe("2");
+    // Los cuatro identificadores siguen visibles, uno por fila.
+    for (const codigo of ["IG-001", "IG-002", "IT-001", "IT-002"]) {
+      expect(screen.getByText(codigo)).toBeInTheDocument();
+    }
+  });
+});
+
+describe("separación entre operativos", () => {
+  it("marca el borde superior en la primera fila del operativo, no en las de sus personas internas", () => {
+    // `fila()` trae un operativo de dos personas: la primera abre el operativo (lleva el
+    // separador `border-t`); la segunda es un renglón interno del mismo y no debe llevarlo.
+    render(
+      <TablaMatriz
+        secciones={[seccion()]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    const celdaIdentificador = screen
+      .getByText("ICNECU-001-31-JUL-2026")
+      .closest("td");
+    expect(celdaIdentificador?.className).toContain("border-t");
+
+    const celdaSegundaPersona = screen.getByText("CAMPAÑA JUAN").closest("td");
+    expect(celdaSegundaPersona?.className).not.toContain("border-t");
+  });
+
+  it("alterna la banda por operativo: el primero en gris, el segundo en blanco", () => {
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            totalOperativos: 2,
+            filas: [
+              fila({ id: 1, identificador: "OCF-001" }),
+              fila({
+                id: 2,
+                identificador: "OCF-002",
+                personal: [fila().personal[0]],
+              }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    // Primer operativo (índice par): su renglón lleva el gris de banda.
+    expect(screen.getByText("OCF-001").closest("tr")?.className).toContain(
+      "bg-base-200",
+    );
+    // Segundo operativo (índice impar): blanco, sin la clase de banda.
+    expect(screen.getByText("OCF-002").closest("tr")?.className).not.toContain(
+      "bg-base-200",
     );
   });
 });
@@ -238,9 +499,65 @@ describe("la fila de datos", () => {
       />,
     );
 
-    expect(
-      screen.getByText("YUNDA JESSICA (R), CAMPAÑA JUAN"),
-    ).toBeInTheDocument();
+    // Desde la agrupación del 27-AGO cada persona tiene su propio renglón, así que ya no
+    // hay un texto unido por comas: lo que se comprueba es que la (R) sigue distinguiendo.
+    expect(screen.getByText("YUNDA JESSICA (R)")).toBeInTheDocument();
+    expect(screen.getByText("CAMPAÑA JUAN")).toBeInTheDocument();
+  });
+
+  /*
+    HORARIO POR PERSONA CUANDO LOS TURNOS DIFIEREN. 2026-09-08. Es una decisión, no
+    maquetado: si el operativo reúne ventanas distintas, el horario baja a la fila de cada
+    quien; si todas heredan la del operativo —el caso normal—, se pinta una sola vez.
+  */
+  it("cuando los turnos difieren, pinta el horario de cada persona", () => {
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            filas: [
+              fila({
+                personal: [
+                  {
+                    funcionarioId: 1,
+                    nombre: "YUNDA JESSICA",
+                    telefono: null,
+                    esResponsable: true,
+                    horaInicio: "07:00",
+                    horaFin: "16:00",
+                  },
+                  {
+                    funcionarioId: 2,
+                    nombre: "CAMPAÑA JUAN",
+                    telefono: null,
+                    esResponsable: false,
+                    horaInicio: "09:00",
+                    horaFin: "18:00",
+                  },
+                ],
+              }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    expect(screen.getByText("07H00 A 16H00")).toBeInTheDocument();
+    expect(screen.getByText("09H00 A 18H00")).toBeInTheDocument();
+  });
+
+  it("cuando todas heredan el horario del operativo, se pinta una sola vez", () => {
+    render(
+      <TablaMatriz
+        secciones={[seccion()]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    // La fixture da a las dos personas la misma ventana efectiva (18:00–23:30): el
+    // horario del operativo aparece una vez, no uno por persona.
+    expect(screen.getAllByText("18H00 A 23H30")).toHaveLength(1);
   });
 
   it("el estado de transporte lleva color y palabra", () => {
@@ -256,7 +573,7 @@ describe("la fila de datos", () => {
     expect(distintivo.className).toContain("badge");
   });
 
-  it("las once columnas están, y en el orden del esquema", () => {
+  it("las doce columnas están, y en el orden del esquema", () => {
     render(
       <TablaMatriz
         secciones={[seccion()]}
@@ -272,6 +589,7 @@ describe("la fila de datos", () => {
       "Identificador",
       "Horario",
       "Personal",
+      "Teléfono",
       "Zonal",
       "Punto",
       "Tipo",

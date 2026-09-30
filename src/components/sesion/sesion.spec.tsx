@@ -29,6 +29,7 @@ import AuthCallbackPage from "../../pages/AuthCallbackPage.tsx";
 import { UserContext, type EstadoSesion } from "../../context/UserContext.tsx";
 import { UserProvider } from "../../providers/UserProvider.tsx";
 import { rolUser } from "../../config/env.ts";
+import { permisosDeRoles } from "../../pruebas/permisos.ts";
 import type { User } from "../../interfaces/User.ts";
 
 vi.mock("../../services/sesion.service.ts", async (original) => ({
@@ -49,6 +50,7 @@ const USUARIO: User = {
   usuFullName: "Analista de Transportes",
   usuEmail: "daf.transportes",
   rolCodes: [rolUser.rolDaf],
+  permisos: permisosDeRoles([rolUser.rolDaf]),
   rolName: "Analista de Transportes",
   token: "",
   actividades: [],
@@ -86,7 +88,7 @@ describe("Ingreso con Auth central", () => {
           "resolviendo",
           null,
           <MemoryRouter>
-            <RutaProtegida rolesPermitidos={[rolUser.rolDaf]}>
+            <RutaProtegida permisosPermitidos={["transporte:asignar"]}>
               <p>contenido reservado</p>
             </RutaProtegida>
           </MemoryRouter>,
@@ -103,7 +105,7 @@ describe("Ingreso con Auth central", () => {
           "sinSesion",
           null,
           <MemoryRouter>
-            <RutaProtegida rolesPermitidos={[rolUser.rolDaf]}>
+            <RutaProtegida permisosPermitidos={["transporte:asignar"]}>
               <p>contenido reservado</p>
             </RutaProtegida>
           </MemoryRouter>,
@@ -124,7 +126,7 @@ describe("Ingreso con Auth central", () => {
               <Route
                 path="/reservada"
                 element={
-                  <RutaProtegida rolesPermitidos={[rolUser.rolDirector]}>
+                  <RutaProtegida permisosPermitidos={["matriz:ver"]}>
                     <p>solo la Dirección</p>
                   </RutaProtegida>
                 }
@@ -147,7 +149,7 @@ describe("Ingreso con Auth central", () => {
           "conSesion",
           USUARIO,
           <MemoryRouter>
-            <RutaProtegida rolesPermitidos={[rolUser.rolDaf]}>
+            <RutaProtegida permisosPermitidos={["transporte:asignar"]}>
               <p>contenido reservado</p>
             </RutaProtegida>
           </MemoryRouter>,
@@ -182,6 +184,7 @@ describe("Ingreso con Auth central", () => {
         username: "daf.transportes",
         displayName: "Analista de Transportes",
         rolCodes: [rolUser.rolDaf],
+        permisos: permisosDeRoles([rolUser.rolDaf]),
       });
 
       const { rerender } = montar("?code=abc123");
@@ -376,6 +379,7 @@ describe("al volver del portal con el código", () => {
     username: "ffnavarrete",
     displayName: "Fernando Navarrete",
     rolCodes: [rolUser.rolDaf],
+        permisos: permisosDeRoles([rolUser.rolDaf]),
   };
 
   const irAlPortal = vi.fn();

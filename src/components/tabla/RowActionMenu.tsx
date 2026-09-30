@@ -10,7 +10,7 @@
  */
 import { memo, useMemo, type FC } from "react";
 import type { UserActions } from "../../interfaces/User";
-import Iconos from "../common/Iconos";
+import Iconos, { esNombreIcono } from "../common/Iconos.tsx";
 import SubMenuDropdown from "../common/SubMenuDropdown";
 import type { ModalType } from "../../interfaces/Modal";
 
@@ -30,7 +30,7 @@ const RowActionMenu: FC<RowActionMenuProps> = memo(({ items, onClick }) => {
   const propsAcciones = {
     botonProps: {
       estilos: "btn btn-soft btn-primary btn-md mr-2",
-      icono: "subMenu",
+      icono: "subMenu" as const,
       deshabilitado: allDisabled,
     },
     renderItem: (items: UserActions[]) => (
@@ -46,7 +46,14 @@ const RowActionMenu: FC<RowActionMenuProps> = memo(({ items, onClick }) => {
           >
             <span>
               <Iconos
-                nombre={item.actiIconName}
+                // `actiIconName` viaja como texto libre en el contrato: se comprueba
+                // contra el mapa en vez de forzarlo, y lo que no es de la casa cae en
+                // el respaldo.
+                nombre={
+                  esNombreIcono(item.actiIconName)
+                    ? item.actiIconName
+                    : undefined
+                }
                 estilo="text-primary"
               />
               {item.actiLabel}

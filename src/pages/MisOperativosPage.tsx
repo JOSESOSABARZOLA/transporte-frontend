@@ -28,11 +28,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormikHelpers } from "formik";
 
 import CamposCalculados from "../components/cuadro/CamposCalculados.tsx";
+import Iconos from "../components/common/Iconos.tsx";
 import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
 import AvisoVentana from "../components/common/AvisoVentana.tsx";
 import ModalExito from "../components/common/ModalExito.tsx";
 import PanelAdicionalOperativo from "../components/cuadro/PanelAdicionalOperativo.tsx";
 import PanelEdicionOperativo from "../components/cuadro/PanelEdicionOperativo.tsx";
+import type { MiembroPatrulla } from "../components/cuadro/RosterPatrulla.tsx";
 import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
 import TablaOperativos from "../components/cuadro/TablaOperativos.tsx";
 import {
@@ -50,11 +52,13 @@ import {
   nombreDePersona,
   type PersonaElegible,
 } from "../interfaces/Personal.ts";
+import { turnoDePrimera } from "../utils/personal.util.ts";
 import { OperativoService } from "../services/operativo.service.ts";
 import { PersonalService } from "../services/personal.service.ts";
 import {
   accesoAlOperativo,
   motivoDeSoloLectura,
+  puedeAportarA,
 } from "../utils/accesoOperativo.util.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
 import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
@@ -133,6 +137,9 @@ const MisOperativosPage = () => {
   const [tamanio, setTamanio] = useState(10);
 
   const [editando, setEditando] = useState<Operativo | null>(null);
+  // PATRULLA (2026-09-18): «Agregar Personal» abre el panel en modo solo-personal aunque el que
+  // mira sea el registrante (que si no vería el editor de generales completo).
+  const [agregandoAPatrulla, setAgregandoAPatrulla] = useState(false);
   /**
    * Operativo del que se está capturando un adicional. 2026-08-20.
    *
@@ -260,14 +267,19 @@ const MisOperativosPage = () => {
    * punto que no está entre las opciones, y quien edita el horario vería desaparecer de la
    * pantalla el punto que ya tenía elegido, sin haberlo tocado.
    */
-  const cargarPuntosDeZonal = catalogos.cargarPuntosDeZonal;
-  // La zonal, no el operativo entero: al agregar personal `editando` cambia de identidad
-  // y volvería a pedir los mismos puntos en cada alta.
-  const zonalEnEdicion = enPanel?.zonales[0]?.id;
+  const cargarPuntosDeZonales = catalogos.cargarPuntosDeZonales;
+  // Las zonales (varias, 2026-09-21), no el operativo entero: al agregar personal `enPanel`
+  // cambia de identidad y volvería a pedir los mismos puntos. La clave estable evita el bucle.
+  const zonalesEnEdicionKey = (enPanel?.zonales ?? [])
+    .map((zonal) => zonal.id)
+    .join(",");
 
   useEffect(() => {
-    if (zonalEnEdicion) void cargarPuntosDeZonal(zonalEnEdicion);
-  }, [zonalEnEdicion, cargarPuntosDeZonal]);
+    const ids = zonalesEnEdicionKey
+      ? zonalesEnEdicionKey.split(",").map(Number)
+      : [];
+    if (ids.length > 0) void cargarPuntosDeZonales(ids);
+  }, [zonalesEnEdicionKey, cargarPuntosDeZonales]);
 
   /**
    * Los candidatos dependen del formulario **y del horario** del operativo que se edita.
@@ -309,7 +321,12 @@ const MisOperativosPage = () => {
       setCargandoPersonal(true);
     }
 
-    const conHorario = Boolean(horario.inicio) && Boolean(horario.fin);
+    // RN-66: el ADICIONAL se pide SIN horario (por área y ausencia): ya no tiene uno único,
+    // cada persona lleva el suyo. La EDICIÓN sí filtra por la ventana del operativo, que
+    // conserva su envolvente.
+    const esAdicional = Boolean(creandoAdicional) && !editando;
+    const conHorario =
+      !esAdicional && Boolean(horario.inicio) && Boolean(horario.fin);
 
     PersonalService.consultarElegibles({
       formulario: enPanel.formulario.codigo,
@@ -331,7 +348,7 @@ const MisOperativosPage = () => {
     return () => {
       vigente = false;
     };
-  }, [enPanel, fecha, horario.inicio, horario.fin]);
+  }, [enPanel, editando, creandoAdicional, fecha, horario.inicio, horario.fin]);
 
   const coincidentes = useMemo(
     () => filtrarOperativos(operativos, filtros),
@@ -373,31 +390,47 @@ const MisOperativosPage = () => {
       setProcesando(true);
       setAviso(null);
 
+      // RN-66: el operativo conserva su ventana; la corrección edita zonal, punto, tipo,
+      // instituciones y notas (los campos GENERALES), no el horario.
+      const generales = {
+        zonalesIds: valores.zonalesIds,
+        puntoEncuentroId:
+          valores.punto === OPCION_ADICIONALES || valores.punto === ""
+            ? undefined
+            : Number(valores.punto),
+        puntoLibre:
+          valores.punto === OPCION_ADICIONALES ? valores.puntoLibre : undefined,
+        tipoControlId:
+          valores.tipoControl === OPCION_ADICIONALES ||
+          valores.tipoControl === ""
+            ? undefined
+            : Number(valores.tipoControl),
+        tipoLibre:
+          valores.tipoControl === OPCION_ADICIONALES
+            ? valores.tipoLibre
+            : undefined,
+        institucionesIds: valores.institucionesIds,
+        observacionesNuevas:
+          valores.observaciones.length > 0 ? valores.observaciones : undefined,
+      };
+
       try {
+        // PATRULLA (2026-09-18): editar los generales los aplica a TODOS los códigos del lote.
+        if (editando.grupoRegistro) {
+          await OperativoService.editarPatrulla(
+            editando.grupoRegistro,
+            generales,
+          );
+          setExito("Patrulla actualizada en todos sus códigos.");
+          setEditando(null);
+          ayudas.resetForm();
+          await cargar();
+          return;
+        }
+
         await OperativoService.editar(editando.id, {
           version: editando.version,
-          horaInicio: valores.horaInicio,
-          horaFin: valores.horaFin,
-          zonalesIds: valores.zonalId === "" ? undefined : [valores.zonalId],
-          puntoEncuentroId:
-            valores.punto === OPCION_ADICIONALES || valores.punto === ""
-              ? undefined
-              : Number(valores.punto),
-          puntoLibre:
-            valores.punto === OPCION_ADICIONALES
-              ? valores.puntoLibre
-              : undefined,
-          tipoControlId:
-            valores.tipoControl === OPCION_ADICIONALES ||
-            valores.tipoControl === ""
-              ? undefined
-              : Number(valores.tipoControl),
-          tipoLibre:
-            valores.tipoControl === OPCION_ADICIONALES
-              ? valores.tipoLibre
-              : undefined,
-          institucionesIds: valores.institucionesIds,
-          observaciones: valores.observaciones || undefined,
+          ...generales,
         });
 
         setExito(`Operativo ${editando.identificador} actualizado.`);
@@ -416,6 +449,79 @@ const MisOperativosPage = () => {
     [editando, cargar],
   );
 
+  // «Agregar Personal» a una patrulla: abre el panel en modo solo-personal sobre un miembro del
+  // grupo. El servidor adopta el `grupoRegistro`. 2026-09-18.
+  const abrirAgregarPatrulla = useCallback((operativo: Operativo) => {
+    setEditando(operativo);
+    setAgregandoAPatrulla(true);
+  }, []);
+
+  // Acciones FUSIONADAS de la patrulla (Form 5/6). Un solo «Editar» (los generales, solo el
+  // registrante) + un solo «Agregar Personal»; el «Eliminar» va por persona. 2026-09-18.
+  const accionesDePatrulla = (grupo: Operativo[]) => {
+    const cabeza = grupo[0];
+    const esRegistrante = accesoDe(cabeza) === "PROPIO";
+    // «Agregar Personal» es el APORTE de Instrucción: solo se ofrece a quien aporta a este
+    // formulario —en el Form 6, el DMIT de Instrucción—, no al dueño, que registra a los suyos al
+    // crear la patrulla. Espejo de `reglaCupoCompartido` del servidor. 2026-09-18.
+    const puedeAgregarPersonal = puedeAportarA(cabeza, user?.rolCodes ?? []);
+    const motivoBloqueo = bloqueado
+      ? "La ventana de carga está cerrada o el cuadro fue cerrado."
+      : undefined;
+    return (
+      <div className="flex flex-col items-start gap-1">
+        {esRegistrante && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => {
+              setAgregandoAPatrulla(false);
+              setEditando(cabeza);
+            }}
+            disabled={bloqueado || procesando}
+            title={motivoBloqueo}
+          >
+            Editar
+          </button>
+        )}
+        {puedeAgregarPersonal && (
+          <button
+            type="button"
+            className="btn btn-primary btn-xs"
+            onClick={() => abrirAgregarPatrulla(cabeza)}
+            disabled={bloqueado}
+            title={motivoBloqueo}
+          >
+            Agregar Personal
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const accionDePersonaPatrulla = (operativo: Operativo) => {
+    const acceso = accesoDe(operativo);
+    const motivoAjeno = motivoDeSoloLectura(acceso, operativo.creadoPorRol);
+    const impedido = bloqueado || procesando || motivoAjeno !== null;
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs text-error"
+        onClick={() => setPorRetirar(operativo)}
+        disabled={impedido}
+        title={
+          motivoAjeno ??
+          (bloqueado
+            ? "La ventana de carga está cerrada o el cuadro fue cerrado."
+            : undefined)
+        }
+      >
+        <Iconos nombre="eliminar" />
+        Eliminar
+      </button>
+    );
+  };
+
   /**
    * Abre el panel del adicional. 2026-08-20.
    *
@@ -428,6 +534,27 @@ const MisOperativosPage = () => {
     setAvisoPersonal(null);
     setCreandoAdicional(origen);
   }, []);
+
+  /**
+   * Fija el horario propio de una persona del adicional (2026-09-08, RN-66). Obligatorio: el
+   * adicional no tiene horario propio y el servidor toma su ventana de las de su gente.
+   */
+  const cambiarHorarioAdicional = useCallback(
+    (funcionarioId: number, horaInicio: string, horaFin: string) => {
+      setPersonalAdicional((actuales) =>
+        actuales.map((persona) =>
+          persona.funcionarioId === funcionarioId
+            ? {
+                ...persona,
+                horaInicio: horaInicio || undefined,
+                horaFin: horaFin || undefined,
+              }
+            : persona,
+        ),
+      );
+    },
+    [],
+  );
 
   const guardarAdicional = useCallback(
     async (
@@ -445,9 +572,8 @@ const MisOperativosPage = () => {
         const adicional = await OperativoService.crearAdicional(
           creandoAdicional.id,
           {
-            horaInicio: valores.horaInicio,
-            horaFin: valores.horaFin,
-            zonalesIds: valores.zonalId === "" ? [] : [valores.zonalId],
+            // RN-66: el adicional no manda su horario; el servidor lo deriva de las personas.
+            zonalesIds: valores.zonalesIds,
             puntoEncuentroId:
               valores.punto === OPCION_ADICIONALES || valores.punto === ""
                 ? undefined
@@ -466,9 +592,13 @@ const MisOperativosPage = () => {
                 ? valores.tipoLibre
                 : undefined,
             institucionesIds: valores.institucionesIds,
-            personalIds: personalAdicional.map(
-              (persona) => persona.funcionarioId,
-            ),
+            // Cada persona con su horario, OBLIGATORIO (RN-66): el servidor toma la ventana
+            // del adicional de las de su gente.
+            personal: personalAdicional.map((persona) => ({
+              funcionarioId: persona.funcionarioId,
+              horaInicio: persona.horaInicio || undefined,
+              horaFin: persona.horaFin || undefined,
+            })),
             observaciones: valores.observaciones || undefined,
           },
         );
@@ -543,6 +673,74 @@ const MisOperativosPage = () => {
     [editando, cargar],
   );
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * EDITAR EL PERSONAL DE UNA PATRULLA (Form 5/6). 2026-09-18.
+   *
+   * La patrulla es un grupo de operativos de UNA persona (IGNECU/ITNECU/INECU). Al pulsar
+   * «Editar», el registrante ve el roster y, sobre lo suyo (Inspector General/Técnico):
+   *   · CAMBIA la persona conservando el código (misma área) → `reemplazarPersonal`.
+   *   · AGREGA una persona nueva → `asignarPersonal` la crea como un código más de su área.
+   *   · QUITA un código → el mismo modal de retiro por operativo (`setPorRetirar`).
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const reemplazarPersonaPatrulla = useCallback(
+    async (operativoId: number, funcionarioId: number) => {
+      setAvisoPersonal(null);
+      try {
+        await OperativoService.reemplazarPersonal(operativoId, funcionarioId);
+        await cargar();
+      } catch (fallo: unknown) {
+        setAvisoPersonal(presentarError(fallo).mensaje);
+      }
+    },
+    [cargar],
+  );
+
+  const agregarMiembroPatrulla = useCallback(
+    async (funcionarioId: number) => {
+      if (!editando) return;
+
+      setAvisoPersonal(null);
+      try {
+        // El servidor adopta el `grupoRegistro` de la patrulla y numera el nuevo código por el
+        // área de la persona (p. ej. un 2.º General → IGNECU-002).
+        await OperativoService.asignarPersonal(editando.id, { funcionarioId });
+        await cargar();
+      } catch (fallo: unknown) {
+        setAvisoPersonal(presentarError(fallo).mensaje);
+      }
+    },
+    [editando, cargar],
+  );
+
+  /** ¿Estoy editando (no aportando) una patrulla que registré yo? Entonces se pinta el roster. */
+  const editandoPatrulla =
+    editando != null &&
+    Boolean(editando.grupoRegistro) &&
+    // El roster (cambiar inspector/aportar) es SOLO de la patrulla. El Form 8 comparte lote pero
+    // no es patrulla: se edita con los generales normales, sin roster.
+    editando.formulario.esPatrulla &&
+    !agregandoAPatrulla &&
+    accesoDe(editando) === "PROPIO";
+
+  /** Los códigos de la patrulla en edición, cada uno con su persona y si lo puedo tocar. */
+  const miembrosPatrulla = useMemo<MiembroPatrulla[]>(() => {
+    if (!editando?.grupoRegistro) return [];
+    return operativos
+      .filter((operativo) => operativo.grupoRegistro === editando.grupoRegistro)
+      .slice()
+      .sort((una, otra) => una.identificador.localeCompare(otra.identificador))
+      .map((operativo) => ({
+        operativo,
+        persona: operativo.personal[0],
+        // Puedo cambiar/quitar los códigos que registré yo (General/Técnico); el INECU del DMIT
+        // llega en lectura.
+        editable: accesoDe(operativo) === "PROPIO",
+      }))
+      .filter((miembro) => miembro.persona != null);
+  }, [operativos, editando, accesoDe]);
+
   const confirmarRetiro = useCallback(async () => {
     if (!porRetirar) return;
 
@@ -578,10 +776,10 @@ const MisOperativosPage = () => {
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-2">
-        <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+        <p className="page-heading-kicker font-semibold uppercase">
           {user?.rolName ?? "Departamento"}
         </p>
-        <h1 className="page-heading-title text-2xl font-semibold">
+        <h1 className="page-heading-title">
           Mis operativos
         </h1>
         <CamposCalculados
@@ -667,14 +865,9 @@ const MisOperativosPage = () => {
           catalogos={catalogos.catalogos}
           puntos={catalogos.puntos}
           cargandoPuntos={catalogos.cargandoPuntos}
-          onZonalElegida={(zonalId) => {
-            if (zonalId === null) {
-              catalogos.limpiarPuntos();
-              return;
-            }
-            void catalogos.cargarPuntosDeZonal(zonalId);
+          onZonalesElegidas={(zonalesIds) => {
+            void catalogos.cargarPuntosDeZonales(zonalesIds);
           }}
-          onHorarioElegido={(inicio, fin) => setHorarioEditado({ inicio, fin })}
           candidatos={candidatos}
           cargandoPersonal={cargandoPersonal}
           personalAgregado={personalAdicional}
@@ -691,6 +884,9 @@ const MisOperativosPage = () => {
                       // RN-34: el teléfono lo resuelve el servidor al asignar. Aquí
                       // todavía no se conoce, y **no se inventa**. Igual que en P-01.
                       telefono: null,
+                      // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la
+                      // primera persona; la primera queda vacía y hay que llenarla.
+                      ...turnoDePrimera(actuales),
                     },
                   ],
             )
@@ -702,6 +898,7 @@ const MisOperativosPage = () => {
               ),
             )
           }
+          onCambiarHorarioPersona={cambiarHorarioAdicional}
           avisoPersonal={avisoPersonal}
           bloqueado={bloqueadoParaAdicional}
           ventanaCerrada={!ventana.puedeEscribir}
@@ -720,32 +917,55 @@ const MisOperativosPage = () => {
           catalogos={catalogos.catalogos}
           puntos={catalogos.puntos}
           cargandoPuntos={catalogos.cargandoPuntos}
-          onZonalElegida={(zonalId) => {
-            if (zonalId === null) {
-              catalogos.limpiarPuntos();
-              return;
-            }
-            void catalogos.cargarPuntosDeZonal(zonalId);
+          onZonalesElegidas={(zonalesIds) => {
+            void catalogos.cargarPuntosDeZonales(zonalesIds);
           }}
-          onHorarioElegido={(inicio, fin) =>
-            setHorarioEditado({ inicio, fin })
+          // APORTE (Form 4 ECU / patrulla): quien aporta solo pone y quita personal de INSTRUCCIÓN;
+          // ofrecerle candidatos de otras áreas sería ofrecerle un 409. El dueño ve todas las áreas.
+          candidatos={
+            agregandoAPatrulla || accesoDe(editando) !== "PROPIO"
+              ? candidatos.filter((persona) => persona.area === "INSTRUCCION")
+              : candidatos
           }
-          candidatos={candidatos}
           cargandoPersonal={cargandoPersonal}
           onAgregarPersona={(persona) => void agregarPersona(persona)}
           onRetirarPersona={(funcionarioId) => void retirarPersona(funcionarioId)}
+          // En el aporte, solo son retirables las personas que este departamento asignó (las de
+          // Instrucción); las del dueño del formulario llegan en lectura. El servidor lo reafirma.
+          puedeEditarPersona={(persona) =>
+            accesoDe(editando) === "PROPIO" ||
+            (user?.rolCodes ?? []).includes(persona.asignadoPorRol)
+          }
           avisoPersonal={avisoPersonal}
           bloqueado={bloqueado}
-          soloPersonal={accesoDe(editando) !== "PROPIO"}
+          // PATRULLA: «Agregar Personal» abre en solo-personal; «Editar» de generales bloquea el
+          // personal (se gestiona con las acciones fusionadas), pero deja los generales editables.
+          soloPersonal={agregandoAPatrulla || accesoDe(editando) !== "PROPIO"}
+          personalBloqueado={
+            !agregandoAPatrulla && Boolean(editando.grupoRegistro)
+          }
+          // ROSTER: al editar una patrulla propia, el personal se gestiona con el roster (cambiar
+          // inspector conservando el código + agregar persona), no con el bloque de personal.
+          miembrosPatrulla={editandoPatrulla ? miembrosPatrulla : undefined}
+          onCambiarPersonaPatrulla={(operativoId, funcionarioId) =>
+            void reemplazarPersonaPatrulla(operativoId, funcionarioId)
+          }
+          onQuitarMiembroPatrulla={(operativo) => setPorRetirar(operativo)}
+          onAgregarMiembroPatrulla={(funcionarioId) =>
+            void agregarMiembroPatrulla(funcionarioId)
+          }
           guardando={procesando}
           onGuardar={guardarEdicion}
-          onCancelar={() => setEditando(null)}
+          onCancelar={() => {
+            setEditando(null);
+            setAgregandoAPatrulla(false);
+          }}
         />
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Operativos registrados
           </h2>
           <span className="badge badge-ghost badge-sm">
@@ -761,6 +981,9 @@ const MisOperativosPage = () => {
             columnas={COLUMNAS_LISTADO}
             filtros={filtros}
             onFiltroChange={cambiarFiltro}
+            // La patrulla (Form 5/6) usa acciones fusionadas; el resto, la de abajo por fila.
+            accionesPatrulla={accionesDePatrulla}
+            accionPersona={accionDePersonaPatrulla}
             mensajeVacio={
               cargando ? (
                 "Cargando operativos…"
@@ -804,9 +1027,23 @@ const MisOperativosPage = () => {
 
               return (
               <div className="flex gap-1">
+                {/*
+                  LA ACCIÓN DE APORTE SE DESTACA, LA DE EDICIÓN NO. 2026-08-31.
+
+                  Los tres botones de esta fila eran `btn-ghost btn-xs` y se leían como
+                  una sola masa gris. Para el departamento que APORTA —el DMIT en los
+                  formularios 4 y 6— «Agregar Personal» es lo único que puede hacer aquí,
+                  así que pasa a `btn-primary`; para el dueño, «Editar» convive con
+                  «Adicional» y «Eliminar» y destacarlo no ayudaría a elegir.
+
+                  Las dos clases están en el inventario de FASE5 §2.2. No se introduce
+                  ninguna nueva (regla 1).
+                */}
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs"
+                  className={
+                    esPropio ? "btn btn-ghost btn-xs" : "btn btn-primary btn-xs"
+                  }
                   onClick={() => setEditando(operativo)}
                   disabled={bloqueado || procesando}
                   title={
@@ -815,7 +1052,7 @@ const MisOperativosPage = () => {
                       : (motivoAjeno ?? undefined)
                   }
                 >
-                  {esPropio ? "Editar" : "Personal"}
+                  {esPropio ? "Editar" : "Agregar Personal"}
                 </button>
 
                 {/*
@@ -831,9 +1068,9 @@ const MisOperativosPage = () => {
                   circunstancias se podría, y aquí nunca.
 
                   NI EN LOS FORMULARIOS QUE NO LOS ADMITEN, desde el 2026-08-24. RN-61: un
-                  formulario admite adicionales si tiene un prefijo marcado para ellos, y
-                  hoy solo el **2 · PMO** con `OCAPMO`. El servidor ya lo rechazaba; la
-                  pantalla lo ofrecía igual en los nueve.
+                  formulario admite adicionales si tiene un prefijo marcado para ellos —el
+                  **2 · PMO** con `OCAPMO`, y desde el 2026-09-08 el **8 · INSPECCIONES** con
+                  `IGA`/`ITA`—. Se lee de `admiteAdicionales`, no de un código quemado.
                 */}
                 {esPropio &&
                   !operativo.esAdicional &&
@@ -864,7 +1101,17 @@ const MisOperativosPage = () => {
                       : undefined)
                   }
                 >
-                  Retirar
+                  {/*
+                    EL ICONO ACOMPAÑA, NO SUSTITUYE (regla 13). El rótulo se queda: un
+                    botón que solo fuera un dibujo obligaría a adivinar, y en la fila de
+                    al lado «Editar» y «Adicional» son palabras.
+
+                    SIN `aria-label` y sin color propio: FontAwesome ya pone
+                    `aria-hidden`, y el rojo lo pone `text-error` del botón, que el icono
+                    hereda por `currentColor`.
+                  */}
+                  <Iconos nombre="eliminar" />
+                  Eliminar
                 </button>
               </div>
               );
@@ -892,9 +1139,9 @@ const MisOperativosPage = () => {
       {/* Caso 2 del plan: la confirmación nombra el operativo, no pregunta en abstracto. */}
       <ModalConfirmacion
         abierto={porRetirar !== null}
-        titulo="¿Retirar este operativo?"
+        titulo="¿Eliminar este operativo?"
         mensaje={porRetirar ? descripcionDelRetiro(porRetirar) : ""}
-        textoSi="Sí, retirar"
+        textoSi="Sí, eliminar"
         textoNo="Cancelar"
         procesando={procesando}
         onConfirmar={() => void confirmarRetiro()}

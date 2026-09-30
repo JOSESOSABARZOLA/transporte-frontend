@@ -27,12 +27,12 @@ import SelectorTokens from "./SelectorTokens.tsx";
 import type { Institucion } from "../../interfaces/Formulario.ts";
 
 const INSTITUCIONES: Institucion[] = [
-  { id: 1, sigla: "AMC", nombre: "Agencia Metropolitana de Control" },
-  { id: 2, sigla: "CACMQ", nombre: "Cuerpo de Agentes de Control Metropolitano" },
-  { id: 3, sigla: "EPMMOP", nombre: "Empresa Pública Metropolitana de Movilidad" },
-  { id: 4, sigla: "AMT", nombre: "Agencia Metropolitana de Tránsito" },
-  { id: 5, sigla: "CBQ", nombre: "Cuerpo de Bomberos de Quito" },
-  { id: 6, sigla: "SIS", nombre: "Servicio Integrado de Seguridad ECU 911" },
+  { id: 1, formularioId: 1, sigla: "AMC", nombre: "Agencia Metropolitana de Control" },
+  { id: 2, formularioId: 1, sigla: "CACMQ", nombre: "Cuerpo de Agentes de Control Metropolitano" },
+  { id: 3, formularioId: 1, sigla: "EPMMOP", nombre: "Empresa Pública Metropolitana de Movilidad" },
+  { id: 4, formularioId: 1, sigla: "AMT", nombre: "Agencia Metropolitana de Tránsito" },
+  { id: 5, formularioId: 1, sigla: "CBQ", nombre: "Cuerpo de Bomberos de Quito" },
+  { id: 6, formularioId: 1, sigla: "SIS", nombre: "Servicio Integrado de Seguridad ECU 911" },
 ];
 
 /** Envoltura con estado: reproduce el ciclo que hace Formik en el formulario real. */

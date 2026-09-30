@@ -39,13 +39,18 @@ import ModalConductor, {
 } from "../components/flota/ModalConductor.tsx";
 import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
 import ModalExito from "../components/common/ModalExito.tsx";
+import PanelUbicaciones from "../components/flota/PanelUbicaciones.tsx";
 import ModalVehiculo, {
   type ValoresVehiculo,
 } from "../components/flota/ModalVehiculo.tsx";
 import TablaConductores from "../components/flota/TablaConductores.tsx";
 import TablaVehiculos from "../components/flota/TablaVehiculos.tsx";
 import type { FiltrosFlota } from "../interfaces/Flota.ts";
-import type { Conductor, Vehiculo } from "../interfaces/Transporte.ts";
+import type {
+  Conductor,
+  UbicacionFlota,
+  Vehiculo,
+} from "../interfaces/Transporte.ts";
 import { FlotaService } from "../services/flota.service.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
 import {
@@ -94,6 +99,9 @@ const AdminFlotaPage = () => {
   );
   const [exito, setExito] = useState<string | null>(null);
 
+  /** RN-DAF-03. Zonales donde puede quedar un vehiculo. Nace vacio: es Q-01. */
+  const [ubicaciones, setUbicaciones] = useState<UbicacionFlota[]>([]);
+
   /**
    * Los dos maestros a la vez, **siempre con inactivos**.
    *
@@ -106,18 +114,21 @@ const AdminFlotaPage = () => {
     setCargando(true);
 
     try {
-      const [flota, personas] = await Promise.all([
+      const [flota, personas, zonales] = await Promise.all([
         FlotaService.listarVehiculos(true),
         FlotaService.listarConductores(true),
+        FlotaService.listarUbicaciones(),
       ]);
 
       setVehiculos(flota);
       setConductores(personas);
+      setUbicaciones(zonales);
       setAviso(null);
     } catch (fallo: unknown) {
       const error = presentarError(fallo);
       setVehiculos([]);
       setConductores([]);
+      setUbicaciones([]);
       setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
     } finally {
       setCargando(false);
@@ -136,6 +147,45 @@ const AdminFlotaPage = () => {
   const conductoresVisibles = useMemo(
     () => filtrarConductores(conductores, filtrosConductores),
     [conductores, filtrosConductores],
+  );
+
+  // ────────── Zonales de reposo · RN-DAF-03 ──────────
+
+  const crearUbicacion = useCallback(
+    async (nombre: string) => {
+      setGuardando(true);
+
+      try {
+        const creada = await FlotaService.crearUbicacion({ nombre });
+        setExito(
+          creada.nombre +
+            " quedo registrada como zonal de reposo. La DAF ya puede declarar que un vehiculo queda alli.",
+        );
+        await cargar();
+      } catch (fallo: unknown) {
+        setAviso({ texto: presentarError(fallo).mensaje, clase: "alert-error" });
+      } finally {
+        setGuardando(false);
+      }
+    },
+    [cargar],
+  );
+
+  /** Baja LOGICA: una zonal ya usada en un destino no se puede borrar. */
+  const desactivarUbicacion = useCallback(
+    async (id: number) => {
+      setGuardando(true);
+
+      try {
+        await FlotaService.actualizarUbicacion(id, { activo: false });
+        await cargar();
+      } catch (fallo: unknown) {
+        setAviso({ texto: presentarError(fallo).mensaje, clase: "alert-error" });
+      } finally {
+        setGuardando(false);
+      }
+    },
+    [cargar],
   );
 
   // ─────────────────────────── Vehículos ───────────────────────────
@@ -195,6 +245,12 @@ const AdminFlotaPage = () => {
         const vehiculoHabitualId = valores.vehiculoHabitualId
           ? Number(valores.vehiculoHabitualId)
           : undefined;
+        // Los tres del 2026-08-31. El desplegable entrega texto; vacio significa «no
+        // consta» y viaja como ausente, NO como cadena vacia: el servidor distingue un
+        // dato sin registrar de un valor, y de esa distincion depende que la regla del
+        // contrato se aplique o no.
+        const sector = valores.sector || undefined;
+        const tipoContrato = valores.tipoContrato || undefined;
 
         if (edicionConductor.modo === "alta") {
           const creado = await FlotaService.crearConductor({
@@ -203,6 +259,9 @@ const AdminFlotaPage = () => {
             telefono,
             licenciaTipo,
             vehiculoHabitualId,
+            sector,
+            parqueaderoAutorizado: valores.parqueaderoAutorizado,
+            tipoContrato,
           });
           setExito(
             `${creado.nombreCompleto} quedó registrado como conductor.` +
@@ -218,6 +277,9 @@ const AdminFlotaPage = () => {
               telefono,
               licenciaTipo,
               vehiculoHabitualId,
+              sector,
+              parqueaderoAutorizado: valores.parqueaderoAutorizado,
+              tipoContrato,
             },
           );
           setExito(`Los datos de ${actualizado.nombreCompleto} quedaron guardados.`);
@@ -290,10 +352,10 @@ const AdminFlotaPage = () => {
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+        <p className="page-heading-kicker font-semibold uppercase">
           Administración
         </p>
-        <h1 className="page-heading-title text-2xl font-semibold">
+        <h1 className="page-heading-title">
           Conductores y vehículos
         </h1>
         <p className="page-heading-subtitle text-sm">
@@ -328,9 +390,9 @@ const AdminFlotaPage = () => {
       )}
 
       {/* ─────────────── Vehículos, primero: sin ellos no hay habitual que asignar ─────────────── */}
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Vehículos
           </h2>
           <div className="flex flex-wrap items-center gap-2">
@@ -384,9 +446,9 @@ const AdminFlotaPage = () => {
       </div>
 
       {/* ─────────────────────────── Conductores ─────────────────────────── */}
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Conductores
           </h2>
           <div className="flex flex-wrap items-center gap-2">
@@ -490,6 +552,25 @@ const AdminFlotaPage = () => {
         procesando={guardando}
         onConfirmar={() => void confirmarBaja()}
         onCancelar={() => setPorDarDeBaja(null)}
+      />
+
+      {/*
+        ═══════════════════════════════════════════════════════════════════════════
+        RN-DAF-03. EL CATÁLOGO DE ZONALES DE REPOSO, y sin él P-03 no puede declarar
+        dónde queda cada vehículo: el panel de destinos lo dice y remite justamente aquí.
+
+        NACE VACÍO A PROPÓSITO. La hoja de agosto usa cinco zonales —MATRIZ, ELOY ALFARO,
+        CALDERÓN, QUITUMBE, LOS CHILLOS— y la transcripción menciona cuatro. Es la pregunta
+        Q-01, sin responder. Sembrar las cinco «porque están en el Excel» habría convertido
+        una suposición en dato maestro, y nadie habría vuelto a preguntarse de dónde salió.
+        ═══════════════════════════════════════════════════════════════════════════
+      */}
+      <PanelUbicaciones
+        ubicaciones={ubicaciones}
+        cargando={cargando}
+        procesando={guardando}
+        onCrear={(nombre) => void crearUbicacion(nombre)}
+        onDesactivar={(id) => void desactivarUbicacion(id)}
       />
 
       {exito && (

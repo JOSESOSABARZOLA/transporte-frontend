@@ -25,9 +25,15 @@
 import type { FC } from "react";
 
 import type { UsuarioCuadro } from "../../interfaces/UsuarioCuadro.ts";
-import { NOMBRE_ROL } from "../../utils/parametro.util.ts";
+import type { RolDepartamental } from "../../config/env.ts";
 
 type TablaUsuariosProps = {
+  /**
+   * Nombre legible de un rol. **Llega como propiedad y no se consulta aquí**: esta tabla
+   * es presentacional, y quien habla con el servidor es la página. Sale del catálogo de
+   * , no de un mapa escrito en el navegador.
+   */
+  nombreDe: (rol: RolDepartamental) => string;
   usuarios: UsuarioCuadro[];
   cargando: boolean;
   procesando: boolean;
@@ -41,9 +47,10 @@ const TablaUsuarios: FC<TablaUsuariosProps> = ({
   procesando,
   onEditar,
   onDesactivar,
+  nombreDe,
 }) => (
   <div className="overflow-x-auto">
-    <table className="table table-sm">
+    <table className="table table-sm table-zebra">
       <thead>
         <tr className="text-xs uppercase tracking-wider text-base-content/70">
           <th scope="col">Nombre</th>
@@ -71,7 +78,7 @@ const TablaUsuarios: FC<TablaUsuariosProps> = ({
           usuarios.map((usuario) => (
             <tr
               key={usuario.id}
-              className={usuario.activo ? "hover:bg-info/10" : "opacity-60"}
+              className={usuario.activo ? "hover:bg-primary/5" : "opacity-60"}
             >
               <td className="px-3 py-2 align-top font-medium">
                 {usuario.nombre}
@@ -86,9 +93,15 @@ const TablaUsuarios: FC<TablaUsuariosProps> = ({
                   {usuario.roles.map((rol) => (
                     <span
                       key={rol}
-                      className="badge badge-outline badge-sm"
+                      /*
+                        `.badge` es de alto fijo: un nombre de rol largo —«DMIP · Unidad de
+                        Operativos»— envolvía y rebosaba la píldora, encimándose con la de al
+                        lado. `h-auto max-w-full py-1` deja que la píldora crezca en alto y
+                        contenga su texto en varias líneas dentro del ancho de la columna.
+                      */
+                      className="badge badge-outline badge-sm h-auto max-w-full py-1"
                     >
-                      {NOMBRE_ROL[rol]}
+                      {nombreDe(rol)}
                     </span>
                   ))}
                 </div>

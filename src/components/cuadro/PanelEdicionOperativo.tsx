@@ -35,25 +35,33 @@ import {
   type ValoresOperativo,
 } from "../../utils/valoresOperativo.util.ts";
 import { colorDeTextoSobre } from "../../utils/banner.util.ts";
+import { NOMBRE_AREA } from "../../utils/personal.util.ts";
 import type { CatalogosFormulario } from "../../interfaces/Formulario.ts";
-import type { Operativo } from "../../interfaces/Operativo.ts";
+import type { Operativo, PersonaAsignada } from "../../interfaces/Operativo.ts";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
 import type { PersonaAgregada } from "./SelectorPersonal.tsx";
+import RosterPatrulla, { type MiembroPatrulla } from "./RosterPatrulla.tsx";
 
 type PanelEdicionOperativoProps = {
   operativo: Operativo;
   catalogos: CatalogosFormulario | null;
   puntos: CatalogosFormulario["puntos"];
   cargandoPuntos: boolean;
-  onZonalElegida: (zonalId: number | null) => void;
-  /** Ver `FormularioOperativo`: la lista de personal se pide con el horario. */
-  onHorarioElegido: (horaInicio: string, horaFin: string) => void;
+  onZonalesElegidas: (zonalesIds: number[]) => void;
 
   candidatos: PersonaElegible[];
   cargandoPersonal: boolean;
   onAgregarPersona: (persona: PersonaElegible) => void;
   onRetirarPersona: (funcionarioId: number) => void;
+  /**
+   * Si quien edita puede RETIRAR a una persona ya asignada. En el aporte (Form 4 ECU) el
+   * departamento que aporta solo maneja el personal que él asignó —el de Instrucción—; el del
+   * dueño del formulario llega en lectura. Por defecto, todo el personal es editable. 2026-09-18.
+   */
+  puedeEditarPersona?: (persona: PersonaAsignada) => boolean;
   avisoPersonal: string | null;
+  /** Que la asignación se guardó. Ver `SelectorPersonal.confirmacion`. */
+  confirmacionPersonal?: string | null;
 
   bloqueado: boolean;
   /**
@@ -61,6 +69,21 @@ type PanelEdicionOperativoProps = {
    * menos el personal. Ver la nota de `FormularioOperativo`.
    */
   soloPersonal?: boolean;
+  /**
+   * Bloquea SOLO el bloque de personal, dejando editables los generales. En la PATRULLA (Form
+   * 5/6) el personal se gestiona con las acciones fusionadas, no dentro del editor. 2026-09-18.
+   */
+  personalBloqueado?: boolean;
+  /**
+   * ROSTER DE LA PATRULLA (2026-09-18). Al editar una patrulla (Form 5/6) como registrante, en
+   * lugar del bloque de personal se pinta el roster: cada código de área (IGNECU/ITNECU/INECU) con
+   * su «Cambiar» (misma área, conserva el código) y «Agregar persona». Vacío = no es patrulla o no
+   * corresponde editarla, y se pinta el personal normal.
+   */
+  miembrosPatrulla?: MiembroPatrulla[];
+  onCambiarPersonaPatrulla?: (operativoId: number, funcionarioId: number) => void;
+  onQuitarMiembroPatrulla?: (operativo: Operativo) => void;
+  onAgregarMiembroPatrulla?: (funcionarioId: number) => void;
   guardando: boolean;
   onGuardar: (
     valores: ValoresOperativo,
@@ -74,19 +97,37 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   catalogos,
   puntos,
   cargandoPuntos,
-  onZonalElegida,
-  onHorarioElegido,
+  onZonalesElegidas,
   candidatos,
   cargandoPersonal,
   onAgregarPersona,
   onRetirarPersona,
+  puedeEditarPersona = () => true,
   avisoPersonal,
+  confirmacionPersonal = null,
   bloqueado,
   soloPersonal = false,
+  personalBloqueado = false,
+  miembrosPatrulla,
+  onCambiarPersonaPatrulla,
+  onQuitarMiembroPatrulla,
+  onAgregarMiembroPatrulla,
   guardando,
   onGuardar,
   onCancelar,
 }) => {
+  /**
+   * ROSTER DE LA PATRULLA: se pinta cuando la página lo entrega y hay miembros. Sustituye al
+   * bloque de personal del formulario, que se OCULTA (aquí solo se editan los generales).
+   */
+  const conRoster = Boolean(
+    miembrosPatrulla &&
+      miembrosPatrulla.length > 0 &&
+      onCambiarPersonaPatrulla &&
+      onQuitarMiembroPatrulla &&
+      onAgregarMiembroPatrulla,
+  );
+
   /**
    * El personal ya asignado se toma **del operativo**, no de un estado propio: así lo que
    * muestra el panel es siempre lo que el servidor acaba de confirmar.
@@ -96,13 +137,15 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
       funcionarioId: persona.funcionarioId,
       nombre: persona.nombre,
       telefono: persona.telefono,
+      // Quien aporta al formulario ajeno solo retira SU personal; el resto va en lectura.
+      editable: puedeEditarPersona(persona),
     }),
   );
 
   return (
-    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
       <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
           {soloPersonal ? "Personal de" : "Editando"} {operativo.identificador}
         </h2>
         {/*
@@ -118,13 +161,21 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           pasa de 1,00 a 14,88:1.
         */}
         <span
-          className="badge badge-sm"
+          className="badge badge-sm min-w-0 max-w-full"
+          title={`${operativo.formulario.numero}. ${operativo.formulario.nombre}`}
           style={{
             backgroundColor: operativo.formulario.colorFondo,
             color: colorDeTextoSobre(operativo.formulario.colorFondo),
           }}
         >
-          {operativo.formulario.numero}. {operativo.formulario.nombre}
+          {/*
+            `min-w-0` + `truncate`: el nombre del formulario se recorta si compite con el
+            identificador en la cabecera estrecha, en vez de estirar el distintivo. El
+            número —equivalente textual del banner, regla 6/14— va primero y siempre se ve.
+          */}
+          <span className="min-w-0 truncate">
+            {operativo.formulario.numero}. {operativo.formulario.nombre}
+          </span>
         </span>
       </div>
 
@@ -162,7 +213,9 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
                   ? "el área"
                   : "las áreas"}{" "}
                 <strong>
-                  {operativo.composicion.areasPendientes.join(", ")}
+                  {operativo.composicion.areasPendientes
+                    .map((area) => NOMBRE_AREA[area])
+                    .join(", ")}
                 </strong>
                 . La patrulla se compone con una persona de cada área que admite el
                 formulario.
@@ -170,24 +223,45 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
             </div>
           )}
 
+        {/*
+          ROSTER DE LA PATRULLA: cambiar/agregar/quitar cada código de área. Reemplaza al bloque de
+          personal del formulario (que abajo va OCULTO); los generales se siguen editando abajo.
+        */}
+        {conRoster && (
+          <RosterPatrulla
+            miembros={miembrosPatrulla ?? []}
+            candidatos={candidatos}
+            onCambiar={onCambiarPersonaPatrulla!}
+            onQuitar={onQuitarMiembroPatrulla!}
+            onAgregar={onAgregarMiembroPatrulla!}
+            aviso={avisoPersonal}
+            bloqueado={bloqueado}
+          />
+        )}
+
         <FormularioOperativo
           formularioCodigo={operativo.formulario.codigo}
           catalogos={catalogos}
           puntos={puntos}
           cargandoPuntos={cargandoPuntos}
-          onZonalElegida={onZonalElegida}
-          onHorarioElegido={onHorarioElegido}
+          onZonalesElegidas={onZonalesElegidas}
           candidatos={candidatos}
           cargandoPersonal={cargandoPersonal}
           personalAgregado={personalAgregado}
           onAgregarPersona={onAgregarPersona}
           onRetirarPersona={onRetirarPersona}
           avisoPersonal={avisoPersonal}
+          confirmacionPersonal={confirmacionPersonal}
+          // Las notas ya escritas (bitácora): se muestran en solo lectura; aquí solo se agregan.
+          observacionesExistentes={operativo.observaciones}
           valoresIniciales={comoValoresDeFormulario(operativo)}
           textoAccion="Guardar cambios"
           onCancelar={onCancelar}
           bloqueado={bloqueado}
           soloPersonal={soloPersonal}
+          personalBloqueado={personalBloqueado}
+          // Con roster, el personal se gestiona arriba: aquí se oculta y solo quedan los generales.
+          personalOculto={conRoster}
           guardando={guardando}
           onGuardar={onGuardar}
         />

@@ -180,10 +180,6 @@
   color: var(--app-alert-panel-copy-color) !important;
 }
 
-[data-theme="dark"] .app-alert-panel-unread-dot {
-  background: #72b9e7 !important;
-}
-
 [data-theme="dark"] .app-profile-panel {
   background: var(--app-profile-panel-surface) !important;
   background-image: none !important;

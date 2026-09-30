@@ -13,11 +13,22 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import Boton from "./Boton";
+import Boton from "./Boton.tsx";
+import type { NombreIcono } from "./Iconos.tsx";
 import UserProfileButton from "./UserProfileButton";
 
 type MenuDesplegableProps<T> = {
-  botonProps?: { estilos: string; icono: string; deshabilitado: boolean };
+  /**
+   * `label` (opcional) da NOMBRE ACCESIBLE al disparador icónico: `Boton` lo pone como `title`, que
+   * es el nombre del control para el lector de pantalla cuando el icono va `aria-hidden`. Sin él, un
+   * «⋯» sin texto no tiene nombre. Se pasa por el spread a `Boton`.
+   */
+  botonProps?: {
+    estilos: string;
+    icono: NombreIcono;
+    deshabilitado: boolean;
+    label?: string;
+  };
   menuClassName?: string;
   items: T[];
   renderItem: (items: T[]) => ReactNode;

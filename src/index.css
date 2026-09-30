@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./styles/foundation/tipografia.css";
 @import "./styles/foundation/design-tokens.css";
 @import "./styles/layout/app-shell-layout.css";
 @import "./styles/layout/app-shell-panels.css";
@@ -7,6 +6,7 @@
 @import "./styles/ui/page-header.css";
 @import "./styles/ui/tables.css";
 @import "./styles/ui/confirm-dialog.css";
+@import "./styles/ui/componentes-propios.css";
 @import "./styles/administration/administration-feedback.css";
 @import "./styles/administration/administration-table.css";
 @import "./styles/administration/administration-modal-shared.css";
@@ -71,5 +71,3 @@
   --color-error: #ea3446;
   --color-error-content: #ffffff;
 }
-
-@import "./styles/ui/avisos-y-distintivos.css";

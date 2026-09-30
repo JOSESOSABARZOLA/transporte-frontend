@@ -59,6 +59,7 @@ import type { Operativo } from "../../interfaces/Operativo.ts";
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
     id: 1,
     identificador: "IG-002-31-JUL-2026",
+    grupoRegistro: null,
     secuencial: 2,
     cuadroFecha: "2026-07-31",
     // Los tres del operativo adicional. Faltaban, y el `as Operativo` que llevaba esta
@@ -103,7 +104,7 @@ const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
     estadoTransporte: "PENDIENTE",
     alertaActiva: true,
     alertas: [],
-    observaciones: null,
+    observaciones: [],
     creadoPorRol: "DMIP_INSPECCIONES",
     creadoPor: 1,
     modificadoPorRol: "DMIP_INSPECCIONES",
@@ -356,7 +357,7 @@ describe("caso 3 · con la ventana cerrada no se puede editar ni retirar", () =>
               disabled
               title="La ventana de carga está cerrada o el cuadro fue cerrado."
             >
-              Retirar
+              Eliminar
             </button>
           </>
         )}
@@ -370,7 +371,7 @@ describe("caso 3 · con la ventana cerrada no se puede editar ni retirar", () =>
       "title",
       expect.stringContaining("ventana de carga"),
     );
-    expect(screen.getByRole("button", { name: "Retirar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Eliminar" })).toBeDisabled();
   });
 
   it("las acciones van en su propia columna, una por fila", () => {

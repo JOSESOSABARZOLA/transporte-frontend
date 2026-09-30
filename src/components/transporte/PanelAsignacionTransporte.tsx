@@ -34,13 +34,15 @@ import { useState, type FC } from "react";
 import type {
   ConductorDisponible,
   OperativoPendiente,
+  VehiculoDeLaFlota,
 } from "../../interfaces/Transporte.ts";
-import type { VehiculoOfrecido } from "../../utils/flota.util.ts";
+import { NIVEL_FATIGA } from "../../utils/personal.util.ts";
 
 type PanelAsignacionTransporteProps = {
   operativo: OperativoPendiente;
   conductores: ConductorDisponible[];
-  vehiculos: VehiculoOfrecido[];
+  /** PV-33. La flota entera: las no utilizables llegan marcadas, no filtradas. */
+  vehiculos: VehiculoDeLaFlota[];
   cargandoConductores: boolean;
   /** RN-56 y RN-58: fuera de la ventana, la bandeja se consulta pero no se escribe. */
   soloLectura: boolean;
@@ -49,6 +51,8 @@ type PanelAsignacionTransporteProps = {
   aviso: string | null;
   onAsignar: (conductorId: number, vehiculoId: number) => void;
   onPropiosMedios: () => void;
+  /** P-07. Devuelve el operativo a pendiente. Solo si ya estaba resuelto. */
+  onDesasignar: () => void;
   onCancelar: () => void;
 };
 
@@ -62,6 +66,7 @@ const PanelAsignacionTransporte: FC<PanelAsignacionTransporteProps> = ({
   aviso,
   onAsignar,
   onPropiosMedios,
+  onDesasignar,
   onCancelar,
 }) => {
   /**
@@ -91,17 +96,28 @@ const PanelAsignacionTransporte: FC<PanelAsignacionTransporteProps> = ({
     }
 
     const elegido = conductores.find((conductor) => conductor.id === id);
-    setVehiculoId(elegido?.vehiculoHabitual?.id ?? "");
+    const habitual = elegido?.vehiculoHabitual?.id;
+
+    // La propuesta solo se acepta si esa placa se puede usar hoy: proponer un vehículo
+    // que está en el taller obligaría a la DAF a descubrirlo al guardar, con un 409.
+    const proponible = vehiculos.find(
+      (vehiculo) => vehiculo.id === habitual && vehiculo.utilizable,
+    );
+    setVehiculoId(proponible ? proponible.id : "");
   };
 
   const puedeGuardar =
     !soloLectura && !guardando && conductorId !== "" && vehiculoId !== "";
 
+  /** P-07. Solo hay algo que deshacer si la DAF ya decidió sobre este operativo. */
+  const yaResuelto = operativo.estadoTransporte !== "PENDIENTE";
+
   return (
-    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
       <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
-          Asignar transporte a {operativo.identificador}
+        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
+          {yaResuelto ? "Corregir" : "Asignar"} transporte a{" "}
+          {operativo.identificador}
         </h2>
         <button
           type="button"
@@ -186,6 +202,14 @@ const PanelAsignacionTransporte: FC<PanelAsignacionTransporteProps> = ({
                 >
                   {conductor.nombreCompleto}
                   {conductor.licenciaTipo ? ` · ${conductor.licenciaTipo}` : ""}
+                  {/*
+                    Semáforo de carga (FRMS, advisory) EN EL TEXTO de la opción —un `<option>`
+                    no admite más—: es la señal (regla 6), no bloquea, la DAF decide. Un
+                    conductor con «Carga alta» sigue en la lista.
+                  */}
+                  {conductor.nivelCarga
+                    ? ` · ${NIVEL_FATIGA[conductor.nivelCarga]}`
+                    : ""}
                 </option>
               ))}
             </select>
@@ -213,25 +237,49 @@ const PanelAsignacionTransporte: FC<PanelAsignacionTransporteProps> = ({
               }
             >
               <option value="">Seleccione vehículo…</option>
+              {/*
+                PV-33. Las no utilizables se muestran DESHABILITADAS y con el motivo
+                dentro del propio texto de la opción, no con un color: un `option` no
+                admite distintivo, y la regla 6 exige equivalente textual. Ocultarlas
+                haría desaparecer la placa que la DAF está buscando.
+              */}
               {vehiculos.map((vehiculo) => (
                 <option
                   key={vehiculo.id}
                   value={vehiculo.id}
+                  disabled={!vehiculo.utilizable}
                 >
                   {vehiculo.placa}
+                  {vehiculo.descripcion ? ` · ${vehiculo.descripcion}` : ""}
+                  {vehiculo.motivo ? ` — ${vehiculo.motivo}` : ""}
                 </option>
               ))}
             </select>
-            {vehiculos.length === 0 && !cargandoConductores && (
+            {vehiculos.length === 0 && (
               <span className="mt-1 text-xs text-base-content/70">
-                Ningún conductor disponible tiene vehículo habitual registrado.
-                El administrador debe asignarlos desde la administración de flota.
+                No hay vehículos registrados en la flota. El administrador debe
+                darlos de alta desde la administración de flota.
               </span>
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap justify-end gap-2">
+          {/*
+            P-07. Solo aparece si hay algo que deshacer. Va el primero y en `btn-ghost`
+            porque es la acción de retroceso, no la que se espera que se pulse: el orden
+            de lectura termina en «Guardar asignación», que es la principal.
+          */}
+          {yaResuelto && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onDesasignar}
+              disabled={soloLectura || guardando}
+            >
+              Devolver a pendiente
+            </button>
+          )}
           {/* RN-41. No asigna vehículo: declara que el operativo se cubre sin él. */}
           <button
             type="button"
@@ -249,7 +297,17 @@ const PanelAsignacionTransporte: FC<PanelAsignacionTransporteProps> = ({
             }
             disabled={!puedeGuardar}
           >
-            {guardando ? "Guardando…" : "Guardar asignación"}
+            {guardando ? (
+              <>
+                <span
+                  className="loading loading-spinner loading-sm"
+                  aria-hidden="true"
+                />
+                Guardando…
+              </>
+            ) : (
+              "Guardar asignación"
+            )}
           </button>
         </div>
       </div>

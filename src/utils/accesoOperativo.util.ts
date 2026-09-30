@@ -69,6 +69,23 @@ export const accesoAlOperativo = (
 };
 
 /**
+ * Si alguno de los roles del usuario APORTA a este formulario (cupo compartido): quien pone
+ * personal sin ser dueño de la fila. En la patrulla del Form 6 es el DMIT de Instrucción.
+ *
+ * El botón «Agregar Personal» de la patrulla es SUYO —es el aporte de Instrucción, no el alta
+ * de los generales—, así que SOLO a él se le ofrece; el dueño registra a los suyos al crear la
+ * patrulla. Es el espejo de `reglaCupoCompartido` del servidor, que solo deja aportar a los
+ * roles con `acceso === 'APORTA'`. 2026-09-18.
+ */
+export const puedeAportarA = (
+  operativo: ParticipacionEnOperativo,
+  roles: RolDepartamental[],
+): boolean =>
+  operativo.formulario.roles.some(
+    (fila) => fila.acceso === "APORTA" && roles.some((rol) => rol === fila.rol),
+  );
+
+/**
  * Por qué no se puede editar ni retirar, dicho con palabras.
  *
  * REGLA 6. Un botón apagado no dice nada por sí solo: quien lo ve no sabe si es su

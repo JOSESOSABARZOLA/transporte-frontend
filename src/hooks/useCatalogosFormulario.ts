@@ -37,15 +37,29 @@ export interface UsoCatalogos {
   errorPuntos: ErrorPresentado | null;
   /** RN-17. Se llama al cambiar la zonal en el formulario. */
   cargarPuntosDeZonal: (zonalId: number) => Promise<void>;
+  /**
+   * VARIAS zonales (RN-19), desde el 2026-09-21. Pide los puntos de TODAS las zonales elegidas y
+   * los UNE (sin duplicados). Con arreglo vacío, deja la lista vacía.
+   */
+  cargarPuntosDeZonales: (zonalesIds: number[]) => Promise<void>;
   limpiarPuntos: () => void;
 }
 
 export const useCatalogosFormulario = (
   formularioCodigo: string | null,
+  /**
+   * PV-36. En P-08 se pide el camino de administración, que trae los desactivados con su
+   * bandera `activo` para poder reactivarlos. El registro de operativos lo deja en falso
+   * y recibe solo lo vigente, que es lo único que puede ofrecer.
+   */
+  incluirInactivos = false,
 ): UsoCatalogos => {
   const consulta = useCallback(
-    () => CatalogoCuadroService.obtenerCatalogos(formularioCodigo ?? ""),
-    [formularioCodigo],
+    () =>
+      incluirInactivos
+        ? CatalogoCuadroService.obtenerCatalogosAdmin(formularioCodigo ?? "")
+        : CatalogoCuadroService.obtenerCatalogos(formularioCodigo ?? ""),
+    [formularioCodigo, incluirInactivos],
   );
 
   const { datos, cargando, error, recargar } = useConsulta<CatalogosFormulario>(
@@ -80,6 +94,41 @@ export const useCatalogosFormulario = (
     [formularioCodigo],
   );
 
+  const cargarPuntosDeZonales = useCallback(
+    async (zonalesIds: number[]) => {
+      if (!formularioCodigo) return;
+
+      if (zonalesIds.length === 0) {
+        setPuntos([]);
+        setErrorPuntos(null);
+        return;
+      }
+
+      setCargandoPuntos(true);
+      setErrorPuntos(null);
+
+      try {
+        const listas = await Promise.all(
+          zonalesIds.map((id) =>
+            CatalogoCuadroService.obtenerPuntos(formularioCodigo, id),
+          ),
+        );
+        // UNIÓN sin duplicados. Un punto pertenece a una sola zonal, pero el `Map` lo garantiza.
+        const porId = new Map<number, PuntoEncuentro>();
+        for (const lista of listas) {
+          for (const punto of lista) porId.set(punto.id, punto);
+        }
+        setPuntos([...porId.values()]);
+      } catch (fallo: unknown) {
+        setErrorPuntos(presentarError(fallo));
+        setPuntos([]);
+      } finally {
+        setCargandoPuntos(false);
+      }
+    },
+    [formularioCodigo],
+  );
+
   const limpiarPuntos = useCallback(() => {
     setPuntos([]);
     setErrorPuntos(null);
@@ -94,6 +143,7 @@ export const useCatalogosFormulario = (
     cargandoPuntos,
     errorPuntos,
     cargarPuntosDeZonal,
+    cargarPuntosDeZonales,
     limpiarPuntos,
   };
 };

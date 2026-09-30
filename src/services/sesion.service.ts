@@ -40,6 +40,12 @@ export interface PerfilSesion {
    * negocio decidió que valen todos a la vez: se ve la UNIÓN de lo que cada uno permite.
    */
   rolCodes: RolDepartamental[];
+  /**
+   * RBAC: permisos atómicos efectivos del perfil (`modulo:accion`), unión de los de sus
+   * roles. Con ellos el frontend gatea rutas, menú y controles, en vez de comparar roles
+   * fijos. Los calcula el servidor desde la matriz `t_rol_permiso`.
+   */
+  permisos: string[];
 }
 
 interface RespuestaSesion {

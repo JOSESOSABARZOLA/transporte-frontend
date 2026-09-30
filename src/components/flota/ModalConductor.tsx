@@ -33,7 +33,8 @@ import type { FC } from "react";
 
 import MarcoModal from "../common/MarcoModal.tsx";
 
-import { SelectInput, TextInput } from "../forms/FormikField.tsx";
+import { PhoneInput, SelectInput, TextInput } from "../forms/FormikField.tsx";
+import EnfocarPrimerError from "../forms/EnfocarPrimerError.tsx";
 import { esquemaConductor } from "../../config/validationSchemas.ts";
 import type { Conductor, Vehiculo } from "../../interfaces/Transporte.ts";
 
@@ -47,6 +48,16 @@ export type ValoresConductor = {
   telefono: string;
   licenciaTipo: string;
   vehiculoHabitualId: string;
+  /**
+   * Los tres del 2026-08-31. La cadena vacía significa «no consta».
+   *
+   * Se tipan con la unión y no con `string` para que `valores.sector || undefined`
+   * estreche solo, sin un `as`: el compilador es quien garantiza que al servidor no le
+   * llegue un valor que su enumerado no admite.
+   */
+  sector: "" | "NORTE" | "SUR" | "CENTRO" | "VALLE";
+  parqueaderoAutorizado: boolean;
+  tipoContrato: "" | "NOMBRAMIENTO" | "CONTRATO";
 };
 
 type ModalConductorProps = {
@@ -87,6 +98,9 @@ const ModalConductor: FC<ModalConductorProps> = ({
     vehiculoHabitualId: conductor?.vehiculoHabitual
       ? String(conductor.vehiculoHabitual.id)
       : "",
+    sector: conductor?.sector ?? "",
+    parqueaderoAutorizado: conductor?.parqueaderoAutorizado ?? false,
+    tipoContrato: conductor?.tipoContrato ?? "",
   };
 
   return (
@@ -96,7 +110,7 @@ const ModalConductor: FC<ModalConductorProps> = ({
       ancho="2xl"
       onCerrar={guardando ? undefined : onCancelar}
     >
-        <h3 className="mb-1 text-lg font-bold">
+        <h3 className="mb-1 text-lg font-semibold">
           {esAlta ? "Nuevo conductor" : `Editar a ${conductor.nombreCompleto}`}
         </h3>
         <p className="mb-4 text-xs text-base-content/70">
@@ -135,6 +149,7 @@ const ModalConductor: FC<ModalConductorProps> = ({
           onSubmit={onGuardar}
         >
           <Form className="flex flex-col gap-3">
+            <EnfocarPrimerError />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {esAlta ? (
                 <Field
@@ -158,7 +173,7 @@ const ModalConductor: FC<ModalConductorProps> = ({
 
               <Field
                 name="telefono"
-                component={TextInput}
+                component={PhoneInput}
                 label="Teléfono"
                 placeholder="0999999999"
               />
@@ -205,7 +220,69 @@ const ModalConductor: FC<ModalConductorProps> = ({
                   )}
                 </span>
               </div>
+
+              {/*
+                ═══════════════════════════════════════════════════════════════
+                LOS TRES DEL 2026-08-31, del levantamiento con la DAF.
+
+                Son los datos que hoy deciden la asignación y viven en la memoria de una
+                sola persona. Es el riesgo de continuidad que el análisis señaló: quien
+                consolidaba el cuadro renunció durante el levantamiento, sin traspaso.
+
+                LOS TRES SON OPCIONALES. La flota se carga a mano y exigirlos de golpe
+                impediría dar de alta a un conductor del que solo se sabe cédula y nombre.
+                Cada regla comprueba primero si el dato consta.
+                ═══════════════════════════════════════════════════════════════
+              */}
+              <Field
+                name="sector"
+                component={SelectInput}
+                label="Sector donde vive"
+                options={[
+                  { value: "", label: "Sin registrar" },
+                  { value: "NORTE", label: "Norte" },
+                  { value: "SUR", label: "Sur" },
+                  { value: "CENTRO", label: "Centro" },
+                  { value: "VALLE", label: "Valle" },
+                ]}
+              />
+
+              <Field
+                name="tipoContrato"
+                component={SelectInput}
+                label="Tipo de contrato"
+                options={[
+                  { value: "", label: "Sin registrar" },
+                  { value: "NOMBRAMIENTO", label: "Nombramiento" },
+                  { value: "CONTRATO", label: "Contrato" },
+                ]}
+              />
+
+              <div className="flex flex-col sm:col-span-2">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <Field
+                    type="checkbox"
+                    name="parqueaderoAutorizado"
+                    className="checkbox checkbox-sm"
+                  />
+                  <span className="label-text font-medium">
+                    Tiene parqueadero autorizado
+                  </span>
+                </label>
+                <span className="text-xs text-base-content/70">
+                  Quien lo tiene puede llevarse el vehículo a casa al terminar la
+                  jornada, y al día siguiente le corresponde el mismo. Sin él, el
+                  vehículo debe quedar en una zonal.
+                </span>
+              </div>
             </div>
+
+            {/* Regla 6: el efecto de un dato ausente se escribe, no se deduce. */}
+            <p className="text-xs text-base-content/70">
+              Sin tipo de contrato registrado, la regla que impide conducir de
+              noche a quien es de nombramiento <strong>no se aplica</strong> a
+              este conductor.
+            </p>
 
             <div className="mt-2 flex justify-end gap-2">
               <button
@@ -221,7 +298,17 @@ const ModalConductor: FC<ModalConductorProps> = ({
                 className="btn btn-primary btn-sm"
                 disabled={guardando}
               >
-                {guardando ? "Guardando…" : "Guardar"}
+                {guardando ? (
+                  <>
+                    <span
+                      className="loading loading-spinner loading-sm"
+                      aria-hidden="true"
+                    />
+                    Guardando…
+                  </>
+                ) : (
+                  "Guardar"
+                )}
               </button>
             </div>
           </Form>

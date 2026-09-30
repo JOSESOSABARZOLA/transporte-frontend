@@ -42,16 +42,20 @@ const SelectorFormularioAdmin: FC<SelectorFormularioAdminProps> = ({
   onSeleccionar,
   deshabilitado = false,
 }) => (
-  <div className="form-control w-full sm:max-w-md">
+  // Columna EXPLÍCITA, no `form-control`. En daisyUI 5 esa clase dejó de forzar la
+  // dirección de columna, y la etiqueta, el desplegable y el texto de ayuda se pintaban
+  // en línea —«Formulario [desplegable] Los tres catálogos…», con «Los» encallado a la
+  // derecha del control—. `flex flex-col gap-1` lo apila sea cual sea la versión.
+  <div className="flex w-full flex-col gap-1 sm:max-w-md">
     <label
-      className="label"
+      className="label-text font-medium"
       htmlFor="formularioAdministrado"
     >
-      <span className="label-text font-medium">Formulario</span>
+      Formulario
     </label>
     <select
       id="formularioAdministrado"
-      className="select select-bordered select-sm"
+      className="select select-bordered select-sm w-full"
       value={seleccionado}
       disabled={deshabilitado || formularios.length === 0}
       onChange={(evento) => onSeleccionar(evento.target.value)}

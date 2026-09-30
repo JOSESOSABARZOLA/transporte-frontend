@@ -19,7 +19,7 @@ const Sidebar = ({ className = "", onNavigate }: SidebarProps) => {
   return (
     <aside
       aria-label="Menú principal"
-      className={`app-sidebar flex min-h-0 h-full w-full flex-col overflow-hidden rounded-md border ${className}`}
+      className={`app-sidebar flex min-h-0 h-full w-full flex-col overflow-hidden rounded-none border-r ${className}`}
     >
       <Header />
       <div className="app-shell-sidebar-scroll">

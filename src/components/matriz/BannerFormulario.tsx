@@ -37,7 +37,7 @@ const BannerFormulario: FC<BannerFormularioProps> = ({ seccion, columnas }) => (
   <tr>
     <td
       colSpan={columnas}
-      className="px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
+      className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em]"
       style={{
         backgroundColor: seccion.colorFondo,
         color: colorDeTextoSobre(seccion.colorFondo),

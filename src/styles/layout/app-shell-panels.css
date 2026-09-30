@@ -30,7 +30,7 @@
 
 .app-alert-panel-trash:disabled {
   opacity: 1;
-  cursor: default;
+  /* cursor: default; */
 }
 
 .app-alert-panel-list {

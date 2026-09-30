@@ -247,7 +247,7 @@ const Table = <T,>({
       </div>
 
       {/* div propiamente de la tabla de presentación de datos */}
-      <div className={`app-data-table-shell ${styles.containerStyle}`}>
+      <div className={`app-data-table-shell overflow-x-auto ${styles.containerStyle}`}>
         <table className={`app-data-table ${styles.tableStyle}`}>
           {/* Cabecera de la tabla */}
           <thead className="text-xs uppercase tracking-[0.16em] text-base-content">

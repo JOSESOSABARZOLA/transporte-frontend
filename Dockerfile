@@ -19,6 +19,33 @@ COPY . .
 ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
+# ============================================================================
+# EL PORTAL DE AUTH SE HORNEA AQUI, Y HASTA HOY NO SE PODIA ELEGIR.
+#
+# Las variables VITE_ se sustituyen literalmente en el paquete al construir: NO se leen
+# al arrancar el contenedor. Sin estos ARG, `src/config/env.ts` caia en su respaldo
+# codificado en el fuente y la imagen quedaba atada a ese servidor para siempre.
+#
+# Hoy ese respaldo acierta, porque produccion y Auth central viven en la misma maquina.
+# Acierta por coincidencia, no por diseno: el dia que Auth se mueva, la imagen apuntaria
+# a un sitio muerto y no habria ninguna variable que tocar. Se declara para que ese dia
+# sea un `--build-arg` y no un cambio de codigo fuente.
+#
+# VACIAS POR OMISION, a proposito: sin argumentos, `env.ts` resuelve su respaldo y la
+# construccion se comporta exactamente igual que antes de este cambio.
+#
+# NO SIRVE DE NADA PONERLAS EN EL .env DEL SERVIDOR. Si alguien las cambia alli, la
+# imagen ya construida no se entera. Hay que reconstruir.
+# ============================================================================
+ARG VITE_AUTH_PORTAL_URL=
+ENV VITE_AUTH_PORTAL_URL=$VITE_AUTH_PORTAL_URL
+
+ARG VITE_AUTH_LOGOUT_URL=
+ENV VITE_AUTH_LOGOUT_URL=$VITE_AUTH_LOGOUT_URL
+
+ARG VITE_AUTH_MODULE_CODE=
+ENV VITE_AUTH_MODULE_CODE=$VITE_AUTH_MODULE_CODE
+
 # Build React application with Vite
 RUN npm run build
 

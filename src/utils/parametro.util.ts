@@ -25,7 +25,6 @@
  */
 
 import type { ParametroPolitica } from "../interfaces/Administracion";
-import type { RolDepartamental } from "../config/env";
 import type { TipoVentana, VentanaCarga } from "../interfaces/Administracion";
 
 /** `HH:MM` de 00:00 a 23:59. El mismo patrón que `PATRON_HORA` en el servidor. */
@@ -186,13 +185,15 @@ export const horarioDeVentana = (ventana: VentanaCarga): string => {
   return "Sin horas declaradas";
 };
 
-/** Nombre del rol en las palabras del organigrama. */
-export const NOMBRE_ROL: Record<RolDepartamental, string> = {
-  DMIP_OPERATIVOS: "DMIP Operativos",
-  DMIP_INSPECCIONES: "DMIP Inspecciones",
-  DMIT_INSTRUCTOR: "DMIT Instrucción",
-  DAF: "DAF",
-  DIRECTOR: "Dirección",
-  ADMINISTRADOR: "Administración",
-  FUNCIONARIO: "Funcionario",
-};
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * AQUÍ VIVÍAN `NOMBRE_ROL` Y `ROLES_ASIGNABLES`, Y SE RETIRARON EL 2026-09-01.
+ *
+ * Eran un mapa de nombres escrito a mano y la lista que de él salía para el desplegable
+ * de «Cuentas del cuadro» y de «Roles de Auth central». Con ellos, **añadir un rol
+ * exigía tocar el navegador**, y había otras dos copias del mismo mapa en el servidor.
+ *
+ * Ahora salen de `GET /administracion/roles`, por `useCatalogoRoles`. Ningún rol queda
+ * escrito en el frontend.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */

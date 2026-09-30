@@ -23,6 +23,8 @@ export interface User {
   /** Rol del módulo, con el mismo nombre que usa el servidor. Ver rolUser en config/env.ts */
   /** Todos los roles de la persona. Las pantallas se montan con la unión. */
   rolCodes: RolDepartamental[];
+  /** RBAC: permisos atómicos efectivos (`modulo:accion`). Gatean rutas, menú y UI. */
+  permisos: string[];
   rolName: string;
   token: string;
   actividades: UserActions[];

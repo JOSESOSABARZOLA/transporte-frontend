@@ -37,12 +37,15 @@ import type { RolDepartamental } from "../config/env.ts";
 import type { RolAuth } from "../interfaces/RolAuth.ts";
 import { RolesAuthService } from "../services/rolesAuth.service.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
-import { NOMBRE_ROL } from "../utils/parametro.util.ts";
+import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
 
 /** Estado del modal: cerrado, alta, o edición de una fila concreta. */
 type Edicion = { modo: "alta" } | { modo: "edicion"; rolAuth: RolAuth } | null;
 
 const AdminRolesAuthPage = () => {
+  /** El catálogo de roles sale del servidor: aquí no hay ninguno escrito. */
+  const { nombreDe } = useCatalogoRoles();
+
   const [roles, setRoles] = useState<RolAuth[]>([]);
   const [sinCorrespondencia, setSinCorrespondencia] = useState<
     RolDepartamental[]
@@ -102,7 +105,7 @@ const AdminRolesAuthPage = () => {
             rol: datos.rol,
           });
           setExito(
-            `El rol ${datos.idAuth} de Auth quedó registrado como ${NOMBRE_ROL[datos.rol]}. ` +
+            `El rol ${datos.idAuth} de Auth quedó registrado como ${nombreDe(datos.rol)}. ` +
               "Quien entre con él recibirá ese perfil desde el próximo ingreso.",
           );
         } else {
@@ -153,10 +156,10 @@ const AdminRolesAuthPage = () => {
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+        <p className="page-heading-kicker font-semibold uppercase">
           Administración
         </p>
-        <h1 className="page-heading-title text-2xl font-semibold">
+        <h1 className="page-heading-title">
           Roles de Auth central
         </h1>
         <p className="page-heading-subtitle text-sm">
@@ -183,7 +186,7 @@ const AdminRolesAuthPage = () => {
           <div className="flex flex-col gap-1">
             <span className="font-semibold">
               Sin rol en Auth central:{" "}
-              {sinCorrespondencia.map((rol) => NOMBRE_ROL[rol]).join(", ")}
+              {sinCorrespondencia.map((rol) => nombreDe(rol)).join(", ")}
             </span>
             <span className="text-xs">
               Nadie puede entrar con esos perfiles: sin un rol de Transporte en
@@ -194,9 +197,9 @@ const AdminRolesAuthPage = () => {
         </div>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Correspondencias
           </h2>
           <div className="flex items-center gap-3">
@@ -226,6 +229,7 @@ const AdminRolesAuthPage = () => {
           </p>
 
           <TablaRolesAuth
+            nombreDe={nombreDe}
             roles={roles}
             cargando={cargando}
             procesando={guardando}
@@ -257,7 +261,7 @@ const AdminRolesAuthPage = () => {
           titulo="Retirar la correspondencia"
           mensaje={
             `El rol ${porRetirar.idAuth} de Auth dejará de dar acceso como ` +
-            `${NOMBRE_ROL[porRetirar.rol]}. La fila se conserva y puede volver a activarse.`
+            `${nombreDe(porRetirar.rol)}. La fila se conserva y puede volver a activarse.`
           }
           procesando={guardando}
           onConfirmar={() => void retirar()}

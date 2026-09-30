@@ -30,6 +30,7 @@ import { Content } from "./MenuDropdownParts.tsx";
 import { UserContext } from "../../context/UserContext.tsx";
 import type { RolDepartamental } from "../../config/env.ts";
 import type { User } from "../../interfaces/User.ts";
+import { permisosDeRoles } from "../../pruebas/permisos.ts";
 
 const conRoles = (rolCodes: RolDepartamental[]) => {
   const user: User = {
@@ -37,6 +38,8 @@ const conRoles = (rolCodes: RolDepartamental[]) => {
     usuFullName: "Persona de prueba",
     usuEmail: "prueba",
     rolCodes,
+    // El menú gatea por permisos (RBAC): se derivan de los roles como lo hace el servidor.
+    permisos: permisosDeRoles(rolCodes),
     rolName: "Persona de prueba",
     token: "",
     actividades: [],
@@ -75,7 +78,7 @@ describe("el menú lateral según el perfil", () => {
   });
 
   it("no atenúa Administración para el Administrador", () => {
-    conRoles(["ADMINISTRADOR"]);
+    conRoles(["ADMINISTRADOR_DMIP"]);
 
     const administracion = grupo("Administración");
 
@@ -88,7 +91,7 @@ describe("el menú lateral según el perfil", () => {
    * alcanza lo de todos ellos.
    */
   it("basta con que UNO de sus roles alcance el grupo", () => {
-    conRoles(["DIRECTOR", "ADMINISTRADOR"]);
+    conRoles(["DIRECTOR", "ADMINISTRADOR_DMIP"]);
 
     expect(grupo("Administración")?.className).not.toContain("opacity-40");
   });

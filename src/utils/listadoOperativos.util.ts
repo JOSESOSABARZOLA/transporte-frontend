@@ -24,6 +24,7 @@
  */
 
 import type { EstadoTransporte, Operativo } from "../interfaces/Operativo";
+import { comoHorario } from "./horario.util";
 import { normalizar } from "./texto.util";
 
 /** Columnas que la tabla sabe pintar. El orden lo decide quien la usa. */
@@ -32,6 +33,7 @@ export type ColumnaOperativo =
   | "formulario"
   | "horario"
   | "personal"
+  | "telefono"
   | "zonal"
   | "punto"
   | "tipo"
@@ -46,6 +48,7 @@ export const TITULO_COLUMNA: Record<ColumnaOperativo, string> = {
   formulario: "Formulario",
   horario: "Horario",
   personal: "Personal",
+  telefono: "Teléfono",
   zonal: "Zonal",
   punto: "Punto",
   tipo: "Tipo",
@@ -72,6 +75,7 @@ export const COLUMNAS_SESION: ColumnaOperativo[] = [
   "identificador",
   "horario",
   "personal",
+  "telefono",
   "zonal",
   "punto",
   "tipo",
@@ -86,6 +90,7 @@ export const COLUMNAS_LISTADO: ColumnaOperativo[] = [
   "formulario",
   "horario",
   "personal",
+  "telefono",
   "punto",
   "conductor",
   "estado",
@@ -104,9 +109,61 @@ export const COLUMNAS_FILTRABLES: ColumnaOperativo[] = [
   "formulario",
   "horario",
   "personal",
+  "telefono",
   "punto",
   "estado",
 ];
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * UN RENGLÓN POR PERSONA. Es lo que la tabla agrupa al estilo del Excel.
+ *
+ * **DEVUELVE UNA FILA AUNQUE NO HAYA NADIE**, con los dos campos vacíos. No es un
+ * descuido: un operativo sin personal tiene que seguir ocupando una fila de la tabla, y
+ * su celda de personal vacía es la que lleva ALV-01 —«todavía no tiene personal
+ * asignado»—. Devolver `[]` borraría el operativo de la pantalla justamente cuando más
+ * falta hace verlo.
+ *
+ * ES LA ÚNICA FUENTE DE LOS DOS TEXTOS, y de ahí salen también los de `valorDeColumna`:
+ * así la invariante de la cabecera de este archivo sigue siendo cierta con la tabla
+ * agrupada. Lo que se ve son estos renglones; lo que se filtra es su unión, palabra por
+ * palabra la misma.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export const filasDePersonal = (
+  operativo: Operativo,
+): { nombre: string; telefono: string; horario: string }[] => {
+  if (operativo.personal.length === 0) {
+    return [{ nombre: "", telefono: "", horario: operativo.horario }];
+  }
+
+  return operativo.personal.map((persona) => ({
+    nombre: persona.nombre,
+    // RN-34: sale del maestro. Que falte es un caso real, y se dice con palabras.
+    telefono: persona.telefono ?? "Sin teléfono",
+    // RN-66: la ventana EFECTIVA de esta persona, que el servidor ya resuelve. Es lo que se
+    // pinta por renglón cuando los turnos difieren, en vez de la envolvente del operativo.
+    // Sin ventana propia se hereda la del operativo, igual que resuelve el servidor.
+    horario:
+      persona.horaInicio && persona.horaFin
+        ? comoHorario(persona.horaInicio, persona.horaFin)
+        : operativo.horario,
+  }));
+};
+
+/**
+ * ¿El horario baja a la fila de cada persona? (RN-66, 2026-09-08). Sí cuando el operativo
+ * reúne a más de una persona con ventanas distintas; entonces la envolvente del operativo
+ * no representa a nadie y cada quien muestra la suya. Con turnos iguales —o una sola
+ * persona— se muestra una vez, abarcando los renglones. Espeja `TablaMatriz`.
+ */
+export const horarioBajaPorPersona = (operativo: Operativo): boolean =>
+  operativo.personal.length > 1 &&
+  operativo.personal.some(
+    (persona) =>
+      persona.horaInicio !== operativo.personal[0].horaInicio ||
+      persona.horaFin !== operativo.personal[0].horaFin,
+  );
 
 /** Filtros activos, por columna. Ausente o vacío significa «sin filtrar». */
 export type FiltrosListado = Partial<Record<ColumnaOperativo, string>>;
@@ -158,11 +215,34 @@ export const valorDeColumna = (
     case "formulario":
       return `${operativo.formulario.numero}. ${operativo.formulario.nombre}`;
 
+    /*
+      SE FILTRA LO QUE SE VE (RN-66): cuando el horario baja por persona, el texto es el de
+      cada ventana efectiva —lo mismo que pinta la tabla renglón a renglón—; si no, la
+      envolvente del operativo, que ahí sí representa a todos.
+    */
     case "horario":
-      return operativo.horario;
+      return horarioBajaPorPersona(operativo)
+        ? [...new Set(filasDePersonal(operativo).map((fila) => fila.horario))].join(
+            ", ",
+          )
+        : operativo.horario;
 
+    /*
+      LOS DOS SALEN DE `filasDePersonal`, que es lo que la tabla pinta renglon a renglon.
+      Derivarlos aparte volveria a separar lo que se ve de lo que se busca, que es la
+      invariante declarada en la cabecera de este archivo.
+    */
     case "personal":
-      return operativo.personal.map((persona) => persona.nombre).join(", ");
+      return filasDePersonal(operativo)
+        .map((fila) => fila.nombre)
+        .filter(Boolean)
+        .join(", ");
+
+    case "telefono":
+      return filasDePersonal(operativo)
+        .map((fila) => fila.telefono)
+        .filter(Boolean)
+        .join(", ");
 
     case "zonal":
       return operativo.zonales.map((zonal) => zonal.nombre).join(", ");
@@ -170,8 +250,16 @@ export const valorDeColumna = (
     case "punto":
       return operativo.puntoEncuentro?.nombre ?? operativo.puntoLibre ?? "";
 
-    case "tipo":
-      return operativo.tipoControl?.nombre ?? operativo.tipoLibre ?? "";
+    case "tipo": {
+      // Form 8: varios tipos unidos por coma, más el adicional; en el resto, el único.
+      const tipos = (operativo.tiposControl ?? []).map((tipo) => tipo.nombre);
+      if (operativo.tipoLibre) {
+        tipos.push(operativo.tipoLibre);
+      }
+      return tipos.length > 0
+        ? tipos.join(", ")
+        : (operativo.tipoControl?.nombre ?? "");
+    }
 
     /**
      * ═══════════════════════════════════════════════════════════════════════════════
@@ -199,7 +287,8 @@ export const valorDeColumna = (
       return nombreEstadoTransporte[operativo.estadoTransporte];
 
     case "observaciones":
-      return operativo.observaciones ?? "";
+      // Notas independientes (bitácora, 2026-09-09): se unen para mostrar y filtrar.
+      return operativo.observaciones.map((nota) => nota.texto).join(" · ");
   }
 };
 

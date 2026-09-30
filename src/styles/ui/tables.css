@@ -1,3 +1,112 @@
+.app-data-table tbody td {
+  padding-top: var(--app-table-row-padding-y) !important;
+  padding-bottom: var(--app-table-row-padding-y) !important;
+}
+
+.app-data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-data-table-filter-input {
+  height: 1.85rem;
+  border-radius: 0.85rem;
+  font-size: 0.96rem;
+  font-weight: 500;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.app-table-expanded-panel {
+  background-color: rgba(27, 119, 187, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: background-color 180ms ease;
+}
+
+[data-theme="dark"] .app-table-expanded-panel {
+  background-color: rgba(72, 155, 215, 0.08);
+  box-shadow: inset 0 1px 0 rgba(143, 161, 255, 0.08);
+}
+
+.app-table-expanded-item {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="dark"] .app-table-expanded-item {
+  box-shadow: 0 1px 3px rgba(2, 8, 24, 0.2);
+}
+
+.app-multiselect {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.25rem;
+  border: 0;
+  background-color: transparent;
+  color: var(--color-base-content);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.app-multiselect:focus {
+  outline: none;
+}
+
+.app-multiselect:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.app-multiselect option {
+  padding: 0.45rem 0.55rem;
+  margin-bottom: 0.125rem;
+  border-radius: 0.55rem;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.app-multiselect option:checked {
+  background: linear-gradient(
+    0deg,
+    var(--color-primary) 0%,
+    var(--color-primary) 100%
+  );
+  color: var(--color-primary-content);
+}
+
+.app-multiselect-field {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-base-300);
+  border-radius: 0.85rem;
+  background-color: var(--color-base-100);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.app-multiselect-field:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.app-multiselect-hint {
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  line-height: 1rem;
+  color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
+}
+
+/* Paginación de tabla propia de transporte: su componente de paginación usa estas
+   clases y resolucion no las define. Se conservan al adoptar la base de resolucion. */
 .app-table-pagination {
   display: flex;
   justify-content: flex-end;
@@ -19,9 +128,4 @@
   min-width: 4.35rem;
   padding-inline: 0.58rem !important;
   font-size: 0.72rem !important;
-}
-
-.app-data-table tbody td {
-  padding-top: var(--app-table-row-padding-y) !important;
-  padding-bottom: var(--app-table-row-padding-y) !important;
 }

@@ -21,13 +21,13 @@ const VALIDO = {
   formularioCodigo: "OCF",
   horaInicio: "08:00",
   horaFin: "12:00",
-  zonalId: 1,
+  zonalesIds: [1],
   punto: "10",
   puntoLibre: "",
   tipoControl: "30",
   tipoLibre: "",
   institucionesIds: [40],
-  observaciones: "",
+  observaciones: [],
 };
 
 const motivoDeRechazo = async (
@@ -47,38 +47,23 @@ describe("el operativo completo se admite", () => {
   });
 });
 
-describe("VAL-02 y VAL-03 · el horario", () => {
-  it("exige la hora de inicio", async () => {
-    const motivo = await motivoDeRechazo({ ...VALIDO, horaInicio: "" });
-    expect(motivo).toContain("hora de inicio");
-  });
-
-  it("RN-07 · rechaza una hora fuera de la media hora", async () => {
-    const motivo = await motivoDeRechazo({ ...VALIDO, horaInicio: "08:15" });
-    expect(motivo).toContain("en punto o media hora");
-  });
-
-  it("rechaza el mismo inicio y fin: no tendría duración", async () => {
+describe("VAL-02 y VAL-03 · el horario del operativo salió del esquema (RN-66)", () => {
+  // Desde el 2026-09-08 el operativo ya no tiene horario propio en el registro —lo lleva
+  // cada persona— y en el adicional el horario único lo valida `FormularioOperativo`, que
+  // sabe en qué modo está. El esquema ya no lo exige: sin horario NO se rechaza aquí.
+  it("no rechaza un operativo por no traer horario", async () => {
     const motivo = await motivoDeRechazo({
       ...VALIDO,
-      horaInicio: "08:00",
-      horaFin: "08:00",
+      horaInicio: "",
+      horaFin: "",
     });
-    expect(motivo).toContain("no tiene duración");
-  });
-
-  it("ADMITE el cruce de medianoche: 22H00 a 02H00 es válido", async () => {
-    // El fin «menor» que el inicio no es un error, es un operativo nocturno. Comprobar
-    // aquí que el fin sea posterior habría rechazado la mitad de las patrullas.
-    expect(
-      await motivoDeRechazo({ ...VALIDO, horaInicio: "22:00", horaFin: "02:00" }),
-    ).toBeNull();
+    expect(motivo).toBeNull();
   });
 });
 
 describe("VAL-04 · la zonal", () => {
   it("es obligatoria", async () => {
-    const motivo = await motivoDeRechazo({ ...VALIDO, zonalId: undefined });
+    const motivo = await motivoDeRechazo({ ...VALIDO, zonalesIds: [] });
     expect(motivo).toContain("al menos una zonal");
   });
 });
@@ -127,6 +112,37 @@ describe("VAL-05 a VAL-08 · punto y tipo, del catálogo o adicionales", () => {
   });
 });
 
+describe("selección múltiple de tipo de control (form 8)", () => {
+  it("con al menos un tipo en la lista, el desplegable único deja de ser obligatorio", async () => {
+    const motivo = await motivoDeRechazo({
+      ...VALIDO,
+      tipoControl: "",
+      tiposControlIds: [23, 24],
+    });
+    expect(motivo).toBeNull();
+  });
+
+  it("sin ningún tipo (ni único ni en la lista) se rechaza", async () => {
+    const motivo = await motivoDeRechazo({
+      ...VALIDO,
+      tipoControl: "",
+      tiposControlIds: [],
+      tipoLibre: "",
+    });
+    expect(motivo).toContain("tipo de control");
+  });
+
+  it("basta con el adicional: sin tipo de catálogo pero con texto libre, se acepta", async () => {
+    const motivo = await motivoDeRechazo({
+      ...VALIDO,
+      tipoControl: "",
+      tiposControlIds: [],
+      tipoLibre: "CONTROL ESPECIAL NO CATALOGADO",
+    });
+    expect(motivo).toBeNull();
+  });
+});
+
 describe("VAL-09 y VAL-11 · instituciones y observaciones", () => {
   it("exige al menos una institución", async () => {
     const motivo = await motivoDeRechazo({ ...VALIDO, institucionesIds: [] });
@@ -135,7 +151,7 @@ describe("VAL-09 y VAL-11 · instituciones y observaciones", () => {
 
   it("las observaciones son opcionales", async () => {
     expect(
-      await motivoDeRechazo({ ...VALIDO, observaciones: "" }),
+      await motivoDeRechazo({ ...VALIDO, observaciones: [] }),
     ).toBeNull();
   });
 });

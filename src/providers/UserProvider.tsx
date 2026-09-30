@@ -41,6 +41,7 @@ import {
   type PerfilSesion,
 } from "../services/sesion.service";
 import { UserContext, type EstadoSesion } from "../context/UserContext";
+import { limpiarTodosLosBorradores } from "../utils/borradorOperativo.util.ts";
 
 /**
  * Arma el usuario de la interfaz desde el perfil que devuelve el servidor.
@@ -57,6 +58,8 @@ const construirUser = (perfil: PerfilSesion): User => ({
   usuFullName: perfil.displayName,
   usuEmail: perfil.username,
   rolCodes: perfil.rolCodes,
+  // RBAC: si una sesión antigua no los trae, el arreglo vacío no abre nada (falla cerrado).
+  permisos: perfil.permisos ?? [],
   rolName: perfil.displayName,
   token: "",
   actividades: [],
@@ -113,6 +116,9 @@ export const UserProvider: FC<{ children: ReactNode }> = ({ children }) => {
       canjeada.current = false;
       setUser(null);
       setEstado("sinSesion");
+      // El borrador de captura de P-01 no debe sobrevivir a la sesión: en una máquina
+      // compartida, el siguiente no debe ver lo que capturaba el anterior.
+      limpiarTodosLosBorradores();
     };
     window.addEventListener(SESION_EXPIRADA, alExpirar);
     return () => window.removeEventListener(SESION_EXPIRADA, alExpirar);
@@ -130,6 +136,7 @@ export const UserProvider: FC<{ children: ReactNode }> = ({ children }) => {
     canjeada.current = false;
     setUser(null);
     setEstado("sinSesion");
+    limpiarTodosLosBorradores();
     window.location.replace(env.logoutAuthUrl);
   }, []);
 

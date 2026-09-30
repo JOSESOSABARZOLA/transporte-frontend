@@ -3,7 +3,7 @@
  * MÃ³dulo: Compartido
  * Feature: Layout principal
  * Archivo: MainLayout.tsx
- * Responsabilidad: Presentar los componentes comunes que interactuarán en toda la aplicación, como barras de navegación, menus, etc.
+ * Responsabilidad: Presentar los componentes comunes que interactuarï¿½n en toda la aplicaciï¿½n, como barras de navegaciï¿½n, menus, etc.
  * Desarrollador: Johan Freire
  * Fecha: 2026-03-19
  */
@@ -26,8 +26,8 @@ const LoginLayout: FC<LoginLayoutProps> = () => {
         <LoginPage />
       </div>
       <div className="barra-transversal w-full h-2 mt-1 mb-1"></div>
-      <div className="footer-login w-full h-40">
-        <div className="gif-metro absolute w-screen h-32 bottom-0 right-0"></div>
+      <div className="footer-login relative w-full h-40">
+        <div className="gif-metro absolute w-full h-32 bottom-0 right-0"></div>
       </div>
     </div>
   );

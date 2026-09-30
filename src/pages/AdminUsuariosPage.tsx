@@ -15,41 +15,90 @@
  * información cuyo filtrado originó este proyecto.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * SE CONSULTAN LOS ROLES DE AUTH TAMBIÉN, y no es un adorno: sirve para avisar cuando el
- * rol elegido no tiene ningún rol de Transporte en Auth. Hoy le pasa a Funcionario, y
- * significa que esa persona **no podrá entrar** por mucho que la cuenta exista. Sin este
- * aviso, el alta parecería correcta y el problema aparecería cuando esa persona lo
- * intentara.
+ * EL ALTA Y LA EDICIÓN VIVEN EN EL CAJÓN COMPARTIDO (2026-09-30). El alta empieza en el
+ * paso 1 (buscar en el directorio de Auth) y sigue en el paso 2 (completar la cuenta); la
+ * edición abre directo en el paso 2. Es la misma ventana que P-07, con otro vocabulario
+ * (`PARA_CUENTA`) y otro paso 2. `ModalDirectorioAuth` y `ModalUsuario` se retiraron.
+ *
+ * SE CONSULTAN LOS ROLES DE AUTH TAMBIÉN, y no es un adorno: avisa cuando el rol elegido no
+ * tiene ningún rol de Transporte en Auth. Sin ese aviso, el alta parecería correcta y la
+ * persona descubriría que no puede entrar cuando lo intentara.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
 import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
 import ModalExito from "../components/common/ModalExito.tsx";
-import ModalUsuario from "../components/administracion/ModalUsuario.tsx";
+import DrawerFlujoCuenta, {
+  type DatosCuenta,
+} from "../components/administracion/DrawerFlujoCuenta.tsx";
 import TablaUsuarios from "../components/administracion/TablaUsuarios.tsx";
 import type { RolDepartamental } from "../config/env.ts";
+import type { FilaDirectorio } from "../interfaces/DirectorioAuth.ts";
 import type { UsuarioCuadro } from "../interfaces/UsuarioCuadro.ts";
+import { PersonalService } from "../services/personal.service.ts";
 import { RolesAuthService } from "../services/rolesAuth.service.ts";
 import { UsuariosCuadroService } from "../services/usuariosCuadro.service.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
 
-/** Estado del modal: cerrado, alta, o edición de una cuenta concreta. */
-type Edicion =
+/** Estado del cajón: cerrado, alta, o edición de una cuenta concreta. */
+type Flujo =
   | { modo: "alta" }
   | { modo: "edicion"; usuario: UsuarioCuadro }
   | null;
 
 const AdminUsuariosPage = () => {
+  /** El catálogo de roles sale del servidor: aquí no hay ninguno escrito. */
+  const { nombreDe } = useCatalogoRoles();
+
   const [usuarios, setUsuarios] = useState<UsuarioCuadro[]>([]);
   const [rolesSinAcceso, setRolesSinAcceso] = useState<RolDepartamental[]>([]);
   const [cargando, setCargando] = useState(true);
 
-  const [edicion, setEdicion] = useState<Edicion>(null);
+  const [flujo, setFlujo] = useState<Flujo>(null);
   const [guardando, setGuardando] = useState(false);
   const [avisoModal, setAvisoModal] = useState<string | null>(null);
 
   const [porDesactivar, setPorDesactivar] = useState<UsuarioCuadro | null>(null);
+
+  /**
+   * EL ALTA EMPIEZA EN EL DIRECTORIO DE AUTH, que NO se consulta al entrar sino al pulsar
+   * «Nueva cuenta»: cuesta una llamada a otro sistema —hasta cinco segundos— y quien entra a
+   * corregir un rol no tiene por qué pagarla.
+   */
+  const [directorio, setDirectorio] = useState<FilaDirectorio[]>([]);
+  const [cargandoDirectorio, setCargandoDirectorio] = useState(false);
+  /** Que Auth no esté es un **estado**, no un error de la petición. */
+  const [directorioDisponible, setDirectorioDisponible] = useState(true);
+  const [motivoDirectorio, setMotivoDirectorio] = useState<string | null>(null);
+
+  const cargarDirectorio = useCallback(async () => {
+    setCargandoDirectorio(true);
+
+    try {
+      const respuesta = await PersonalService.consultarDirectorio();
+
+      setDirectorio(respuesta.personas);
+      setDirectorioDisponible(respuesta.disponible);
+      setMotivoDirectorio(respuesta.motivo);
+    } catch (fallo: unknown) {
+      // Aquí solo llegan los fallos que **no** son de Auth: nuestro backend caído, un 403.
+      const error = presentarError(fallo);
+      setDirectorio([]);
+      setDirectorioDisponible(false);
+      setMotivoDirectorio(error.mensaje);
+    } finally {
+      setCargandoDirectorio(false);
+    }
+  }, []);
+
+  /** «Nueva cuenta» abre el cajón en el paso 1 y pide el directorio. */
+  const abrirAlta = useCallback(() => {
+    setAvisoModal(null);
+    setFlujo({ modo: "alta" });
+    void cargarDirectorio();
+  }, [cargarDirectorio]);
 
   const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
     null,
@@ -60,8 +109,8 @@ const AdminUsuariosPage = () => {
     setCargando(true);
 
     try {
-      // Las dos a la vez: la segunda solo alimenta el aviso del modal, así que un fallo
-      // suyo no debe impedir administrar cuentas. Por eso se resuelve aparte.
+      // Las dos a la vez: la segunda solo alimenta el aviso del cajón, así que un fallo suyo
+      // no debe impedir administrar cuentas. Por eso se resuelve aparte.
       const [lista, panorama] = await Promise.all([
         UsuariosCuadroService.listar(),
         RolesAuthService.consultar().catch(() => null),
@@ -84,21 +133,14 @@ const AdminUsuariosPage = () => {
   }, [cargar]);
 
   const guardar = useCallback(
-    async (datos: {
-      correo: string;
-      nombre: string;
-      roles: RolDepartamental[];
-      identificadorAd: string | null;
-      funcionarioCedula: string | null;
-      activo: boolean;
-    }) => {
-      if (!edicion) return;
+    async (datos: DatosCuenta) => {
+      if (!flujo) return;
 
       setGuardando(true);
       setAvisoModal(null);
 
       try {
-        if (edicion.modo === "alta") {
+        if (flujo.modo === "alta") {
           const creada = await UsuariosCuadroService.crear({
             correo: datos.correo,
             nombre: datos.nombre,
@@ -114,7 +156,7 @@ const AdminUsuariosPage = () => {
           );
         } else {
           const actualizada = await UsuariosCuadroService.actualizar(
-            edicion.usuario.id,
+            flujo.usuario.id,
             {
               nombre: datos.nombre,
               roles: datos.roles,
@@ -129,7 +171,7 @@ const AdminUsuariosPage = () => {
           );
         }
 
-        setEdicion(null);
+        setFlujo(null);
         await cargar();
       } catch (fallo: unknown) {
         setAvisoModal(presentarError(fallo).mensaje);
@@ -137,7 +179,7 @@ const AdminUsuariosPage = () => {
         setGuardando(false);
       }
     },
-    [cargar, edicion],
+    [cargar, flujo],
   );
 
   const desactivar = useCallback(async () => {
@@ -171,12 +213,10 @@ const AdminUsuariosPage = () => {
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+        <p className="page-heading-kicker font-semibold uppercase">
           Administración
         </p>
-        <h1 className="page-heading-title text-2xl font-semibold">
-          Cuentas del cuadro
-        </h1>
+        <h1 className="page-heading-title">Cuentas del cuadro</h1>
         <p className="page-heading-subtitle text-sm">
           Quién entra al Cuadro de Colores y con qué rol. Auth central acredita la
           identidad; esta lista decide el perfil dentro del módulo.
@@ -205,9 +245,9 @@ const AdminUsuariosPage = () => {
         </div>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Cuentas
           </h2>
           <div className="flex items-center gap-3">
@@ -217,10 +257,7 @@ const AdminUsuariosPage = () => {
             <button
               type="button"
               className="btn btn-primary btn-xs"
-              onClick={() => {
-                setEdicion({ modo: "alta" });
-                setAvisoModal(null);
-              }}
+              onClick={abrirAlta}
               disabled={cargando || guardando}
             >
               Nueva cuenta
@@ -236,11 +273,12 @@ const AdminUsuariosPage = () => {
           </p>
 
           <TablaUsuarios
+            nombreDe={nombreDe}
             usuarios={usuarios}
             cargando={cargando}
             procesando={guardando}
             onEditar={(usuario) => {
-              setEdicion({ modo: "edicion", usuario });
+              setFlujo({ modo: "edicion", usuario });
               setAvisoModal(null);
             }}
             onDesactivar={setPorDesactivar}
@@ -248,19 +286,38 @@ const AdminUsuariosPage = () => {
         </div>
       </div>
 
-      {edicion && (
-        <ModalUsuario
-          // Cambiar de cuenta vuelve a montar el modal: los valores de la anterior no
-          // sobreviven bajo el nombre de la siguiente.
-          key={edicion.modo === "alta" ? "alta" : edicion.usuario.id}
-          usuario={edicion.modo === "alta" ? null : edicion.usuario}
-          guardando={guardando}
-          aviso={avisoModal}
-          rolesSinAcceso={rolesSinAcceso}
-          onGuardar={(datos) => void guardar(datos)}
-          onCancelar={() => setEdicion(null)}
-        />
-      )}
+      {/*
+        LA MISMA VENTANA QUE P-07, CON OTRO VOCABULARIO. Ver `PropositoDirectorio`. `PARA_CUENTA`
+        cambia lo que se busca —quien no tiene **cuenta**—, los rótulos y el impedimento: aquí la
+        llave es el **usuario de Auth**, no la cédula.
+      */}
+      <DrawerFlujoCuenta
+        // El `key` REMONTA el cajón al cambiar de flujo (alta / editar a alguien): así reinicia su
+        // estado desde los inicializadores, sin un efecto que llame a `setState`.
+        key={
+          flujo
+            ? flujo.modo === "edicion"
+              ? `ed-${flujo.usuario.id}`
+              : "alta"
+            : "cerrado"
+        }
+        abierto={flujo !== null}
+        modo={flujo?.modo ?? "alta"}
+        usuarioEdicion={flujo?.modo === "edicion" ? flujo.usuario : null}
+        filas={directorio}
+        disponible={directorioDisponible}
+        motivo={motivoDirectorio}
+        cargando={cargandoDirectorio}
+        onActualizar={() => void cargarDirectorio()}
+        rolesSinAcceso={rolesSinAcceso}
+        guardando={guardando}
+        aviso={avisoModal}
+        onGuardar={(datos) => void guardar(datos)}
+        onCerrar={() => {
+          setFlujo(null);
+          setAvisoModal(null);
+        }}
+      />
 
       {porDesactivar && (
         <ModalConfirmacion

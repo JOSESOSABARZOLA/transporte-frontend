@@ -25,9 +25,8 @@ import MarcoModal from "../common/MarcoModal.tsx";
 
 import type { RolDepartamental } from "../../config/env.ts";
 import type { RolAuth } from "../../interfaces/RolAuth.ts";
-import { NOMBRE_ROL } from "../../utils/parametro.util.ts";
+import { useCatalogoRoles } from "../../hooks/useCatalogoRoles.ts";
 
-const ROLES = Object.keys(NOMBRE_ROL) as RolDepartamental[];
 
 type ModalRolAuthProps = {
   /** `null` al dar de alta; la fila al editar. */
@@ -51,19 +50,32 @@ const ModalRolAuth: FC<ModalRolAuthProps> = ({
   onGuardar,
   onCancelar,
 }) => {
+  const { asignables, nombreDe } = useCatalogoRoles();
+
   const esAlta = rolAuth === null;
 
   const [idAuth, setIdAuth] = useState(rolAuth ? String(rolAuth.idAuth) : "");
   const [nombreAuth, setNombreAuth] = useState(rolAuth?.nombreAuth ?? "");
-  const [rol, setRol] = useState<RolDepartamental>(
-    rolAuth?.rol ?? "DMIP_OPERATIVOS",
-  );
+  /*
+    ═══════════════════════════════════════════════════════════════════════════════
+    NACE SIN ROL ELEGIDO, Y ANTES NACÍA CON `DMIP_OPERATIVOS`. 2026-09-01.
+
+    Era el último rol escrito en esta pantalla, y proponía uno concreto por ser el primero
+    de una lista. Una correspondencia de Auth mal apuntada no falla al guardarse: falla el
+    día que alguien entra con ese rol de Auth y recibe un perfil que no le toca.
+
+    El vacío obliga a elegir, y `puedeGuardar` lo exige.
+    ═══════════════════════════════════════════════════════════════════════════════
+  */
+  const [rol, setRol] = useState<RolDepartamental | "">(rolAuth?.rol ?? "");
   const [activo, setActivo] = useState(rolAuth?.activo ?? true);
 
   const identificador = Number(idAuth);
   const identificadorValido = Number.isInteger(identificador) && identificador > 0;
   const puedeGuardar =
-    nombreAuth.trim().length > 0 && (esAlta ? identificadorValido : true);
+    nombreAuth.trim().length > 0 &&
+    rol !== "" &&
+    (esAlta ? identificadorValido : true);
 
   return (
     <MarcoModal
@@ -71,10 +83,55 @@ const ModalRolAuth: FC<ModalRolAuthProps> = ({
       etiqueta={esAlta ? "Nueva correspondencia" : `Correspondencia ${rolAuth.idAuth}`}
       ancho="lg"
       onCerrar={guardando ? undefined : onCancelar}
+      /*
+        CABECERA INSTITUCIONAL, como el resto de los modales institucionales.
+        Antes esta ventana no pasaba `titulo`, así que caía en la tarjeta blanca plana y
+        repetía el título en un `<h3>` del cuerpo: no se reconocía como las demás.
+      */
+      antetitulo="Homologación de roles"
+      titulo={
+        esAlta ? "Nueva correspondencia" : `Editar correspondencia ${rolAuth.idAuth}`
+      }
+      /* Botones al pie persistente (ver `MarcoModal`): quedan siempre a la vista. */
+      pie={
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onCancelar}
+            disabled={guardando}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() =>
+              onGuardar({
+                idAuth: esAlta ? identificador : rolAuth.idAuth,
+                nombreAuth: nombreAuth.trim(),
+                // `puedeGuardar` ya exige un rol elegido: aquí `rol` nunca está vacío.
+                rol: rol as RolDepartamental,
+                activo,
+              })
+            }
+            disabled={guardando || !puedeGuardar}
+          >
+            {guardando ? (
+              <>
+                <span
+                  className="loading loading-spinner loading-sm"
+                  aria-hidden="true"
+                />
+                Guardando…
+              </>
+            ) : (
+              "Guardar"
+            )}
+          </button>
+        </div>
+      }
     >
-        <h3 className="mb-1 text-lg font-bold">
-          {esAlta ? "Nueva correspondencia" : "Editar correspondencia"}
-        </h3>
         <p className="mb-4 text-xs text-base-content/70">
           Declara a qué rol del Cuadro de Colores corresponde un rol de Auth
           central. No crea roles nuevos del cuadro: eso exige definir sus
@@ -114,12 +171,15 @@ const ModalRolAuth: FC<ModalRolAuthProps> = ({
                 {rolAuth.idAuth}
               </span>
             )}
-            <span className="label">
-              <span className="label-text-alt text-xs text-base-content/70">
-                El número que Auth central asigna al rol. Es la llave, y no
-                cambia aunque alguien edite el nombre allí.
-              </span>
-            </span>
+            {/*
+              El texto de ayuda va en un `<p>`, no en `<span className="label">`: la clase
+              `label` de daisyUI es `white-space: nowrap` y hacía que esta línea larga se
+              saliera de la ventana. Un párrafo envuelve con naturalidad.
+            */}
+            <p className="mt-1 text-xs text-base-content/70">
+              El número que Auth central asigna al rol. Es la llave, y no
+              cambia aunque alguien edite el nombre allí.
+            </p>
           </div>
 
           <div className="form-control w-full">
@@ -157,12 +217,19 @@ const ModalRolAuth: FC<ModalRolAuthProps> = ({
               }
               disabled={guardando}
             >
-              {ROLES.map((codigo) => (
+              {/*
+                LA OPCIÓN VACÍA ES OBLIGATORIA, no cosmética. Sin ella el `<select>` tiene
+                un valor —la cadena vacía— que ninguna de sus opciones contiene, y el
+                navegador lo pinta **en blanco**: parecería que hay un rol elegido y no lo
+                hay. Es el mismo defecto que tuvo el selector de tamaño del directorio.
+              */}
+              <option value="">Elija el rol del cuadro…</option>
+              {asignables.map((codigo) => (
                 <option
                   key={codigo}
                   value={codigo}
                 >
-                  {NOMBRE_ROL[codigo]}
+                  {nombreDe(codigo)}
                 </option>
               ))}
             </select>
@@ -182,32 +249,6 @@ const ModalRolAuth: FC<ModalRolAuthProps> = ({
               </label>
             </div>
           )}
-        </div>
-
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onCancelar}
-            disabled={guardando}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() =>
-              onGuardar({
-                idAuth: esAlta ? identificador : rolAuth.idAuth,
-                nombreAuth: nombreAuth.trim(),
-                rol,
-                activo,
-              })
-            }
-            disabled={guardando || !puedeGuardar}
-          >
-            {guardando ? "Guardando…" : "Guardar"}
-          </button>
         </div>
     </MarcoModal>
   );

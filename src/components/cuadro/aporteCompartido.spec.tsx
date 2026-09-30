@@ -33,6 +33,7 @@ import { OperativoService } from "../../services/operativo.service.ts";
 import {
   accesoAlOperativo,
   motivoDeSoloLectura,
+  puedeAportarA,
 } from "../../utils/accesoOperativo.util.ts";
 import type { RolDepartamental } from "../../config/env";
 import type { Operativo } from "../../interfaces/Operativo.ts";
@@ -160,6 +161,35 @@ describe("quién edita el operativo y quién solo lo acompaña", () => {
 });
 
 /**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * QUIÉN VE «AGREGAR PERSONAL» EN LA PATRULLA. 2026-09-18.
+ *
+ * El botón es el APORTE de Instrucción, no el alta de los generales: solo se ofrece a quien
+ * tiene un rol que APORTA a ese formulario. En el Form 6 (`ROLES_REACN`) es el DMIT de
+ * Instrucción; el DMIP que registra (ESCRITURA) pone a los suyos al crear la patrulla y no ve
+ * ese botón. Es el espejo de `reglaCupoCompartido` del servidor.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("quién puede APORTAR personal a la patrulla", () => {
+  const form6 = {
+    creadoPorRol: "DMIP_INSPECCIONES",
+    formulario: { roles: ROLES_REACN },
+  };
+
+  it("el DMIT de Instrucción aporta (su rol tiene acceso APORTA)", () => {
+    expect(puedeAportarA(form6, roles("DMIT_INSTRUCTOR"))).toBe(true);
+  });
+
+  it("el DMIP que registra (ESCRITURA) NO aporta: registra a los suyos al crear", () => {
+    expect(puedeAportarA(form6, roles("DMIP_INSPECCIONES"))).toBe(false);
+  });
+
+  it("un rol ajeno al formulario tampoco aporta", () => {
+    expect(puedeAportarA(form6, roles("DIRECTOR"))).toBe(false);
+  });
+});
+
+/**
  * REGLA 6, Y AQUÍ IMPORTA MÁS QUE EN OTROS SITIOS. Un botón apagado no distingue entre
  * «la ventana cerró», «el cuadro se cerró» y «esto no lo registró usted»: son tres
  * situaciones con tres salidas distintas, y la última no se arregla esperando.
@@ -199,6 +229,7 @@ describe("el motivo se dice con palabras, no con un botón gris", () => {
 const patrullaEcu = (): Operativo => ({
   id: 7,
   identificador: "ICECU-001-26-AGO-2026",
+  grupoRegistro: null,
   secuencial: 1,
   cuadroFecha: "2026-08-26",
   esAdicional: false,
@@ -242,7 +273,7 @@ const patrullaEcu = (): Operativo => ({
   estadoTransporte: "PENDIENTE",
   alertaActiva: false,
   alertas: [],
-  observaciones: null,
+  observaciones: [],
   // LA REGISTRÓ EL OTRO DEPARTAMENTO. Es lo que hace que el usuario DMIT de estas
   // pruebas —que también escribe en la ECU— no pueda editarla.
   creadoPorRol: "DMIP_OPERATIVOS",
@@ -272,16 +303,22 @@ describe("P-02 sobre una fila que registró el otro departamento", () => {
   it("el botón principal ofrece el personal, no la edición", async () => {
     render(<MisOperativosPage />);
 
-    expect(
-      await screen.findByRole("button", { name: "Personal" }),
-    ).toBeEnabled();
+    const agregar = await screen.findByRole("button", {
+      name: "Agregar Personal",
+    });
+
+    expect(agregar).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+
+    // Desde el 2026-08-31 se destaca: para quien solo aporta es lo ÚNICO que puede hacer
+    // en esta fila, y con los tres botones en gris no se distinguía de «Eliminar».
+    expect(agregar).toHaveClass("btn-primary");
   });
 
-  it("«Retirar» llega apagado, y dice por qué", async () => {
+  it("«Eliminar» llega apagado, y dice por qué", async () => {
     render(<MisOperativosPage />);
 
-    const retirar = await screen.findByRole("button", { name: "Retirar" });
+    const retirar = await screen.findByRole("button", { name: "Eliminar" });
 
     expect(retirar).toBeDisabled();
     // Regla 6: el motivo va escrito, no solo insinuado por el gris.
@@ -300,7 +337,60 @@ describe("P-02 sobre una fila que registró el otro departamento", () => {
   it("no se le ofrece registrar un adicional", async () => {
     render(<MisOperativosPage />);
 
-    await screen.findByRole("button", { name: "Personal" });
+    await screen.findByRole("button", { name: "Agregar Personal" });
     expect(screen.queryByRole("button", { name: "Adicional" })).toBeNull();
+  });
+});
+
+/**
+ * La patrulla del Form 6 (Reacción Nocturna): la REGISTRA el DMIP de Inspecciones y el DMIT
+ * APORTA su Instrucción. Con `grupoRegistro`, la lista la agrupa y ofrece las acciones de
+ * patrulla, entre ellas «Agregar Personal» —el aporte de Instrucción—, solo a quien aporta.
+ */
+const patrullaReacn = (): Operativo => {
+  const base = patrullaEcu();
+  return {
+    ...base,
+    id: 9,
+    identificador: "IGNECU-001-17-SEP-2026",
+    grupoRegistro: "lote-reacn",
+    esNocturno: true,
+    formulario: {
+      ...base.formulario,
+      codigo: "REACN",
+      nombre: "PATRULLA REACCION NOCTURNA",
+      numero: 6,
+      rolDueno: "DMIP_INSPECCIONES",
+      roles: ROLES_REACN,
+    },
+    creadoPorRol: "DMIP_INSPECCIONES",
+    modificadoPorRol: "DMIP_INSPECCIONES",
+  };
+};
+
+describe("P-02 sobre una patrulla del Form 6 (el DMIT aporta Instrucción)", () => {
+  beforeEach(() => {
+    vi.mocked(OperativoService.consultar).mockResolvedValue({
+      datos: [patrullaReacn()],
+      meta: { total: 1, pagina: 1, tamanio: 200, totalPaginas: 1 },
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * El usuario de estas pruebas es el DMIT (`useUser` arriba). Al aportar Instrucción sí ve
+   * «Agregar Personal»; «Editar» los generales es del registrante (DMIP), así que no aparece.
+   */
+  it("le ofrece «Agregar Personal» —es quien aporta— y no «Editar»", async () => {
+    render(<MisOperativosPage />);
+
+    const agregar = await screen.findByRole("button", {
+      name: "Agregar Personal",
+    });
+    expect(agregar).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
   });
 });

@@ -10,7 +10,8 @@
 
 import { memo, type FC } from "react";
 import type { UserActions } from "../../interfaces/User";
-import Boton from "../common/Boton";
+import Boton from "../common/Boton.tsx";
+import { esNombreIcono } from "../common/Iconos.tsx";
 import type { ModalType } from "../../hooks/useModal";
 
 type ActionButtonProps = {
@@ -37,7 +38,11 @@ const ActionButton: FC<ActionButtonProps> = memo(
             <Boton
               onClick={() => onClick?.(prioritario.actiName)}
               estilos="btn btn-soft btn-primary btn-md mr-1"
-              icono={prioritario.actiIconName}
+              icono={
+                esNombreIcono(prioritario.actiIconName)
+                  ? prioritario.actiIconName
+                  : undefined
+              }
               deshabilitado={prioritario?.actiIsDisabled ?? false}
               texto=""
             />

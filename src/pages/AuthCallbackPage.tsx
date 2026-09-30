@@ -33,7 +33,7 @@ import { urlDelPortal } from "../services/sesion.service";
 const NoSePudo = ({ motivo }: { motivo: string }) => (
   <div className="flex min-h-screen items-center justify-center bg-base-200 p-6">
     <div className="app-modules-panel app-shell-surface max-w-md rounded-md border border-base-300 bg-base-100 p-6">
-      <h1 className="page-heading-title text-xl font-semibold">
+      <h1 className="page-heading-title">
         No se pudo iniciar sesión
       </h1>
       <p className="page-heading-subtitle mt-2 text-sm">{motivo}</p>

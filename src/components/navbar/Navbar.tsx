@@ -28,7 +28,8 @@ export default function Navbar({
 }: NavbarProps) {
   // Los canales de notificación (NOT-01 a NOT-07) están pendientes de definición del
   // negocio, así que la campana no consulta nada todavía y la lista llega vacía.
-  // Ver docs/PENDIENTES-VALIDACION.md y docs/FASE2-documentacion-funcional.md §18.
+  // Ver docs/implementacion/PENDIENTES-VALIDACION.md y
+  // docs/FASE2-documentacion-funcional.md §18.
   const alerts: Alert[] = [];
   const totalAlerts = 0;
   const { theme, setTheme } = useTheme();
@@ -53,7 +54,8 @@ export default function Navbar({
     botonProps: {
       estilos:
         "app-topbar-icon-button btn btn-ghost btn-circle text-primary hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary focus-visible:outline-none active:bg-primary/10 active:text-primary",
-      icono: "notificaciones",
+      // `as const` para que no se ensanche a `string` al pasar por la variable.
+      icono: "notificaciones" as const,
       deshabilitado: false,
       indicativo: { activo: true, cantidad: totalAlerts },
     },
@@ -182,7 +184,7 @@ export default function Navbar({
         </div>
         {/* Título del navbar */}
         <div className="navbar-center">
-          <a className="app-topbar-brand text-xl font-bold tracking-wide text-primary">
+          <a className="app-topbar-brand text-xl font-semibold tracking-wide text-primary">
             SIGOC
           </a>
         </div>
@@ -200,25 +202,6 @@ export default function Navbar({
           <SubMenuDropdown {...propsPerfil} />
         </div>
       </div>
-
-      {/* Sidebar desplegable */}
-      {/* {isSidebarOpen && (
-        <div className="flex">
-          <div 
-            className="fixed inset-0 top-16 bg-black/20 z-10"
-            onClick={onToggleSidebar}
-          ></div>
-          <aside className="app-sidebar fixed top-16 left-0 h-[calc(100vh-4rem)] z-50 flex flex-col overflow-hidden">
-            <div className="app-shell-sidebar-scroll flex flex-col">
-              <Header />
-              <Content onNavigate={onToggleSidebar} />
-            </div>
-            <div className="mt-auto">
-              <Footer />
-            </div>
-          </aside>
-        </div>
-      )} */}
     </>
   );
 }

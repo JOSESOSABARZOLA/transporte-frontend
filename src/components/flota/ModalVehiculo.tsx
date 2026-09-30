@@ -24,6 +24,7 @@ import type { FC } from "react";
 import MarcoModal from "../common/MarcoModal.tsx";
 
 import { TextInput } from "../forms/FormikField.tsx";
+import EnfocarPrimerError from "../forms/EnfocarPrimerError.tsx";
 import { esquemaVehiculo } from "../../config/validationSchemas.ts";
 import type { Vehiculo } from "../../interfaces/Transporte.ts";
 
@@ -63,7 +64,7 @@ const ModalVehiculo: FC<ModalVehiculoProps> = ({
       ancho="lg"
       onCerrar={guardando ? undefined : onCancelar}
     >
-        <h3 className="mb-1 text-lg font-bold">
+        <h3 className="mb-1 text-lg font-semibold">
           {vehiculo ? `Editar ${vehiculo.placa}` : "Nuevo vehículo"}
         </h3>
         <p className="mb-4 text-xs text-base-content/70">
@@ -87,6 +88,7 @@ const ModalVehiculo: FC<ModalVehiculoProps> = ({
           onSubmit={onGuardar}
         >
           <Form className="flex flex-col gap-3">
+            <EnfocarPrimerError />
             <Field
               name="placa"
               component={TextInput}
@@ -115,7 +117,17 @@ const ModalVehiculo: FC<ModalVehiculoProps> = ({
                 className="btn btn-primary btn-sm"
                 disabled={guardando}
               >
-                {guardando ? "Guardando…" : "Guardar"}
+                {guardando ? (
+                  <>
+                    <span
+                      className="loading loading-spinner loading-sm"
+                      aria-hidden="true"
+                    />
+                    Guardando…
+                  </>
+                ) : (
+                  "Guardar"
+                )}
               </button>
             </div>
           </Form>

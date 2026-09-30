@@ -29,12 +29,18 @@ import type { FC } from "react";
 
 import type { VentanaCarga } from "../../interfaces/Administracion.ts";
 import {
-  NOMBRE_ROL,
-  NOMBRE_TIPO_VENTANA,
+    NOMBRE_TIPO_VENTANA,
   horarioDeVentana,
 } from "../../utils/parametro.util.ts";
+import type { RolDepartamental } from "../../config/env.ts";
 
 type TablaVentanasProps = {
+  /**
+   * Nombre legible de un rol. **Llega como propiedad y no se consulta aquí**: esta tabla
+   * es presentacional, y quien habla con el servidor es la página. Sale del catálogo de
+   * , no de un mapa escrito en el navegador.
+   */
+  nombreDe: (rol: RolDepartamental) => string;
   ventanas: VentanaCarga[];
   cargando: boolean;
   procesando: boolean;
@@ -46,9 +52,10 @@ const TablaVentanas: FC<TablaVentanasProps> = ({
   cargando,
   procesando,
   onEditar,
+  nombreDe,
 }) => (
   <div className="overflow-x-auto">
-    <table className="table table-sm">
+    <table className="table table-sm table-zebra">
       <thead>
         <tr className="text-xs uppercase tracking-wider text-base-content/70">
           <th scope="col">Rol</th>
@@ -75,10 +82,10 @@ const TablaVentanas: FC<TablaVentanasProps> = ({
           ventanas.map((ventana) => (
             <tr
               key={ventana.rol}
-              className={ventana.activo ? "hover:bg-info/10" : "opacity-60"}
+              className={ventana.activo ? "hover:bg-primary/5" : "opacity-60"}
             >
               <td className="px-3 py-2 align-top font-medium">
-                {NOMBRE_ROL[ventana.rol]}
+                {nombreDe(ventana.rol)}
               </td>
               <td className="px-3 py-2 align-top">
                 {NOMBRE_TIPO_VENTANA[ventana.tipo]}

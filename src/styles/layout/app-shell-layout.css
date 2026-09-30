@@ -20,6 +20,36 @@
   background-color: var(--app-shell-background);
 }
 
+/*
+  ═══════════════════════════════════════════════════════════════════════════════
+  UNA SOLA BARRA DE DESPLAZAMIENTO. Añadido el 2026-09-03.
+
+  EL SÍNTOMA. En el borde derecho aparecían DOS barras verticales pegadas: la del
+  documento y la de `.app-shell-main-content`. La de fuera además le robaba ancho a la
+  aplicación —la franja azul de la barra superior no llegaba al borde de la ventana—.
+
+  POR QUÉ PASABA. El armazón está pensado para medir exactamente una pantalla:
+  `.app-shell-frame` mide `100dvh` y clipa con `overflow: hidden`, de modo que lo único
+  que debe desplazarse es `<main>`. Pero `100dvh` es la altura del bloque contenedor
+  inicial, y **no descuenta una barra horizontal**. Basta que algo se salga un píxel a
+  lo ancho para que el navegador saque la barra de abajo, esa barra reduzca la altura
+  disponible, y el marco de `100dvh` deje de caber a lo alto: aparece entonces la
+  segunda barra vertical. Un desborde horizontal de un píxel produce dos barras
+  verticales, que es justo lo que se veía.
+
+  LA CORRECCIÓN NO ES `html { overflow: hidden }` A SECAS. Eso alcanzaría también al
+  ingreso y al retorno de Auth, que **sí** son páginas de documento y deben poder
+  desplazarse en una pantalla baja. Se acota con `:has()` a los documentos que montan
+  el armazón, que son exactamente aquellos en los que el desplazamiento es de `<main>`.
+
+  NO TAPA EL DESBORDE, LO CONTIENE. Si algún día una pantalla se sale a lo ancho, se
+  verá en su propio contenedor y no convirtiendo la ventana entera en un lienzo.
+  ═══════════════════════════════════════════════════════════════════════════════
+*/
+body:has(.app-shell-frame) {
+  overflow: hidden;
+}
+
 .app-shell-frame {
   min-height: 100vh;
 }

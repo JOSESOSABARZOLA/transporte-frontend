@@ -83,9 +83,11 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
    * Ver docs/FASE5-diseno-interfaz.md §3.2.
    */
   const puedeEntrar = (item: NavigationItem) =>
-    !item.allowedRoles ||
+    !item.requiredPermissions ||
     (user != null &&
-      user.rolCodes.some((rol) => item.allowedRoles!.includes(rol)));
+      item.requiredPermissions.some((permiso) =>
+        user.permisos.includes(permiso),
+      ));
 
   /**
    * Un grupo es útil cuando ALGO de dentro es alcanzable.

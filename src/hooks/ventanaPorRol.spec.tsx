@@ -27,7 +27,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useVentanaCarga } from "./useVentanaCarga.ts";
@@ -52,7 +52,7 @@ import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
 
 const LOS_SEIS: RolDepartamental[] = [
   "DMIP_OPERATIVOS",
-  "ADMINISTRADOR",
+  "ADMINISTRADOR_DMIP",
   "DIRECTOR",
   "DAF",
   "DMIT_INSTRUCTOR",
@@ -144,5 +144,56 @@ describe("por la ventana de qué rol pregunta cada pantalla", () => {
       expect(CatalogoCuadroService.obtenerMiVentana).toHaveBeenCalled(),
     );
     expect(rolPedido()).toBeUndefined();
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * EL REFRESCO DE FONDO NO PARPADEA LA PANTALLA. 2026-09-09.
+ *
+ * El temporizador de un minuto vuelve a pedir la ventana. Antes, ese refresco encendía
+ * `cargando` y hacía caer `puedeEscribir` a falso por un fotograma, y las pantallas ocultaban
+ * el aviso y bloqueaban el formulario: se veía como un parpadeo. Ahora `cargando` es solo la
+ * PRIMERA carga y `puedeEscribir` se sostiene en el último dato conocido.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("el refresco de fondo no reintroduce el estado de carga", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sesion.roles = LOS_SEIS;
+    vi.mocked(CatalogoCuadroService.obtenerMiVentana).mockResolvedValue({
+      rol: "DMIP_INSPECCIONES",
+      abierta: true,
+      activo: true,
+      zonaHoraria: "America/Guayaquil",
+      horaApertura: "08:00",
+      horaCierre: "15:00",
+      diaApertura: null,
+      diaCierre: null,
+      mensaje: "abierta",
+      evaluadoEn: new Date().toISOString(),
+    } as never);
+  });
+
+  it("al recargar con dato ya conocido, ni 'cargando' sube ni 'puedeEscribir' baja", async () => {
+    const { result } = renderHook(() => useVentanaCarga(ROLES_DE_CARGA));
+
+    // Primera carga resuelta: ya hay dato, la ventana está abierta.
+    await waitFor(() => expect(result.current.cargando).toBe(false));
+    expect(result.current.puedeEscribir).toBe(true);
+
+    // Un refresco de fondo (lo que hace el temporizador cada minuto). Durante él NO debe
+    // encenderse `cargando` —ya hay dato— ni caer `puedeEscribir`: eso es lo que parpadeaba.
+    act(() => {
+      result.current.recargar();
+    });
+    expect(result.current.cargando).toBe(false);
+    expect(result.current.puedeEscribir).toBe(true);
+
+    await waitFor(() =>
+      expect(CatalogoCuadroService.obtenerMiVentana).toHaveBeenCalledTimes(2),
+    );
+    expect(result.current.cargando).toBe(false);
+    expect(result.current.puedeEscribir).toBe(true);
   });
 });

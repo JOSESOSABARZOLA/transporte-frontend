@@ -45,18 +45,38 @@ export type PoliticaVehiculo =
   | "REQUERIDO"
   | "OBLIGATORIO";
 
-/** Área de personal admitida. RN-15. */
+/**
+ * Área de personal admitida. RN-15.
+ *
+ * SON CUATRO DESDE EL 2026-08-27. Se retiró `CCF`, que ningún formulario admitía y en la
+ * que no había nadie. La retirada exigió tocar los dos lados: esta unión es una **copia a
+ * mano** del enumerado del servidor, no algo derivado de él.
+ *
+ * El compilador avisa del descuido por un sitio: `NOMBRE_AREA` es un `Record<AreaPersonal,
+ * string>` y no compila si le sobra o le falta una clave.
+ */
 export type AreaPersonal =
   | "GENERAL"
   | "TECNICO"
   | "INSTRUCCION"
-  | "OPERATIVOS"
-  | "CCF";
+  | "OPERATIVOS";
 
 /** Área que el formulario admite, y si el cupo es del rol compartido. RN-15. */
 export interface AreaFormulario {
   area: AreaPersonal;
   esCompartida: boolean;
+}
+
+/**
+ * Respuesta de `PUT /administracion/formularios/:codigo/areas`.
+ *
+ * Lleva lo que quedó, no un acuse: la pantalla repinta con el estado real del servidor,
+ * incluida `esCompartida`, que el cambio conserva y la petición no envía.
+ */
+export interface AreasDeFormulario {
+  codigo: string;
+  nombre: string;
+  areas: AreaFormulario[];
 }
 
 /**
@@ -86,7 +106,7 @@ export interface RolDelFormulario {
 }
 
 export interface Formulario {
-  /** Clave sustituta. La usan las altas de catálogo: `formularioIds`. */
+  /** Clave sustituta. La usan las altas de catálogo para fijar su `formularioId`. */
   id: number;
   numero: number;
   codigo: string;
@@ -129,24 +149,39 @@ export interface Zonal {
   codigo: string;
   nombre: string;
   esDmq?: boolean;
+  /**
+   * Vigente o desactivada. Al registrar solo llegan las vigentes; importa en
+   * administración (`GET /zonales?incluirInactivas=true`), que ve también las retiradas.
+   */
+  activo?: boolean;
 }
 
 export interface PuntoEncuentro {
   id: number;
+  /** El punto PERTENECE A UN FORMULARIO (2026-09-29): ya no se comparte entre formularios. */
+  formularioId: number;
   nombre: string;
   zonalId: number;
   zonalNombre?: string;
+  /** PV-36. Solo lo trae el camino de administración; ausente = vigente. */
+  activo?: boolean;
 }
 
+/** El tipo de control pertenece a UN formulario (2026-09-07): no se comparte. */
 export interface TipoControl {
   id: number;
   nombre: string;
+  activo?: boolean;
+  formularioId: number;
 }
 
 export interface Institucion {
   id: number;
+  /** La institución PERTENECE A UN FORMULARIO (2026-09-29): ya no se comparte. */
+  formularioId: number;
   sigla: string;
   nombre: string;
+  activo?: boolean;
 }
 
 /** Respuesta de `GET /formularios/:codigo/catalogos`. */
@@ -158,39 +193,154 @@ export interface CatalogosFormulario {
   /** RN-20, por catálogo. Ver `Formulario`. */
   capturaLibrePunto: boolean;
   capturaLibreTipo: boolean;
+  /** Si el formulario admite VARIOS tipos de control a la vez (los nueve desde 2026-09-14). */
+  tipoControlMultiple: boolean;
+  /**
+   * SPLIT por persona: cada persona asignada genera su propio operativo independiente, con el
+   * prefijo de su área (el 8 desde 2026-09-10; el 5 desde 2026-09-14, IGECU/ITECU, para que
+   * convivan las dos áreas). NO implica la columna de cantidad: eso es `cantidadPorPersona`.
+   */
+  variosPorPersona: boolean;
+  /**
+   * Si el formulario OFRECE la columna «Cantidad de operativos» por persona (fijar cantidad > 1).
+   * Solo el 8 (2026-09-14). El 5 divide por persona pero NO la ofrece: por eso no la muestra.
+   */
+  cantidadPorPersona: boolean;
+  /**
+   * Si al REGISTRAR se puede AGREGAR un punto de encuentro al catálogo, ligado a la zonal
+   * elegida (Unidad de Operativos, formularios 1-4). Distinto de `capturaLibrePunto` (que solo
+   * teclea texto en el operativo): esto CREA el punto y queda para todos. 2026-09-24.
+   */
+  puntoManual: boolean;
 }
 
 // ─────────────────── Administración de catálogos (P-08) ───────────────────
 
 /**
- * Cuerpos de alta. `formularioIds` **no es opcional en la práctica**: omitirlo crea el
- * valor sin vincularlo a ningún formulario, y entonces no aparece en ninguna cascada.
- * P-08 envía siempre el formulario que se está administrando.
+ * Cuerpos de alta. Cada valor PERTENECE A UN FORMULARIO (2026-09-29): `formularioId` es
+ * obligatorio y P-08 envía siempre el formulario que se está administrando.
  */
 export interface CrearPunto {
   nombre: string;
   zonalId: number;
-  formularioIds: number[];
+  formularioId: number;
 }
 
 export interface CrearTipoControl {
   nombre: string;
-  formularioIds: number[];
+  formularioId: number;
 }
 
 export interface CrearInstitucion {
   sigla: string;
   nombre: string;
-  formularioIds: number[];
+  formularioId: number;
 }
 
+/**
+ * Alta de una zonal. Solo el nombre: el código se autogenera en el servidor a partir de
+ * él y se garantiza único, así que aquí no viaja. La zonal es GLOBAL —transversal a los
+ * nueve formularios—, por eso no lleva `formularioId`.
+ */
+export interface CrearZonal {
+  nombre: string;
+}
+
+// ─────────────────── Administración de formularios (2026-09-29) ───────────────────
+
+/**
+ * Un color de la paleta institucional: cómo se pinta (fondo/acento) y cómo se llama.
+ * `GET /administracion/formularios/paleta`. El administrador elige uno; no teclea hexadecimales.
+ */
+export interface ColorPaleta {
+  nombre: string;
+  fondo: string;
+  acento: string;
+}
+
+/**
+ * La definición completa de un formulario para la pantalla de administración.
+ * `GET /administracion/formularios` (incluye los dados de baja, para poder reactivarlos).
+ */
+export interface FormularioAdmin {
+  id: number;
+  numero: number;
+  codigo: string;
+  nombre: string;
+  colorFondo: string;
+  colorAcento: string;
+  colorNombre: string;
+  rolDueno: RolDepartamental;
+  politicaVehiculo: PoliticaVehiculo;
+  condicionanteNoct: boolean;
+  esPatrulla: boolean;
+  capturaLibrePunto: boolean;
+  capturaLibreTipo: boolean;
+  puntoManual: boolean;
+  filtraPersonalPorRol: boolean;
+  tipoControlMultiple: boolean;
+  variosPorPersona: boolean;
+  cantidadPorPersona: boolean;
+  orden: number;
+  activo: boolean;
+  areas: AreaPersonal[];
+  prefijo: string;
+}
+
+/** Alta de un formulario. Número y código SOLO viajan aquí: son inmutables tras crear. */
+export interface CrearFormulario {
+  numero: number;
+  codigo: string;
+  nombre: string;
+  colorFondo: string;
+  colorAcento: string;
+  colorNombre: string;
+  rolDueno: RolDepartamental;
+  prefijo: string;
+  areas: AreaPersonal[];
+  politicaVehiculo: PoliticaVehiculo;
+  condicionanteNoct: boolean;
+  esPatrulla: boolean;
+  capturaLibrePunto: boolean;
+  capturaLibreTipo: boolean;
+  puntoManual: boolean;
+  filtraPersonalPorRol: boolean;
+  tipoControlMultiple: boolean;
+  variosPorPersona: boolean;
+  cantidadPorPersona: boolean;
+  orden?: number;
+}
+
+/** Edición: todo opcional, SIN número ni código. `activo: true` reactiva. */
+export type ActualizarFormulario = Partial<
+  Omit<CrearFormulario, "numero" | "codigo">
+> & {
+  activo?: boolean;
+};
+
+/**
+ * Corrección de una zonal: solo el nombre —el código queda fijo tras crearse— y el estado.
+ * `activo: true` es el camino de reactivación, igual que en los otros catálogos.
+ */
+export type ActualizarZonal = {
+  nombre?: string;
+  activo?: boolean;
+};
+
+/**
+ * Corrección de un punto: nombre, zonal y estado. El formulario al que pertenece es
+ * inmutable (2026-09-29), así que no viaja aquí.
+ */
 export type ActualizarPunto = {
   nombre?: string;
   zonalId?: number;
   activo?: boolean;
 };
 
-export type ActualizarTipoControl = { nombre?: string; activo?: boolean };
+export type ActualizarTipoControl = {
+  nombre?: string;
+  activo?: boolean;
+};
 
 export type ActualizarInstitucion = {
   sigla?: string;

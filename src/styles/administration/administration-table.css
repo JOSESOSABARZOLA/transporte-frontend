@@ -52,8 +52,12 @@
   padding-bottom: 0;
 }
 
+/* Mismo caso que el panel de perfil: el anillo estaba retirado y no repuesto. Va por
+   dentro (`offset` negativo) para que no lo recorte el borde de la tabla. */
 .app-catalog-main-row:focus-visible {
-  outline: none;
+  outline: var(--app-focus-ring-width, 2px) solid
+    var(--app-focus-ring-color, var(--color-accent));
+  outline-offset: -2px;
 }
 
 .app-modules-status-badge {

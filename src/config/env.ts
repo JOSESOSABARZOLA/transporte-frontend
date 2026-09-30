@@ -11,16 +11,40 @@
 const API_BASE_URL_POR_DEFECTO = "http://localhost:3003";
 const PORTAL_AUTH_POR_DEFECTO = "http://172.20.136.127:10006/login";
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * UNA CADENA VACÍA NO ES UN VALOR: ES LA AUSENCIA DE UNO. 2026-08-28.
+ *
+ * `??` SOLO cae al respaldo con `null` o `undefined`, y una variable declarada vacía
+ * en el `Dockerfile` llega como `""`. El día que se añadieron los `ARG` del portal de
+ * Auth —vacíos por omisión, para no volver a codificar la dirección en el fuente— eso
+ * dejó `portalAuthUrl` en `""` y la URL de ingreso quedó en `?redirectUri=…`.
+ *
+ * SE COMPROBÓ CONSTRUYENDO, no razonando: con `VITE_AUTH_PORTAL_URL=` el paquete sale
+ * sin ninguna dirección del portal; sin la variable, sale con la correcta.
+ *
+ * NO SE USA EN `apiBaseUrl`, Y ES DELIBERADO: ahí la cadena vacía **sí** es un valor.
+ * Significa «pide a tu propio origen», que es como funciona dentro de Docker con el
+ * nginx de la imagen haciendo de proxy. Coalescerla mandaría las peticiones a
+ * `localhost:3003` desde el navegador de otra máquina.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+const oPorDefecto = (valor: string | undefined, respaldo: string): string =>
+  valor && valor.trim() !== "" ? valor : respaldo;
+
 export const env = {
   /** Base de la API. El prefijo /api/v1 lo agrega httpClient. */
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? API_BASE_URL_POR_DEFECTO,
   /** Portal visual de Auth central, sin parámetros. Use `urlDelPortal()` para navegar. */
-  portalAuthUrl: import.meta.env.VITE_AUTH_PORTAL_URL ?? PORTAL_AUTH_POR_DEFECTO,
+  portalAuthUrl: oPorDefecto(
+    import.meta.env.VITE_AUTH_PORTAL_URL,
+    PORTAL_AUTH_POR_DEFECTO,
+  ),
   /**
    * Código de este módulo en Auth central. Es el mismo valor que el backend usa como
    * `JWT_AUDIENCE`: el contrato lo nombra de dos formas.
    */
-  moduleCode: import.meta.env.VITE_AUTH_MODULE_CODE ?? "TRANSPORTE",
+  moduleCode: oPorDefecto(import.meta.env.VITE_AUTH_MODULE_CODE, "TRANSPORTE"),
   /**
    * A donde se va al CERRAR sesion.
    *
@@ -29,10 +53,10 @@ export const env = {
    * despedida —o un endpoint de revocacion global— cambia solo esta. Por omision toma la
    * del portal, que es el comportamiento razonable mientras no exista esa pantalla.
    */
-  logoutAuthUrl:
-    import.meta.env.VITE_AUTH_LOGOUT_URL ??
-    import.meta.env.VITE_AUTH_PORTAL_URL ??
-    PORTAL_AUTH_POR_DEFECTO,
+  logoutAuthUrl: oPorDefecto(
+    import.meta.env.VITE_AUTH_LOGOUT_URL,
+    oPorDefecto(import.meta.env.VITE_AUTH_PORTAL_URL, PORTAL_AUTH_POR_DEFECTO),
+  ),
 } as const;
 
 /** Rol del módulo, tal como lo nombra el servidor. */
@@ -43,7 +67,10 @@ export type RolDepartamental =
   | "DAF"
   | "DIRECTOR"
   | "ADMINISTRADOR"
-  | "FUNCIONARIO";
+  | "FUNCIONARIO"
+  | "ADMINISTRADOR_DMIP"
+  | "ADMINISTRADOR_DMIT"
+  | "ADMINISTRADOR_DAF";
 
 /**
  * Los roles del módulo. Son los seis de `FASE2` §4.1 más el funcionario de campo,
@@ -62,8 +89,24 @@ export const rolUser = {
   rolDmitInstructor: "DMIT_INSTRUCTOR",
   rolDaf: "DAF",
   rolDirector: "DIRECTOR",
+  /*
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * ADMINISTRADOR REVIVIDO COMO SUPER-ADMINISTRADOR. 2026-09-10.
+   *
+   * El negocio revirtió el retiro del 2026-09-01: `ADMINISTRADOR` vuelve como administrador
+   * GENERAL —ve **todo** el módulo de administración, incluida la flota— y por eso recupera
+   * su clave aquí. `ADMINISTRADOR_DMIP` conserva su alcance (todo menos flota) y los otros
+   * dos su reparto (`_DMIT` el personal de Instrucción, `_DAF` solo la flota).
+   *
+   * FUNCIONARIO SE RETIRÓ en el mismo cambio: se elimina la pantalla «Mis órdenes» y el rol
+   * de respaldo, así que ya no tiene clave. El valor sigue en el tipo de más arriba mientras
+   * el enumerado del servidor lo conserve, para saber pintar filas de auditoría antiguas.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
   rolAdministrador: "ADMINISTRADOR",
-  rolFuncionario: "FUNCIONARIO",
+  rolAdministradorDmip: "ADMINISTRADOR_DMIP",
+  rolAdministradorDmit: "ADMINISTRADOR_DMIT",
+  rolAdministradorDaf: "ADMINISTRADOR_DAF",
 } as const satisfies Record<string, RolDepartamental>;
 
 /**

@@ -28,11 +28,11 @@ const Paginacion: FC<PaginacionProps> = ({
   const hasta = Math.min(total, (page + 1) * pageSize);
 
   return (
-    <div className="mt-3 flex flex-col items-center justify-between gap-2 px-2 sm:flex-row">
-      <span className="text-xs text-base-content/70">
+    <div className="mt-3 flex flex-col flex-wrap items-center justify-between gap-2 px-2 sm:flex-row">
+      <span className="min-w-0 text-xs text-base-content/70">
         Mostrando <b>{desde}–{hasta}</b> de <b>{total}</b> {etiqueta}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
         {onPageSize && (
           <select className="select select-bordered select-xs" value={pageSize}
             onChange={(e) => { onPageSize(Number(e.target.value)); onPage(0); }}

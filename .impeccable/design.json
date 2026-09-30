@@ -1,0 +1,396 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-03T22:32:15.224Z",
+  "title": "Design System: Cuadro de Colores Operativo",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Azul institucional",
+        "canonical": "#1b77bb",
+        "tonalRamp": [
+          "#0a2b43",
+          "#114a74",
+          "#1869a5",
+          "#1f88d6",
+          "#4da4e5",
+          "#82c0ed",
+          "#b8dbf5",
+          "#e9f4fc"
+        ]
+      },
+      "secondary": {
+        "role": "secondary",
+        "displayName": "Azul marino de Estado",
+        "canonical": "#20347d",
+        "tonalRamp": [
+          "#10193d",
+          "#1b2c6a",
+          "#263e96",
+          "#3251c3",
+          "#5d77d5",
+          "#8d9fe2",
+          "#bec8ee",
+          "#ebeefa"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Azul-violeta de acción",
+        "canonical": "#3744d0",
+        "tonalRamp": [
+          "#0f133e",
+          "#19206b",
+          "#242e99",
+          "#2f3bc6",
+          "#5a65d8",
+          "#8b93e4",
+          "#bdc1ef",
+          "#eaecfa"
+        ]
+      },
+      "neutral": {
+        "role": "tertiary",
+        "displayName": "Celeste institucional",
+        "canonical": "#72b9e7",
+        "tonalRamp": [
+          "#0b2c41",
+          "#134c71",
+          "#1b6da1",
+          "#248dd1",
+          "#51a8e1",
+          "#85c2ea",
+          "#b9dcf3",
+          "#e9f4fb"
+        ]
+      },
+      "success": {
+        "role": "semantic",
+        "displayName": "Verde menta",
+        "canonical": "#6ed0bd",
+        "tonalRamp": [
+          "#133a32",
+          "#206457",
+          "#2e8f7c",
+          "#3cb9a1",
+          "#65cdb9",
+          "#93dcce",
+          "#c1ebe3",
+          "#ecf9f6"
+        ]
+      },
+      "info": {
+        "role": "semantic",
+        "displayName": "Lila de aviso",
+        "canonical": "#8fa1ff",
+        "tonalRamp": [
+          "#000c4d",
+          "#001585",
+          "#001ebd",
+          "#0027f5",
+          "#3354ff",
+          "#7087ff",
+          "#adbbff",
+          "#e5eaff"
+        ]
+      },
+      "warning": {
+        "role": "semantic",
+        "displayName": "Naranja de advertencia",
+        "canonical": "#f48a42",
+        "tonalRamp": [
+          "#482004",
+          "#7d3707",
+          "#b24e0a",
+          "#e7660d",
+          "#f4883e",
+          "#f7ab78",
+          "#fbcfb2",
+          "#fef0e7"
+        ]
+      },
+      "error": {
+        "role": "semantic",
+        "displayName": "Rojo institucional",
+        "canonical": "#cb1f03",
+        "tonalRamp": [
+          "#4b0c01",
+          "#831402",
+          "#ba1c03",
+          "#f12504",
+          "#fc5236",
+          "#fd8672",
+          "#febaaf",
+          "#ffe9e6"
+        ],
+        "darkTheme": "#ea3446"
+      },
+      "base-100": {
+        "role": "neutral",
+        "displayName": "Papel",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5e5e5e",
+          "#7a7a7a",
+          "#999999",
+          "#b8b8b8",
+          "#d6d6d6",
+          "#f2f2f2"
+        ]
+      },
+      "base-200": {
+        "role": "neutral",
+        "displayName": "Fondo de aplicación",
+        "canonical": "#f1f3f6",
+        "tonalRamp": [
+          "#1e252f",
+          "#343f51",
+          "#4a5a73",
+          "#607595",
+          "#8395af",
+          "#a8b4c7",
+          "#cdd4df",
+          "#eff2f5"
+        ]
+      },
+      "base-300": {
+        "role": "neutral",
+        "displayName": "Borde y separador",
+        "canonical": "#d6deef",
+        "tonalRamp": [
+          "#152037",
+          "#25385f",
+          "#354f88",
+          "#4567b0",
+          "#6c89c6",
+          "#98acd7",
+          "#c4d0e8",
+          "#edf0f8"
+        ]
+      },
+      "base-content": {
+        "role": "neutral",
+        "displayName": "Tinta",
+        "canonical": "#26365f",
+        "tonalRamp": [
+          "#161f37",
+          "#26365f",
+          "#364d87",
+          "#4663af",
+          "#6d86c5",
+          "#99aad6",
+          "#c5cfe8",
+          "#edf0f8"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Título de página",
+        "purpose": "Uno por pantalla; crece de 24 a 28 px con la ventana."
+      },
+      "title": {
+        "displayName": "Rótulo de sección",
+        "purpose": "Versalitas con tracking 0.16em; también el antetítulo (0.18em)."
+      },
+      "body": {
+        "displayName": "Cuerpo",
+        "purpose": "Texto corriente y celdas; 12 px para encabezados de tabla."
+      },
+      "label": {
+        "displayName": "Distintivo",
+        "purpose": "Badges y encabezados de tabla en versalitas."
+      },
+      "dato": {
+        "displayName": "Dato de identidad",
+        "purpose": "Cédula, placa, identificador: mono para comparar en columna."
+      }
+    },
+    "shadows": [
+      {
+        "name": "superficie",
+        "value": "0 18px 42px rgba(32,52,125,0.11)",
+        "purpose": "Panel en reposo; separa del fondo texturado. Atmósfera, no jerarquía."
+      },
+      {
+        "name": "panel-datos",
+        "value": "0 24px 50px rgba(32,52,125,0.15)",
+        "purpose": "El panel principal de cada pantalla."
+      },
+      {
+        "name": "flotante",
+        "value": "0 26px 56px rgba(32,52,125,0.18)",
+        "purpose": "Desplegables y modales."
+      },
+      {
+        "name": "control",
+        "value": "0 1px 2px color-mix(in srgb, #20347d 12%, transparent)",
+        "purpose": "Botones de color en reposo."
+      },
+      {
+        "name": "control-hover",
+        "value": "0 3px 8px color-mix(in srgb, #20347d 18%, transparent)",
+        "purpose": "Aparece al apuntar; desaparece al pulsar (hundimiento de 1 px)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "transicion-control",
+        "value": "140ms cubic-bezier(0.32, 0.72, 0, 1)",
+        "purpose": "Única curva de estados: color, borde, sombra, transform. Nunca transition-all."
+      },
+      {
+        "name": "entrada-modal",
+        "value": "160ms cubic-bezier(0.32, 0.72, 0, 1)",
+        "purpose": "La tarjeta sube 8 px al aparecer; con movimiento reducido, aparece quieta."
+      },
+      {
+        "name": "cambio-de-tema",
+        "value": "none",
+        "purpose": "[data-cambiando-tema] suspende toda transición un fotograma: el fondo y el texto deben saltar juntos."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "tope-contenido",
+        "value": "110rem"
+      },
+      {
+        "name": "verificacion",
+        "value": "1440px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "La acción principal; sombra que crece al apuntar y hundimiento de 1 px al pulsar.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Guardar</button>",
+      "css": ".ds-btn { font-family: Montserrat, system-ui, sans-serif; font-size: 0.875rem; font-weight: 600; letter-spacing: 0.01em; height: 2rem; padding: 0 0.9rem; border-radius: 0.375rem; border: 1px solid transparent; cursor: pointer; transition: background-color 140ms cubic-bezier(0.32,0.72,0,1), border-color 140ms cubic-bezier(0.32,0.72,0,1), color 140ms cubic-bezier(0.32,0.72,0,1), box-shadow 140ms cubic-bezier(0.32,0.72,0,1), transform 140ms cubic-bezier(0.32,0.72,0,1); } .ds-btn:focus-visible { outline: 2px solid #3744d0; outline-offset: 2px; } .ds-btn:active { transform: translateY(1px); box-shadow: none; } .ds-btn-primary { background: #1b77bb; color: #ffffff; box-shadow: 0 1px 2px rgba(32,52,125,0.12); } .ds-btn-primary:hover { background: #166399; box-shadow: 0 3px 8px rgba(32,52,125,0.18); } .ds-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }"
+    },
+    {
+      "name": "Botón de contorno",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secundario: contorno afirmado que se acerca al primario al apuntar.",
+      "html": "<button class=\"ds-btn ds-btn-outline\">Cancelar</button>",
+      "css": ".ds-btn { font-family: Montserrat, system-ui, sans-serif; font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.9rem; border-radius: 0.375rem; cursor: pointer; transition: background-color 140ms, border-color 140ms, box-shadow 140ms, transform 140ms; } .ds-btn:focus-visible { outline: 2px solid #3744d0; outline-offset: 2px; } .ds-btn:active { transform: translateY(1px); } .ds-btn-outline { background: transparent; color: #26365f; border: 1px solid #bcc6da; } .ds-btn-outline:hover { border-color: #6da3cf; }"
+    },
+    {
+      "name": "Botón plano",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Terciario: sin caja hasta el hover. Con text-error para acciones destructivas.",
+      "html": "<button class=\"ds-btn ds-btn-ghost\">Editar</button>",
+      "css": ".ds-btn { font-family: Montserrat, system-ui, sans-serif; font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.9rem; border-radius: 0.375rem; border: 1px solid transparent; cursor: pointer; transition: background-color 140ms, transform 140ms; } .ds-btn:focus-visible { outline: 2px solid #3744d0; outline-offset: 2px; } .ds-btn:active { transform: translateY(1px); } .ds-btn-ghost { background: transparent; color: #26365f; } .ds-btn-ghost:hover { background: rgba(27,119,187,0.10); }"
+    },
+    {
+      "name": "Campo de texto",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Borde visible en reposo; foco con borde accent y anillo; error con borde y fondo tenue.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Buscar punto o zonal…\" />",
+      "css": ".ds-input { font-family: Montserrat, system-ui, sans-serif; font-size: 0.875rem; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; border: 1px solid #bcc6da; background: #ffffff; color: #26365f; transition: border-color 140ms, box-shadow 140ms, background-color 140ms; } .ds-input::placeholder { color: rgba(38,54,95,0.58); } .ds-input:hover { border-color: #6da3cf; } .ds-input:focus-visible { outline: 2px solid #3744d0; outline-offset: 2px; border-color: #3744d0; } .ds-input:disabled { background: rgba(241,243,246,0.7); border-color: rgba(188,198,218,0.55); cursor: not-allowed; }"
+    },
+    {
+      "name": "Distintivos",
+      "kind": "chip",
+      "refersTo": "badge-primary",
+      "description": "Peso 600 a 12 px; los semánticos con relleno tenue y borde, nunca a sangre.",
+      "html": "<span class=\"ds-badge ds-badge-primary\">Vigente</span> <span class=\"ds-badge ds-badge-ghost\">635 puntos</span> <span class=\"ds-badge ds-badge-warning\">Sin puntos</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; font-family: Montserrat, system-ui, sans-serif; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em; height: 1.25rem; padding: 0 0.5rem; border-radius: 0.375rem; margin-right: 0.375rem; } .ds-badge-primary { background: #1b77bb; color: #ffffff; } .ds-badge-ghost { background: rgba(38,54,95,0.08); color: #26365f; } .ds-badge-warning { background: rgba(244,138,66,0.14); color: #7a3c10; border: 1px solid #f48a42; }"
+    },
+    {
+      "name": "Tabla",
+      "kind": "custom",
+      "refersTo": "input",
+      "description": "Encabezado en franja con versalitas; separador tenue; hover de fila info al 10 %.",
+      "html": "<table class=\"ds-tabla\"><thead><tr><th>Punto de encuentro</th><th>Zonal</th></tr></thead><tbody><tr><td>AMC Matriz</td><td>DMQ</td></tr><tr><td>HCAM</td><td>Zonal Quitumbe</td></tr></tbody></table>",
+      "css": ".ds-tabla { font-family: Montserrat, system-ui, sans-serif; font-size: 0.875rem; border-collapse: collapse; width: 100%; color: #26365f; } .ds-tabla th { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; text-align: left; color: rgba(38,54,95,0.7); background: rgba(241,243,246,0.6); border-bottom: 1px solid #d6deef; padding: 0.4724rem 0.75rem; } .ds-tabla td { padding: 0.4724rem 0.75rem; border-bottom: 1px solid rgba(214,222,239,0.62); } .ds-tabla tbody tr { transition: background-color 140ms; } .ds-tabla tbody tr:hover { background: rgba(143,161,255,0.1); }"
+    },
+    {
+      "name": "Cabecera institucional de modal",
+      "kind": "card",
+      "refersTo": "button-primary",
+      "description": "Firma del sistema: marco azul marino con antetítulo en versalitas y contenido embutido en tarjeta blanca. Hermana los módulos de SIGOC.",
+      "html": "<div class=\"ds-modal\"><div class=\"ds-modal-cab\"><p class=\"ds-modal-kicker\">Catálogos del cuadro</p><h3 class=\"ds-modal-titulo\">Editar HCAM</h3></div><div class=\"ds-modal-cuerpo\">Corrige el nombre, la zonal o los formularios que lo despliegan.</div></div>",
+      "css": ".ds-modal { font-family: Montserrat, system-ui, sans-serif; background: #20347d; border-radius: 0.375rem; padding: 0.5rem; max-width: 22rem; box-shadow: 0 26px 56px rgba(32,52,125,0.18); } .ds-modal-cab { padding: 0.5rem 1rem 0.75rem; color: #ffffff; } .ds-modal-kicker { margin: 0; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(255,255,255,0.7); } .ds-modal-titulo { margin: 0.125rem 0 0; font-size: 1.125rem; font-weight: 600; } .ds-modal-cuerpo { background: #ffffff; color: #26365f; border-radius: 0.375rem; padding: 1.5rem; font-size: 0.875rem; line-height: 1.5; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "El parte de servicio",
+    "overview": "Este sistema no es un panel de analítica ni un producto de consumo: es un parte de servicio — el documento operativo que un funcionario llena decenas de veces al día, contra una ventana que cierra a hora fija. Todo lo visual se subordina a esa escena: la información gana siempre al adorno, la densidad es una virtud, y la repetición manda sobre la primera impresión. La marca vive en la precisión de los detalles, no en gestos expresivos.\n\nLa identidad cromática pertenece a la Alcaldía de Quito (manual Nueva Imagen 2025). Los nueve colores de los formularios son datos del negocio entregados por el servidor: el sistema visual existe para sostenerlos legiblemente, no para competir con ellos. Los controles son sobrios y precisos: responden sin llamar la atención.",
+    "keyCharacteristics": [
+      "Denso e institucional: optimizado para el operador que repite, no para el visitante.",
+      "Cajas rectas, un solo radio (0.375rem), bordes de 1 px que sí se ven.",
+      "Dos temas completos con contraste medido, nunca estimado.",
+      "Toda señal cromática lleva equivalente textual.",
+      "El peso máximo real es 600: la negrita se construye con tamaño, espaciado y contraste."
+    ],
+    "rules": [
+      {
+        "name": "La regla del rojo",
+        "body": "El rojo y los complementarios nunca son fondos completos: solo acentos, bordes, textos o barras.",
+        "section": "colors"
+      },
+      {
+        "name": "La regla del banner",
+        "body": "Los nueve colores de formulario los entrega el backend y se aplican con style en línea; el texto encima se elige por luminancia. Único hexadecimal admitido en el código.",
+        "section": "colors"
+      },
+      {
+        "name": "La regla del color-mix",
+        "body": "Un matiz nuevo se compone desde los tokens con color-mix; escribir un hex a mano es romper la marca.",
+        "section": "colors"
+      },
+      {
+        "name": "La regla del 600",
+        "body": "Montserrat se declara 400–600: pedir 700 produce negrita sintética. Los títulos se marcan con 600 real más tamaño, tracking y contraste.",
+        "section": "typography"
+      },
+      {
+        "name": "La regla de la versalita",
+        "body": "Lo que rotula va en MAYÚSCULAS con tracking abierto; lo que se lee corrido, nunca.",
+        "section": "typography"
+      },
+      {
+        "name": "La regla del hundimiento",
+        "body": "Al pulsar, el control baja 1 px y pierde la sombra. Es la única elevación narrativa admitida, y dura lo que dura el clic.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do componer solo con el inventario de docs/FASE5-diseno-interfaz.md §2.2 — una clase nueva se decide, no se supone.",
+      "Do derivar matices con color-mix desde los tokens del tema.",
+      "Do medir el contraste de todo color nuevo: 4,5:1 texto, 3:1 indicadores — en los dos temas.",
+      "Do dar a todo control :focus-visible con el anillo del sistema (accent claro / celeste oscuro).",
+      "Do mostrar lo no disponible apagado y con el motivo en palabras.",
+      "Do poner los datos de identidad (cédula, placa, código) en mono 12 px."
+    ],
+    "donts": [
+      "Don't escribir hexadecimales a mano — el único admitido es el color de banner que entrega el servidor.",
+      "Don't usar font-bold (700) en Montserrat: es negrita sintética. Tope 600.",
+      "Don't usar el rojo o los complementarios como fondo completo.",
+      "Don't comunicar nada solo con color — equivalente textual siempre.",
+      "Don't tocar el tema de daisyUI en src/index.css ni la densidad de fila (--app-table-row-padding-y).",
+      "Don't usar transition-all ni animar el cambio de tema.",
+      "Don't poner text-white fijo sobre un banner: el texto lo decide la luminancia."
+    ]
+  }
+}

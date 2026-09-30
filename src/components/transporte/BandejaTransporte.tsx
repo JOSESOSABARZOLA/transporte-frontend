@@ -16,9 +16,17 @@
  * de la lista sin que nadie lo notara.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * TODO LO QUE LLEGA ESTÁ PENDIENTE. El endpoint filtra por `estadoTransporte = PENDIENTE`
- * y por formularios que habilitan vehículo: no hay filas resueltas que separar. Por eso
- * al guardar una asignación **la fila sale de la bandeja**, que es el caso 5 del plan.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * YA NO TODO LO QUE LLEGA ESTÁ PENDIENTE. 2026-08-31.
+ *
+ * Hasta hoy el endpoint filtraba por `estadoTransporte = PENDIENTE` y no había filas
+ * resueltas que separar, así que la columna de conductor podía escribir «Pendiente» a
+ * mano. Con `?incluirResueltos=true` eso pasó a ser mentira: llegan también los asignados
+ * y los de propios medios, y la columna **tiene que leer el estado real**.
+ *
+ * El caso 5 del plan sigue valiendo en la vista por omisión: sin resueltos, al guardar una
+ * asignación la fila sale de la bandeja.
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import type { FC } from "react";
@@ -42,7 +50,7 @@ const BandejaTransporte: FC<BandejaTransporteProps> = ({
   mensajeVacio,
 }) => (
   <div className="overflow-x-auto">
-    <table className="table table-sm">
+    <table className="table table-sm table-zebra">
       <thead>
         <tr>
           <th scope="col">Identificador</th>
@@ -102,14 +110,19 @@ const BandejaTransporte: FC<BandejaTransporteProps> = ({
               </td>
 
               {/*
-                Amarillo de Alerta con su equivalente textual, siempre (regla 6). El
-                obligatorio de RN-43 se distingue del simplemente pendiente: no es lo
-                mismo «falta» que «sin esto no se cierra la jornada».
+                Equivalente textual SIEMPRE, y el amarillo solo cuando de verdad falta
+                algo (regla 6). El obligatorio de RN-43 se distingue del simplemente
+                pendiente: no es lo mismo «falta» que «sin esto no se cierra la jornada».
+                Una fila ya resuelta no se pinta de alerta, porque no lo es.
               */}
-              <td className="bg-warning/25 px-2 py-1 align-top font-semibold">
-                {operativo.requiereConductor
-                  ? "Obligatorio, pendiente"
-                  : "Pendiente"}
+              <td
+                className={`px-2 py-1 align-top font-semibold ${
+                  operativo.estadoTransporte === "PENDIENTE"
+                    ? "bg-warning/25"
+                    : ""
+                }`}
+              >
+                {textoDelEstado(operativo)}
               </td>
 
               <td className="px-2 py-1 align-top">
@@ -124,7 +137,9 @@ const BandejaTransporte: FC<BandejaTransporteProps> = ({
                       : undefined
                   }
                 >
-                  Asignar
+                  {operativo.estadoTransporte === "PENDIENTE"
+                    ? "Asignar"
+                    : "Corregir"}
                 </button>
               </td>
             </tr>
@@ -134,5 +149,19 @@ const BandejaTransporte: FC<BandejaTransporteProps> = ({
     </table>
   </div>
 );
+
+/**
+ * Lo que dice la columna de conductor, en palabras.
+ *
+ * `PROPIOS_MEDIOS` no se abrevia a «resuelto»: es una decisión concreta de la DAF —el
+ * operativo se cubre SIN vehículo— y confundirla con «ya tiene conductor» llevaría a
+ * buscar una placa que nunca se asignó.
+ */
+const textoDelEstado = (operativo: OperativoPendiente): string => {
+  if (operativo.estadoTransporte === "ASIGNADO") return "Asignado";
+  if (operativo.estadoTransporte === "PROPIOS_MEDIOS") return "Propios medios";
+
+  return operativo.requiereConductor ? "Obligatorio, pendiente" : "Pendiente";
+};
 
 export default BandejaTransporte;

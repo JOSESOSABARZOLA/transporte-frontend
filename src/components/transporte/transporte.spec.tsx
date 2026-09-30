@@ -20,14 +20,12 @@ import { describe, expect, it, vi } from "vitest";
 import BandejaTransporte from "./BandejaTransporte.tsx";
 import IndicadorFlota from "./IndicadorFlota.tsx";
 import PanelAsignacionTransporte from "./PanelAsignacionTransporte.tsx";
-import {
-  SIN_PENDIENTES,
-  vehiculosDeLosConductores,
-} from "../../utils/flota.util.ts";
+import { SIN_PENDIENTES } from "../../utils/flota.util.ts";
 import type {
   CapacidadFlota,
   ConductorDisponible,
   OperativoPendiente,
+  VehiculoDeLaFlota,
 } from "../../interfaces/Transporte.ts";
 
 const pendiente = (
@@ -63,16 +61,46 @@ const conductores: ConductorDisponible[] = [
   },
 ];
 
+/**
+ * PV-33. La flota llega ENTERA desde `GET /transporte/vehiculos`, no compuesta con los
+ * habituales de los conductores. La 56 no es habitual de nadie —antes era inasignable e
+ * invisible— y la 57 está en el taller, que se muestra y no se oculta.
+ */
+const flota: VehiculoDeLaFlota[] = [
+  {
+    id: 55,
+    placa: "PMA7892",
+    descripcion: null,
+    utilizable: true,
+    motivo: null,
+  },
+  {
+    id: 56,
+    placa: "PMA7056",
+    descripcion: "Camioneta doble cabina",
+    utilizable: true,
+    motivo: null,
+  },
+  {
+    id: 57,
+    placa: "PMA3368",
+    descripcion: null,
+    utilizable: false,
+    motivo: "En mantenimiento hasta el 2026-09-03.",
+  },
+];
+
 const propiedadesDelPanel = {
   operativo: pendiente(),
   conductores,
-  vehiculos: vehiculosDeLosConductores(conductores),
+  vehiculos: flota,
   cargandoConductores: false,
   soloLectura: false,
   guardando: false,
   aviso: null,
   onAsignar: vi.fn(),
   onPropiosMedios: vi.fn(),
+  onDesasignar: vi.fn(),
   onCancelar: vi.fn(),
 };
 
@@ -142,20 +170,159 @@ describe("caso 3 · elegir conductor propone su vehículo habitual", () => {
     expect(guardar).toBeEnabled();
   });
 
-  it("los vehículos ofrecidos son los habituales, sin repetir", () => {
-    const repetidos: ConductorDisponible[] = [
-      ...conductores,
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * PV-33 · 2026-08-31. Antes de esta fecha aquí había una prueba que afirmaba lo
+ * contrario: que «los vehículos ofrecidos son los habituales, sin repetir». Era correcta
+ * y describía una limitación, no una regla. Se retiró con la función que la sostenía.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("PV-33 · el desplegable ofrece la flota entera", () => {
+  it("incluye una placa que no es habitual de ningún conductor", () => {
+    render(<PanelAsignacionTransporte {...propiedadesDelPanel} />);
+
+    const placas = within(screen.getByLabelText(/Placa del vehículo/))
+      .getAllByRole("option")
+      .map((opcion) => opcion.textContent ?? "");
+
+    // La 7056 no la conduce habitualmente nadie: antes no aparecía.
+    expect(placas.some((texto) => texto.includes("PMA7056"))).toBe(true);
+  });
+
+  /** Regla 6: el motivo va en palabras, dentro del texto de la opción. */
+  it("la placa en taller se ofrece deshabilitada y con su motivo", () => {
+    render(<PanelAsignacionTransporte {...propiedadesDelPanel} />);
+
+    const enTaller = within(screen.getByLabelText(/Placa del vehículo/))
+      .getAllByRole("option")
+      .find((opcion) => (opcion.textContent ?? "").includes("PMA3368"));
+
+    expect(enTaller).toBeDefined();
+    expect(enTaller).toBeDisabled();
+    expect(enTaller?.textContent).toContain("En mantenimiento hasta el");
+  });
+
+  /**
+   * No se propone una placa que después el servidor rechazaría: obligaría a la DAF a
+   * descubrirlo al guardar, con un 409.
+   */
+  it("no propone el vehículo habitual si ese día está en el taller", async () => {
+    const conductorConPlacaEnTaller: ConductorDisponible[] = [
       {
-        id: 12,
-        nombreCompleto: "PAREDES JOSÉ",
+        id: 13,
+        nombreCompleto: "MERA CARLOS",
         licenciaTipo: "E",
-        vehiculoHabitual: { id: 55, placa: "PMA7892" },
+        vehiculoHabitual: { id: 57, placa: "PMA3368" },
       },
     ];
 
-    expect(vehiculosDeLosConductores(repetidos)).toEqual([
-      { id: 55, placa: "PMA7892" },
-    ]);
+    render(
+      <PanelAsignacionTransporte
+        {...propiedadesDelPanel}
+        conductores={conductorConPlacaEnTaller}
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByLabelText(/Conductor/), "13");
+
+    expect(screen.getByLabelText(/Placa del vehículo/)).toHaveValue("");
+  });
+});
+
+/**
+ * P-07 · 2026-08-31. Deshacer la decisión. Hasta esta fecha no había ninguna salida:
+ * una asignación equivocada solo se corregía entrando en la base.
+ */
+describe("P-07 · devolver un operativo a pendiente", () => {
+  it("un operativo PENDIENTE no ofrece el botón: no hay nada que deshacer", () => {
+    render(<PanelAsignacionTransporte {...propiedadesDelPanel} />);
+
+    expect(
+      screen.queryByRole("button", { name: /Devolver a pendiente/ }),
+    ).toBeNull();
+  });
+
+  it("uno ya asignado sí lo ofrece, y avisa al pulsarlo", async () => {
+    const onDesasignar = vi.fn();
+
+    render(
+      <PanelAsignacionTransporte
+        {...propiedadesDelPanel}
+        operativo={pendiente({ estadoTransporte: "ASIGNADO" })}
+        onDesasignar={onDesasignar}
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /Devolver a pendiente/ }),
+    );
+
+    expect(onDesasignar).toHaveBeenCalledTimes(1);
+  });
+
+  /** También se deshace propios medios: es la otra decisión que se puede equivocar. */
+  it("uno de propios medios también se puede devolver", () => {
+    render(
+      <PanelAsignacionTransporte
+        {...propiedadesDelPanel}
+        operativo={pendiente({ estadoTransporte: "PROPIOS_MEDIOS" })}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Devolver a pendiente/ }),
+    ).toBeEnabled();
+  });
+
+  it("fuera de la ventana, el botón está pero no se puede pulsar", () => {
+    render(
+      <PanelAsignacionTransporte
+        {...propiedadesDelPanel}
+        operativo={pendiente({ estadoTransporte: "ASIGNADO" })}
+        soloLectura
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Devolver a pendiente/ }),
+    ).toBeDisabled();
+  });
+});
+
+describe("P-07 · la bandeja distingue lo resuelto de lo pendiente", () => {
+  it("una fila asignada no dice «Pendiente» ni se pinta de alerta", () => {
+    render(
+      <BandejaTransporte
+        operativos={[pendiente({ estadoTransporte: "ASIGNADO" })]}
+        seleccionadoId={null}
+        onSeleccionar={vi.fn()}
+        soloLectura={false}
+        mensajeVacio={SIN_PENDIENTES}
+      />,
+    );
+
+    expect(screen.getByText("Asignado")).toBeInTheDocument();
+    expect(screen.queryByText("Obligatorio, pendiente")).toBeNull();
+    // La acción cambia de nombre: ya no se asigna, se corrige.
+    expect(
+      screen.getByRole("button", { name: "Corregir" }),
+    ).toBeInTheDocument();
+  });
+
+  it("propios medios se nombra tal cual, no como «resuelto»", () => {
+    render(
+      <BandejaTransporte
+        operativos={[pendiente({ estadoTransporte: "PROPIOS_MEDIOS" })]}
+        seleccionadoId={null}
+        onSeleccionar={vi.fn()}
+        soloLectura={false}
+        mensajeVacio={SIN_PENDIENTES}
+      />,
+    );
+
+    expect(screen.getByText("Propios medios")).toBeInTheDocument();
   });
 });
 
@@ -360,5 +527,28 @@ describe("caso 9 · flota excedida avisa pero no bloquea", () => {
     );
 
     expect(screen.getByText("Flota sin declarar")).toBeInTheDocument();
+  });
+});
+
+/**
+ * SEMÁFORO DE CARGA DEL CONDUCTOR (FRMS / ISO 39001+45001, 2026-09-24). ADVISORY: el nivel se
+ * muestra en el texto de la opción (un `<select>` no admite más) y NO saca al conductor del
+ * desplegable —la DAF decide—.
+ */
+describe("FRMS · semáforo de carga del conductor (advisory)", () => {
+  it("muestra el nivel de carga en la opción, sin sacar al conductor de la lista", () => {
+    render(
+      <PanelAsignacionTransporte
+        {...propiedadesDelPanel}
+        conductores={[
+          { ...conductores[0], nivelCarga: "ROJO" },
+          conductores[1],
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("option", { name: /VIVANCO LUIS.*Carga alta/ }),
+    ).toBeInTheDocument();
   });
 });

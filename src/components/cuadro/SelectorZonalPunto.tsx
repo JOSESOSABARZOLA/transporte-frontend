@@ -55,14 +55,24 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { FC } from "react";
+import { useState, type FC } from "react";
 
 import type {
   PuntoEncuentro,
   TipoControl,
   Zonal,
 } from "../../interfaces/Formulario.ts";
-import { OPCION_ADICIONALES } from "../../utils/valoresOperativo.util.ts";
+import {
+  OPCION_ADICIONALES,
+  OPCION_PUNTO_NUEVO,
+} from "../../utils/valoresOperativo.util.ts";
+import SelectorTokens from "../forms/SelectorTokens.tsx";
+import SelectorTipoControl from "./SelectorTipoControl.tsx";
+import { PieDeError } from "./PieDeError.tsx";
+
+// Etiqueta del token y de la lista de zonales. Fuera del componente: son dependencias del filtro
+// memoizado de `SelectorTokens` (regla 2 de CLAUDE.md), y recrearlas cada render lo invalidaría.
+const nombreDeZonal = (zonal: Zonal): string => zonal.nombre;
 
 /**
  * Mensaje a mostrar bajo cada control, o `undefined` si no hay nada que decir.
@@ -79,24 +89,11 @@ export type ErroresZonalPunto = {
   tipoLibre?: string;
 };
 
-/** El pie de error de un control, con el papel que lo anuncia a los lectores. */
-const PieDeError: FC<{ id: string; mensaje?: string }> = ({ id, mensaje }) =>
-  mensaje ? (
-    <label className="label">
-      <span
-        id={id}
-        className="label-text-alt text-error"
-        role="alert"
-      >
-        {mensaje}
-      </span>
-    </label>
-  ) : null;
-
 type SelectorZonalPuntoProps = {
   zonales: Zonal[];
-  zonalSeleccionada: number | null;
-  onZonalChange: (zonalId: number | null) => void;
+  /** VARIAS zonales (RN-19), desde el 2026-09-21. El punto pertenece a alguna de ellas. */
+  zonalesSeleccionadas: number[];
+  onZonalesChange: (ids: number[]) => void;
 
   puntos: PuntoEncuentro[];
   cargandoPuntos: boolean;
@@ -108,20 +105,41 @@ type SelectorZonalPuntoProps = {
   tiposControl: TipoControl[];
   tipoSeleccionado: string;
   onTipoChange: (valor: string) => void;
+  /** Selección múltiple de tipos, donde el formulario lo admite (los nueve desde 2026-09-14). */
+  tipoMultiple: boolean;
+  tiposSeleccionadosIds: number[];
+  onTiposChange: (ids: number[]) => void;
   tipoLibre: string;
   onTipoLibreChange: (texto: string) => void;
 
   /** RN-20, por catálogo: cada desplegable consulta el suyo. */
   capturaLibrePunto: boolean;
   capturaLibreTipo: boolean;
+  /**
+   * AGREGAR UN PUNTO AL CATÁLOGO desde aquí (Unidad de Operativos, 1-4). Con esto se ofrece un
+   * «Agregar punto de encuentro» que deja pendiente un punto nuevo ligado a una de las zonales
+   * elegidas. NO se crea al teclearlo: se crea al REGISTRAR el operativo (misma transacción), de
+   * modo que si el operativo no se crea, el punto tampoco.
+   */
+  permiteAgregarPunto?: boolean;
+  /** Deja pendiente el punto nuevo (nombre + zonal elegida). Lo registra el formulario al enviar. */
+  onAgregarPunto?: (nombre: string, zonalId: number) => void;
+  /** Nombre del punto nuevo pendiente, para mostrarlo como opción elegida del desplegable. */
+  puntoNuevoNombre?: string;
   deshabilitado: boolean;
   errores: ErroresZonalPunto;
+  /**
+   * Si pinta el campo «Tipo de control» junto a zonal y punto (2026-09-09). Por omisión sí
+   * —es como funcionaba y como lo usan las pruebas y los paneles—; P-01 lo apaga para
+   * colocarlo por separado, junto a Instituciones, con `SelectorTipoControl`.
+   */
+  renderTipo?: boolean;
 };
 
 const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
   zonales,
-  zonalSeleccionada,
-  onZonalChange,
+  zonalesSeleccionadas,
+  onZonalesChange,
   puntos,
   cargandoPuntos,
   puntoSeleccionado,
@@ -131,62 +149,79 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
   tiposControl,
   tipoSeleccionado,
   onTipoChange,
+  tipoMultiple,
+  tiposSeleccionadosIds,
+  onTiposChange,
   tipoLibre,
   onTipoLibreChange,
   capturaLibrePunto,
   capturaLibreTipo,
+  permiteAgregarPunto = false,
+  onAgregarPunto,
+  puntoNuevoNombre,
   deshabilitado,
   errores,
+  renderTipo = true,
 }) => {
+  // Formulario en línea para agregar un punto al catálogo (Unidad de Operativos).
+  const [agregando, setAgregando] = useState(false);
+  const [nombrePunto, setNombrePunto] = useState("");
+  // A qué zonal se liga. Con una sola elegida se usa esa; con varias, se elige aquí.
+  const [zonalPunto, setZonalPunto] = useState<number | "">("");
+
+  const zonalDestino =
+    zonalesSeleccionadas.length === 1
+      ? zonalesSeleccionadas[0]
+      : typeof zonalPunto === "number"
+        ? zonalPunto
+        : null;
+
+  const abrirAgregar = (): void => {
+    setNombrePunto("");
+    setZonalPunto(
+      zonalesSeleccionadas.length === 1 ? zonalesSeleccionadas[0] : "",
+    );
+    setAgregando(true);
+  };
+
+  const guardarPunto = (): void => {
+    const nombre = nombrePunto.trim();
+    if (nombre.length < 3 || zonalDestino === null || !onAgregarPunto) return;
+    onAgregarPunto(nombre, zonalDestino);
+    setAgregando(false);
+    setNombrePunto("");
+  };
+
+  const nombreZonalDe = (id: number): string => {
+    const zonal = zonales.find((z) => z.id === id);
+    return zonal ? zonal.nombre : `Zonal ${id}`;
+  };
   /**
    * Zonal elegida, consulta terminada, el catálogo no trajo ninguno **y el formulario
    * tampoco admite capturarlo a mano**: entonces no hay nada que elegir y decirlo es lo
    * único útil. Con la captura libre habilitada sí queda salida, así que no se bloquea.
    */
+  const sinZonal = zonalesSeleccionadas.length === 0;
   const sinPuntos =
-    zonalSeleccionada !== null &&
-    !cargandoPuntos &&
-    puntos.length === 0 &&
-    !capturaLibrePunto;
+    !sinZonal && !cargandoPuntos && puntos.length === 0 && !capturaLibrePunto;
 
   return (
   <>
-    <div className="form-control w-full">
-      <label
-        className="label"
-        htmlFor="zonal"
-      >
-        <span className="label-text font-medium">
-          Zonal<span className="text-error ml-1">*</span>
-        </span>
-      </label>
-      <select
-        id="zonal"
-        className="select select-bordered w-full"
-        value={zonalSeleccionada ?? ""}
-        disabled={deshabilitado}
-        aria-required="true"
-        aria-invalid={Boolean(errores.zonal)}
-        aria-describedby={errores.zonal ? "zonal-error" : undefined}
-        onChange={(e) =>
-          onZonalChange(e.target.value ? Number(e.target.value) : null)
-        }
-      >
-        <option value="">Seleccionar…</option>
-        {zonales.map((zonal) => (
-          <option
-            key={zonal.id}
-            value={zonal.id}
-          >
-            {zonal.nombre}
-          </option>
-        ))}
-      </select>
-      <PieDeError
-        id="zonal-error"
-        mensaje={errores.zonal}
-      />
-    </div>
+    {/* VARIAS zonales (RN-19, 2026-09-21): tokens con buscador, como Instituciones. El punto de
+        encuentro pertenece a alguna de las elegidas (lo valida el servidor). */}
+    <SelectorTokens
+      id="zonales"
+      etiqueta="Zonales"
+      obligatorio
+      opciones={zonales}
+      seleccionadas={zonalesSeleccionadas}
+      onCambio={onZonalesChange}
+      etiquetaCorta={nombreDeZonal}
+      etiquetaLarga={nombreDeZonal}
+      marcador="Buscar zonal…"
+      deshabilitado={deshabilitado}
+      error={errores.zonal}
+    />
 
     <div className="form-control w-full">
       <label
@@ -201,11 +236,13 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
         id="punto"
         className="select select-bordered w-full"
         value={puntoSeleccionado}
+        // Con un punto NUEVO pendiente hay al menos una opción elegible, así que el «sin puntos»
+        // no debe deshabilitar el desplegable.
         disabled={
           deshabilitado ||
-          zonalSeleccionada === null ||
+          sinZonal ||
           cargandoPuntos ||
-          sinPuntos
+          (sinPuntos && !puntoNuevoNombre)
         }
         aria-required="true"
         aria-invalid={Boolean(errores.punto)}
@@ -219,7 +256,7 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
             zonal elegida pero sin puntos, lo dice: un desplegable que solo ofrece
             «Seleccionar…» y nada más deja al funcionario buscando qué hizo mal. */}
         <option value="">
-          {zonalSeleccionada === null
+          {sinZonal
             ? "Elija primero una zonal"
             : cargandoPuntos
               ? "Cargando puntos…"
@@ -235,6 +272,12 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
             {punto.nombre}
           </option>
         ))}
+        {/* Punto NUEVO pendiente (Unidad de Operativos): se registra al crear el operativo. */}
+        {puntoNuevoNombre && (
+          <option value={OPCION_PUNTO_NUEVO}>
+            Nuevo: {puntoNuevoNombre} (se registra al guardar)
+          </option>
+        )}
         {capturaLibrePunto && (
           <option value={OPCION_ADICIONALES}>ADICIONALES…</option>
         )}
@@ -260,7 +303,7 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
         configuración que falta. El color no carga solo con el significado —el texto dice
         qué pasa y a quién acudir—, como exige la regla 6 de CLAUDE.md.
       */}
-      {sinPuntos && (
+      {sinPuntos && !puntoNuevoNombre && (
         <div
           className="alert alert-warning mt-2"
           role="status"
@@ -272,9 +315,86 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
         </div>
       )}
 
+      {/*
+        AGREGAR UN PUNTO AL CATÁLOGO (Unidad de Operativos, 2026-09-24). Solo con al menos una
+        zonal elegida: el punto pertenece a una zonal. Con varias, se elige a cuál. Al agregar, el
+        punto queda PENDIENTE (no se crea todavía) y se registra al guardar el operativo, en la
+        misma transacción: si el operativo no se crea, el punto tampoco.
+      */}
+      {permiteAgregarPunto && !sinZonal && (
+        <div className="mt-2">
+          {!agregando ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              disabled={deshabilitado}
+              onClick={abrirAgregar}
+            >
+              + Agregar punto de encuentro
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2 rounded-md border border-base-300 p-2">
+              <input
+                type="text"
+                className="input input-bordered input-sm w-full"
+                placeholder="Nombre del punto de encuentro"
+                aria-label="Nombre del nuevo punto de encuentro"
+                maxLength={200}
+                value={nombrePunto}
+                onChange={(e) => setNombrePunto(e.target.value)}
+              />
+              {zonalesSeleccionadas.length > 1 && (
+                <select
+                  className="select select-bordered select-sm w-full"
+                  aria-label="Zonal a la que pertenece el punto"
+                  value={zonalPunto === "" ? "" : String(zonalPunto)}
+                  onChange={(e) =>
+                    setZonalPunto(
+                      e.target.value === "" ? "" : Number(e.target.value),
+                    )
+                  }
+                >
+                  <option value="">Elija la zonal del punto…</option>
+                  {zonalesSeleccionadas.map((id) => (
+                    <option
+                      key={id}
+                      value={String(id)}
+                    >
+                      {nombreZonalDe(id)}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={
+                    deshabilitado ||
+                    nombrePunto.trim().length < 3 ||
+                    zonalDestino === null
+                  }
+                  onClick={guardarPunto}
+                >
+                  Agregar
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setAgregando(false)}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {puntoSeleccionado === OPCION_ADICIONALES && (
         <>
           <input
+            id="puntoLibre"
             type="text"
             className="input input-bordered mt-2 w-full"
             placeholder="Escriba el punto de encuentro"
@@ -297,66 +417,27 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
       )}
     </div>
 
-    <div className="form-control w-full">
-      <label
-        className="label"
-        htmlFor="tipoControl"
-      >
-        <span className="label-text font-medium">
-          Tipo de control<span className="text-error ml-1">*</span>
-        </span>
-      </label>
-      <select
-        id="tipoControl"
-        className="select select-bordered w-full"
-        value={tipoSeleccionado}
-        disabled={deshabilitado}
-        aria-required="true"
-        aria-invalid={Boolean(errores.tipoControl)}
-        aria-describedby={errores.tipoControl ? "tipoControl-error" : undefined}
-        onChange={(e) => onTipoChange(e.target.value)}
-      >
-        <option value="">Seleccionar…</option>
-        {tiposControl.map((tipo) => (
-          <option
-            key={tipo.id}
-            value={String(tipo.id)}
-          >
-            {tipo.nombre}
-          </option>
-        ))}
-        {capturaLibreTipo && (
-          <option value={OPCION_ADICIONALES}>ADICIONALES…</option>
-        )}
-      </select>
-
-      <PieDeError
-        id="tipoControl-error"
-        mensaje={errores.tipoControl}
+    {/*
+      El «Tipo de control» se extrajo a `SelectorTipoControl` (2026-09-09) para poder colocarlo
+      por separado. Aquí se pinta por omisión —como siempre—; P-01 lo apaga (`renderTipo`) y lo
+      pone junto a Instituciones.
+    */}
+    {renderTipo && (
+      <SelectorTipoControl
+        tiposControl={tiposControl}
+        tipoSeleccionado={tipoSeleccionado}
+        onTipoChange={onTipoChange}
+        tipoMultiple={tipoMultiple}
+        tiposSeleccionadosIds={tiposSeleccionadosIds}
+        onTiposChange={onTiposChange}
+        tipoLibre={tipoLibre}
+        onTipoLibreChange={onTipoLibreChange}
+        capturaLibreTipo={capturaLibreTipo}
+        deshabilitado={deshabilitado}
+        errorTipoControl={errores.tipoControl}
+        errorTipoLibre={errores.tipoLibre}
       />
-
-      {tipoSeleccionado === OPCION_ADICIONALES && (
-        <>
-          <input
-            type="text"
-            className="input input-bordered mt-2 w-full"
-            placeholder="Escriba el tipo de control"
-            aria-label="Tipo de control adicional"
-            maxLength={220}
-            value={tipoLibre}
-            disabled={deshabilitado}
-            aria-required="true"
-            aria-invalid={Boolean(errores.tipoLibre)}
-            aria-describedby={errores.tipoLibre ? "tipoLibre-error" : undefined}
-            onChange={(e) => onTipoLibreChange(e.target.value)}
-          />
-          <PieDeError
-            id="tipoLibre-error"
-            mensaje={errores.tipoLibre}
-          />
-        </>
-      )}
-    </div>
+    )}
   </>
   );
 };

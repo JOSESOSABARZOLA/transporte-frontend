@@ -23,10 +23,58 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+/*
+ * EL NOMBRE LEGIBLE LLEGA COMO PROPIEDAD y aquí se devuelve el código tal cual.
+ *
+ * Lo que estas pruebas fijan es la tabla, no el catálogo: cómo se llama cada rol lo dice
+ * el servidor desde el 2026-09-01 y tiene su propia prueba en el backend. Un doble que
+ * tradujera aquí estaría probando su propia traducción.
+ */
+
 import TablaRolesAuth from "./TablaRolesAuth.tsx";
 import ModalRolAuth from "./ModalRolAuth.tsx";
 import AdminRolesAuthPage from "../../pages/AdminRolesAuthPage.tsx";
 import type { RolAuth } from "../../interfaces/RolAuth.ts";
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * EL CATÁLOGO DE ROLES LO SIRVE EL SERVIDOR DESDE EL 2026-09-01.
+ *
+ * Se simula con los mismos nombres que devuelve `GET /administracion/roles` —los del
+ * organigrama— y no con los rótulos cortos que el frontend tenía escritos a mano: son
+ * justamente los que dejaron de existir.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+vi.mock("../../services/catalogoRoles.service.ts", () => ({
+  CatalogoRolesService: {
+    consultar: vi.fn().mockResolvedValue([
+      {
+        codigo: "DMIP_OPERATIVOS",
+        nombre: "DMIP · Unidad de Operativos",
+        asignable: true,
+      },
+      {
+        codigo: "DMIP_INSPECCIONES",
+        nombre: "DMIP · Inspecciones Técnicas y Generales",
+        asignable: true,
+      },
+      { codigo: "DMIT_INSTRUCTOR", nombre: "DMIT · Instrucción", asignable: true },
+      { codigo: "DAF", nombre: "DAF · Transportes", asignable: true },
+      { codigo: "DIRECTOR", nombre: "Dirección", asignable: true },
+      { codigo: "FUNCIONARIO", nombre: "Funcionario", asignable: true },
+      {
+        codigo: "ADMINISTRADOR_DMIP",
+        nombre: "Administración · DMIP",
+        asignable: true,
+      },
+      {
+        codigo: "ADMINISTRADOR",
+        nombre: "Administración del sistema (rol retirado)",
+        asignable: false,
+      },
+    ]),
+  },
+}));
 
 vi.mock("../../services/rolesAuth.service.ts", () => ({
   RolesAuthService: {
@@ -64,6 +112,7 @@ describe("Roles de Auth central", () => {
     it("muestra el identificador de Auth, que es la llave estable", () => {
       render(
         <TablaRolesAuth
+        nombreDe={(rol) => rol}
           roles={[OPERATIVOS]}
           cargando={false}
           procesando={false}
@@ -79,6 +128,7 @@ describe("Roles de Auth central", () => {
     it("dice el estado con palabras, no solo con color", () => {
       render(
         <TablaRolesAuth
+        nombreDe={(rol) => rol}
           roles={[OPERATIVOS, RETIRADA]}
           cargando={false}
           procesando={false}
@@ -94,6 +144,7 @@ describe("Roles de Auth central", () => {
     it("no ofrece retirar lo que ya está retirado", () => {
       render(
         <TablaRolesAuth
+        nombreDe={(rol) => rol}
           roles={[RETIRADA]}
           cargando={false}
           procesando={false}

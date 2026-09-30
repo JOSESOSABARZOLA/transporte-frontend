@@ -20,7 +20,7 @@
  */
 
 import type { Alerta } from "./Alerta";
-import type { PoliticaVehiculo } from "./Formulario";
+import type { AreaPersonal, PoliticaVehiculo } from "./Formulario";
 import type { RolDepartamental } from "../config/env";
 
 export type EstadoTransporte = "PENDIENTE" | "ASIGNADO" | "PROPIOS_MEDIOS";
@@ -91,13 +91,34 @@ export interface PersonaAsignada {
   telefono: string | null;
   esResponsable: boolean;
   asignadoPorRol: RolDepartamental;
+  /**
+   * Ventana horaria EFECTIVA de la persona (2026-09-08). Si tiene turno propio dentro del
+   * operativo es el suyo; si no, es el del operativo. El servidor siempre la resuelve.
+   */
+  horaInicio: string;
+  horaFin: string;
+}
+
+/** Una persona con su turno propio opcional, para el registro. */
+export interface PersonaConHorario {
+  funcionarioId: number;
+  /** Turno propio dentro del operativo. Ausente = cumple el horario del operativo. */
+  horaInicio?: string;
+  horaFin?: string;
 }
 
 /** RN-31 y RN-32. Se informa, no bloquea. Ver PV-29. */
 export interface ComposicionOperativo {
   esPatrulla: boolean;
   completa: boolean;
-  areasPendientes: string[];
+  /**
+   * Tipado como `AreaPersonal[]` desde el 2026-08-27, no como `string[]`.
+   *
+   * Con `string[]` nada obligaba a traducirlo, y en pantalla salía «Falta personal de el
+   * área INSTRUCCION». Ahora el compilador exige pasarlo por `NOMBRE_AREA`, que es un
+   * `Record` sobre este mismo tipo.
+   */
+  areasPendientes: AreaPersonal[];
 }
 
 /**
@@ -112,11 +133,28 @@ export interface OrigenDelOperativo {
   identificador: string;
 }
 
+/**
+ * Una nota del operativo (bitácora append-only, 2026-09-09): su texto y quién la escribió y
+ * cuándo. `creadoPorRol` es el departamento, no la persona. Antes las observaciones eran un
+ * solo campo de texto.
+ */
+export interface ObservacionOperativo {
+  texto: string;
+  creadoPorRol: string;
+  creadoEn: string;
+}
+
 /** Respuesta de `GET /operativos` y `POST /operativos`. */
 export interface Operativo {
   id: number;
   identificador: string;
   secuencial: number;
+  /**
+   * Lote del registro-patrulla (Form 5/6): los N operativos de una misma patrulla lo comparten,
+   * para agruparlos en las listas como «una sola patrulla». Nulo en el resto (registro de uno,
+   * adicional, copias del 8). Lo entrega el servidor; el navegador solo agrupa por él.
+   */
+  grupoRegistro: string | null;
   cuadroFecha: string;
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -143,6 +181,12 @@ export interface Operativo {
   puntoEncuentro: { id: number; nombre: string; zonalNombre: string } | null;
   puntoLibre: string | null;
   tipoControl: { id: number; nombre: string } | null;
+  /**
+   * Varios tipos, SOLO en el formulario que lo admite (form 8). Vacío en el resto. Opcional
+   * en el tipo porque el servidor siempre lo envía pero muchos fixtures de prueba lo omiten;
+   * quien lo lee usa `?? []`.
+   */
+  tiposControl?: { id: number; nombre: string }[];
   tipoLibre: string | null;
   instituciones: { id: number; sigla: string; nombre: string }[];
   personal: PersonaAsignada[];
@@ -150,7 +194,8 @@ export interface Operativo {
   estadoTransporte: EstadoTransporte;
   alertaActiva: boolean;
   alertas: Alerta[];
-  observaciones: string | null;
+  /** Notas del operativo (bitácora append-only, 2026-09-09), en el orden en que se escribieron. */
+  observaciones: ObservacionOperativo[];
   creadoPorRol: RolDepartamental;
   creadoPor: number;
   modificadoPorRol: RolDepartamental;
@@ -164,12 +209,26 @@ export interface Operativo {
 export interface CrearOperativo {
   cuadroFecha: string;
   formularioCodigo: string;
-  horaInicio: string;
-  horaFin: string;
+  /**
+   * Horario del operativo. **Opcional desde RN-66 (2026-09-08):** el operativo ya no tiene
+   * horario propio; el servidor lo deriva de las ventanas de las personas. P-01 ya no lo
+   * envía. Se conserva opcional por compatibilidad con el modo clásico del servidor.
+   */
+  horaInicio?: string;
+  horaFin?: string;
   zonalesIds: number[];
   puntoEncuentroId?: number;
   puntoLibre?: string;
+  /**
+   * PUNTO NUEVO a crear al registrar (Unidad de Operativos, 2026-09-24). Excluyente con
+   * `puntoEncuentroId` y `puntoLibre`. El servidor lo crea en el catálogo DENTRO de la misma
+   * transacción del operativo, ligado a este formulario: si el operativo no se crea, el punto
+   * tampoco queda. Solo lo admiten los formularios con `puntoManual` (1-4).
+   */
+  puntoNuevo?: { nombre: string; zonalId: number };
   tipoControlId?: number;
+  /** Varios tipos, SOLO en el formulario que lo admite (form 8). */
+  tipoControlIds?: number[];
   tipoLibre?: string;
   institucionesIds: number[];
   /**
@@ -181,7 +240,22 @@ export interface CrearOperativo {
    * por petición, así que un rechazo dejaba un operativo vacío en el cuadro.
    */
   personalIds?: number[];
-  observaciones?: string;
+  /**
+   * Personal con su horario propio (2026-09-08, RN-66). En el registro es OBLIGATORIO por
+   * persona: el operativo ya no tiene horario propio y el servidor toma su ventana de éstas
+   * —p. ej. una de 07H00 a 16H00 y otra de 09H00 a 18H00 en el mismo operativo—. Es la forma
+   * que envía P-01; el servidor conserva `personalIds` por compatibilidad.
+   */
+  personal?: PersonaConHorario[];
+  /** Notas del operativo (bitácora, 2026-09-09). Cada una entra como una nota independiente. */
+  observaciones?: string[];
+  /**
+   * Cuántos operativos idénticos generar en este registro (2026-09-09). Opcional; por defecto
+   * el servidor asume 1. Una persona puede atender varios operativos en el mismo turno, así que
+   * el operador puede pedir N copias con identificadores consecutivos. Solo al ALTA: el adicional
+   * y la edición no lo llevan. Las copias quedan **exentas** del cruce mutuo entre ellas (RN-28).
+   */
+  cantidad?: number;
 }
 
 /**
@@ -191,21 +265,37 @@ export interface CrearOperativo {
  * los dos se heredan del operativo del que nace. Un adicional en otra fecha no es un
  * adicional, y en otro formulario llevaría un prefijo que no corresponde a su padre.
  * El servidor responde `400 CAMPOS_NO_PERMITIDOS` si se envían.
+ *
+ * Tampoco lleva `cantidad`: un adicional es una salida única por urgencia, no un lote. El
+ * servidor no lo admite en ese endpoint.
  */
 export type CrearAdicional = Omit<
   CrearOperativo,
-  "cuadroFecha" | "formularioCodigo"
+  "cuadroFecha" | "formularioCodigo" | "cantidad"
 >;
 
-/** Cuerpo de `PATCH /operativos/:id`. `version` es obligatoria. */
-export interface ActualizarOperativo extends Partial<CrearOperativo> {
+/**
+ * Cuerpo de `PATCH /operativos/:id`. `version` es obligatoria.
+ *
+ * Las notas NO se editan aquí (bitácora append-only, 2026-09-09): la edición solo AGREGA
+ * nuevas, en `observacionesNuevas`; las ya escritas quedan como constancia. Por eso se retira
+ * `observaciones` del contrato de edición —el servidor lo rechazaría—.
+ *
+ * `cantidad` tampoco: editar un operativo no genera copias, es una operación sobre uno solo.
+ */
+export interface ActualizarOperativo
+  extends Partial<Omit<CrearOperativo, "observaciones" | "cantidad">> {
   version: number;
+  observacionesNuevas?: string[];
 }
 
 /** Cuerpo de `POST /operativos/:id/personal`. Sin teléfono: RN-34. */
 export interface AsignarPersonal {
   funcionarioId: number;
   esResponsable?: boolean;
+  /** Turno propio opcional dentro del operativo (2026-09-08). Ausente = hereda el del operativo. */
+  horaInicio?: string;
+  horaFin?: string;
 }
 
 export interface FiltroOperativos {

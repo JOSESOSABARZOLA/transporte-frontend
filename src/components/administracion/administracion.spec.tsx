@@ -17,6 +17,14 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+/*
+ * EL NOMBRE LEGIBLE LLEGA COMO PROPIEDAD y aquí se devuelve el código tal cual.
+ *
+ * Lo que estas pruebas fijan es la tabla, no el catálogo: cómo se llama cada rol lo dice
+ * el servidor desde el 2026-09-01 y tiene su propia prueba en el backend. Un doble que
+ * tradujera aquí estaría probando su propia traducción.
+ */
+
 import TablaParametros from "./TablaParametros.tsx";
 import TablaVentanas from "./TablaVentanas.tsx";
 import type {
@@ -316,6 +324,7 @@ describe("las ventanas · «sin restricción» no es «sin datos»", () => {
   it("el estado lleva color y palabra, y la inactiva se atenúa además", () => {
     render(
       <TablaVentanas
+        nombreDe={(rol) => rol}
         ventanas={[
           ventana({ rol: "DMIP_OPERATIVOS", activo: true }),
           ventana({ rol: "DIRECTOR", activo: false }),
@@ -336,6 +345,7 @@ describe("las ventanas · «sin restricción» no es «sin datos»", () => {
   it("no hay botón de agregar ni de eliminar: hay una ventana por rol", () => {
     render(
       <TablaVentanas
+        nombreDe={(rol) => rol}
         ventanas={[ventana()]}
         cargando={false}
         procesando={false}

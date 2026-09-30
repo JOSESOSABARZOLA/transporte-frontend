@@ -56,7 +56,7 @@ export interface ModalComponentProps {
 /**
  * Registro de componentes de modales. Es parcial a propósito: ModalContainer ya
  * contempla que un tipo no esté registrado. Los modales del módulo se incorporan
- * en la etapa E10 de docs/IMPLEMENTATION_GUIDE.md §12.
+ * en la etapa E10 de docs/implementacion/IMPLEMENTATION_GUIDE.md §12.
  */
 export const modalRegistry: Partial<
   Record<ModalType, ComponentType<ModalComponentProps>>

@@ -3,19 +3,20 @@
  * Módulo: Cuadro de Colores
  * Feature: Catálogos del cuadro
  * Archivo: puntosEncuentro.spec.tsx
- * Responsabilidad: Fijar lo que el panel de puntos decide, no cómo se ve.
+ * Responsabilidad: Fijar lo que el panel de zonales y puntos decide, no cómo se ve.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-24
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * LO QUE SE PRUEBA AQUÍ ES QUE NADA SE PIERDA DE VISTA.
  *
- * Agrupar por zonal mejora la lectura y, mal hecho, esconde cosas: un punto cuya zonal no
- * esté en el catálogo del formulario se quedaría sin tarjeta, y una zonal sin puntos —que
- * es justo la que hay que rellenar, PV-01— desaparecería sin decir nada.
+ * Todo vive en una tabla, «Zonales del cuadro»: cada zonal es una fila y su botón «Ver»
+ * despliega sus puntos en una tabla. Mal hecho, agrupar esconde cosas: un punto cuya zonal
+ * no esté en el catálogo se quedaría sin fila, y una zonal sin puntos —que es justo la que
+ * hay que rellenar, PV-01— desaparecería sin decir nada.
  *
- * Que haya tres columnas a 1440 px se comprueba mirando. Que ningún punto se quede fuera,
- * no. FASE5 §2.2 y la sección «qué se prueba y qué no» de CLAUDE.md.
+ * Que se vea bien a 1440 px se comprueba mirando. Que ningún punto se quede fuera, no.
+ * FASE5 §2.2 y la sección «qué se prueba y qué no» de CLAUDE.md.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -36,7 +37,7 @@ const punto = (
   id: number,
   nombre: string,
   zonalId: number,
-): PuntoEncuentro => ({ id, nombre, zonalId });
+): PuntoEncuentro => ({ id, formularioId: 1, nombre, zonalId });
 
 const ZONALES = [
   zonal(1, "Zonal Eugenio Espejo"),
@@ -60,13 +61,25 @@ const propiedades = {
   onDesactivar: vi.fn(),
 };
 
+/**
+ * Las zonales nacen CERRADAS: obrar sobre un punto empieza por abrir la suya con «Ver». El
+ * botón lleva por nombre accesible «Ver/Ocultar puntos de <zonal>», así que esta expresión
+ * lo alcanza en cualquiera de los dos estados y no se confunde con «Agregar a <zonal>».
+ */
+const abrir = (nombre: string) =>
+  userEvent.click(
+    screen.getByRole("button", { name: new RegExp(`puntos de ${nombre}`) }),
+  );
+
 describe("los puntos se leen por zonal", () => {
-  it("el nombre de la zonal se dice una vez, no una por punto", () => {
+  it("el nombre de la zonal se dice una vez, y sus puntos al abrir", async () => {
     render(<PanelPuntosEncuentro {...propiedades} />);
 
-    // Dos puntos en Eugenio Espejo y un solo encabezado. Antes la columna «Zonal»
-    // repetía el nombre en cada fila.
+    // Un solo encabezado de zonal, no uno por punto.
     expect(screen.getAllByText("Zonal Eugenio Espejo")).toHaveLength(1);
+
+    await abrir("Zonal Eugenio Espejo");
+
     expect(screen.getByText("HCAM")).toBeInTheDocument();
     expect(screen.getByText("Estación Río Coca")).toBeInTheDocument();
   });
@@ -78,7 +91,7 @@ describe("los puntos se leen por zonal", () => {
     expect(screen.getByText("1 punto")).toBeInTheDocument();
   });
 
-  it("un punto cuya zonal no está en el catálogo NO se pierde", () => {
+  it("un punto cuya zonal no está en el catálogo NO se pierde", async () => {
     render(
       <PanelPuntosEncuentro
         {...propiedades}
@@ -87,63 +100,36 @@ describe("los puntos se leen por zonal", () => {
     );
 
     expect(screen.getByText("Sin zonal reconocida")).toBeInTheDocument();
+
+    await abrir("Sin zonal reconocida");
+
     expect(screen.getByText("Parque de Pifo")).toBeInTheDocument();
   });
 });
 
-describe("la zonal sin puntos se nombra, que es lo que hay que rellenar", () => {
-  it("dice cuál es y qué pasará en el registro", () => {
+describe("agregar un punto desde su zonal", () => {
+  it("el «Agregar punto» de la zonal abierta la sitúa en ella", async () => {
+    const agregar = vi.fn();
+    render(
+      <PanelPuntosEncuentro
+        {...propiedades}
+        onAgregar={agregar}
+      />,
+    );
+
+    await abrir("Zonal Quitumbe");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Agregar punto" }),
+    );
+
+    // Quitumbe es la zonal 2.
+    expect(agregar).toHaveBeenCalledWith(2);
+  });
+
+  it("la cabecera del panel ya no ofrece un «Agregar» suelto", () => {
     render(<PanelPuntosEncuentro {...propiedades} />);
 
-    expect(
-      screen.getByText(/la lista de puntos saldrá vacía/),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Agregar a Zonal Calderón" }),
-    ).toBeInTheDocument();
-  });
-
-  it("desde ahí el alta nace situada en esa zonal", async () => {
-    const agregar = vi.fn();
-    render(
-      <PanelPuntosEncuentro
-        {...propiedades}
-        onAgregar={agregar}
-      />,
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Agregar a Zonal Calderón" }),
-    );
-
-    expect(agregar).toHaveBeenCalledWith(3);
-  });
-
-  it("el «Agregar» de la cabecera no sitúa en ninguna", async () => {
-    const agregar = vi.fn();
-    render(
-      <PanelPuntosEncuentro
-        {...propiedades}
-        onAgregar={agregar}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "Agregar" }));
-
-    expect(agregar).toHaveBeenCalledWith(null);
-  });
-
-  it("cuando todas tienen puntos, lo dice en lugar de callarse", () => {
-    render(
-      <PanelPuntosEncuentro
-        {...propiedades}
-        zonales={[ZONALES[0], ZONALES[1]]}
-      />,
-    );
-
-    expect(
-      screen.getByText(/tienen al menos un punto/),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agregar" })).toBeNull();
   });
 });
 
@@ -203,13 +189,14 @@ describe("la búsqueda", () => {
 });
 
 describe("obrar sobre un punto", () => {
-  it("el botón dice «Desactivar», no «Eliminar»", () => {
+  it("el botón dice «Desactivar», no «Eliminar»", async () => {
     render(
       <PanelPuntosEncuentro
         {...propiedades}
         puntos={[punto(10, "Tejar", 2)]}
       />,
     );
+    await abrir("Zonal Quitumbe");
 
     expect(
       screen.getByRole("button", { name: "Desactivar" }),
@@ -226,6 +213,7 @@ describe("obrar sobre un punto", () => {
         onDesactivar={desactivar}
       />,
     );
+    await abrir("Zonal Quitumbe");
 
     await userEvent.click(screen.getByRole("button", { name: "Desactivar" }));
 
@@ -234,7 +222,7 @@ describe("obrar sobre un punto", () => {
     );
   });
 
-  it("mientras se procesa no se puede obrar dos veces", () => {
+  it("mientras se procesa no se puede obrar dos veces", async () => {
     render(
       <PanelPuntosEncuentro
         {...propiedades}
@@ -242,27 +230,85 @@ describe("obrar sobre un punto", () => {
         procesando
       />,
     );
+    await abrir("Zonal Quitumbe");
 
-    expect(screen.getByRole("button", { name: "Agregar" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Agregar punto" }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Editar" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Desactivar" })).toBeDisabled();
   });
 });
 
-describe("el catálogo vacío", () => {
-  it("explica su consecuencia sobre P-01, no dice «sin datos»", () => {
-    render(
-      <PanelPuntosEncuentro
-        {...propiedades}
-        puntos={[]}
-      />,
-    );
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * UNA ZONAL SE ABRE AL PULSARLA. Añadido el 2026-09-02.
+ *
+ * Al cargarse la matriz real, el formulario DMIT pasó a tener 34 puntos en cada una de
+ * sus diez zonales: 340 filas seguidas en una sola página. La pregunta de quien
+ * administra es «¿qué tiene esta zonal?», y se contestaba desplazándose.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("una zonal se abre al pulsarla", () => {
+  it("de entrada se ven las zonales y sus conteos, no los puntos", () => {
+    render(<PanelPuntosEncuentro {...propiedades} />);
 
-    expect(
-      screen.getByText(/la cascada de P-01 no ofrece nada/),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Zonal Quitumbe")).toBeInTheDocument();
+    expect(screen.getByText("Zonal Eugenio Espejo")).toBeInTheDocument();
+    // Cerrada, la zonal no monta sus puntos: no están en el documento.
+    expect(screen.queryByText("Tejar")).toBeNull();
+    expect(screen.queryByText("HCAM")).toBeNull();
   });
 
+  it("al pulsarla muestra los suyos, y solo los suyos", async () => {
+    render(<PanelPuntosEncuentro {...propiedades} />);
+
+    await abrir("Zonal Eugenio Espejo");
+
+    expect(screen.getByText("HCAM")).toBeVisible();
+    expect(screen.getByText("Estación Río Coca")).toBeVisible();
+    // «Tejar» es de Quitumbe: abrir una zonal no abre las demás.
+    expect(screen.queryByText("Tejar")).toBeNull();
+  });
+
+  it("y al volver a pulsarla se cierra", async () => {
+    render(<PanelPuntosEncuentro {...propiedades} />);
+
+    await abrir("Zonal Eugenio Espejo");
+    await abrir("Zonal Eugenio Espejo");
+
+    expect(screen.queryByText("HCAM")).toBeNull();
+  });
+
+  /**
+   * ES LA QUE EVITA QUE EL PLEGADO ROMPA LA BÚSQUEDA. Si las filas siguieran cerradas al
+   * filtrar, escribir el nombre de un punto no mostraría ese punto por ninguna parte.
+   */
+  it("al buscar se abren solas las que coinciden", async () => {
+    render(<PanelPuntosEncuentro {...propiedades} />);
+
+    await userEvent.type(screen.getByLabelText("Buscar punto o zonal"), "hcam");
+
+    expect(screen.getByText("HCAM")).toBeVisible();
+  });
+
+  it("el estado se dice con palabras, no solo con una figura", async () => {
+    render(<PanelPuntosEncuentro {...propiedades} />);
+
+    const boton = screen.getByRole("button", {
+      name: /puntos de Zonal Eugenio Espejo/,
+    });
+    expect(boton).toHaveAttribute("aria-expanded", "false");
+    expect(boton).toHaveTextContent("Ver");
+
+    await userEvent.click(boton);
+
+    expect(boton).toHaveAttribute("aria-expanded", "true");
+    expect(boton).toHaveTextContent("Ocultar");
+  });
+});
+
+describe("el catálogo vacío", () => {
   it("sin puntos no se ofrece el buscador", () => {
     render(
       <PanelPuntosEncuentro
@@ -272,5 +318,51 @@ describe("el catálogo vacío", () => {
     );
 
     expect(screen.queryByLabelText("Buscar punto o zonal")).toBeNull();
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ZONAL DESACTIVADA: SUS PUNTOS NO SE REACTIVAN HASTA QUE LA ZONAL VUELVA. 2026-09-04.
+ *
+ * La baja de la zonal arrastra la de sus puntos; devolver un punto mientras su zonal sigue
+ * inactiva lo dejaría vigente en una zonal que no se ofrece al registrar. El «Activar» del
+ * punto queda apagado, con el motivo en palabras (regla 6).
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("una zonal desactivada bloquea reactivar sus puntos", () => {
+  const zonalOff: Zonal = { ...zonal(5, "Zonal Tumbaco"), activo: false };
+  const puntoOff: PuntoEncuentro = {
+    ...punto(50, "AMC Tumbaco", 5),
+    activo: false,
+  };
+
+  const props = {
+    ...propiedades,
+    zonales: [zonalOff],
+    puntos: [puntoOff],
+    onActivar: vi.fn(),
+  };
+
+  it("avisa de que hay que reactivar la zonal primero", async () => {
+    render(<PanelPuntosEncuentro {...props} />);
+
+    await abrir("Zonal Tumbaco");
+
+    expect(screen.getByText(/Reactívela/)).toBeInTheDocument();
+  });
+
+  it("el «Activar» del punto queda deshabilitado", async () => {
+    render(<PanelPuntosEncuentro {...props} />);
+
+    await abrir("Zonal Tumbaco");
+
+    expect(screen.getByRole("button", { name: /Activar/ })).toBeDisabled();
+  });
+
+  it("y su fila dice que la zonal está inactiva", () => {
+    render(<PanelPuntosEncuentro {...props} />);
+
+    expect(screen.getByText("inactiva")).toBeInTheDocument();
   });
 });

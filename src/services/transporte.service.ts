@@ -18,17 +18,49 @@ import type {
   ActualizarTransporte,
   CapacidadFlota,
   ConductorDisponible,
+  CrearMantenimiento,
   DeclararCapacidad,
+  DeclararDestino,
+  DestinoVehiculo,
+  JornadaDeConductor,
+  MantenimientoVehiculo,
   OperativoPendiente,
   ResultadoTransporte,
+  UbicacionFlota,
+  VehiculoDeLaFlota,
 } from "../interfaces/Transporte";
 
-/** `GET /transporte/pendientes/:fecha`. Los nocturnos primero. */
+/**
+ * `GET /transporte/pendientes/:fecha`. Los nocturnos primero.
+ *
+ * Con `incluirResueltos` llegan también los ya asignados y los de propios medios: es la
+ * bandeja desde la que se CORRIGE. Sin ella, un error de asignación solo se arreglaba con
+ * una sentencia en la base (P-07).
+ */
 const consultarPendientes = async (
   fecha: string,
+  incluirResueltos = false,
 ): Promise<OperativoPendiente[]> => {
   const { data } = await httpClient.get<OperativoPendiente[]>(
     `/transporte/pendientes/${fecha}`,
+    incluirResueltos ? { params: { incluirResueltos: "true" } } : undefined,
+  );
+  return data;
+};
+
+/**
+ * `GET /transporte/vehiculos?fecha=`. PV-33.
+ *
+ * Llega la flota ENTERA, incluidas las placas que hoy no se pueden usar. Hasta el
+ * 2026-08-31 la pantalla componía la lista con los vehículos habituales de los conductores
+ * libres, y un vehículo sin conductor habitual era inasignable e invisible.
+ */
+const consultarVehiculos = async (
+  fecha: string,
+): Promise<VehiculoDeLaFlota[]> => {
+  const { data } = await httpClient.get<VehiculoDeLaFlota[]>(
+    "/transporte/vehiculos",
+    { params: { fecha } },
   );
   return data;
 };
@@ -61,6 +93,20 @@ const asignar = async (
   return data;
 };
 
+/**
+ * `PATCH /transporte/operativos/:id/desasignar`. Sin cuerpo, igual que propios medios.
+ *
+ * Deshace las DOS decisiones —asignado y propios medios— y devuelve el operativo a
+ * pendiente. Es la salida que no existía: hasta el 2026-08-31 una asignación equivocada
+ * solo se corregía entrando en la base.
+ */
+const desasignar = async (operativoId: number): Promise<ResultadoTransporte> => {
+  const { data } = await httpClient.patch<ResultadoTransporte>(
+    `/transporte/operativos/${operativoId}/desasignar`,
+  );
+  return data;
+};
+
 /** `PATCH /transporte/operativos/:id/propios-medios`. Sin cuerpo: el acto es la decisión. */
 const declararPropiosMedios = async (
   operativoId: number,
@@ -69,6 +115,91 @@ const declararPropiosMedios = async (
     `/transporte/operativos/${operativoId}/propios-medios`,
   );
   return data;
+};
+
+/**
+ * `GET /transporte/jornada-conductores/:fecha`. P-14.
+ *
+ * Es una VISTA: no asigna nada. La asignación sigue en P-03, con todas sus reglas.
+ */
+const consultarJornadaConductores = async (
+  fecha: string,
+): Promise<JornadaDeConductor[]> => {
+  const { data } = await httpClient.get<JornadaDeConductor[]>(
+    `/transporte/jornada-conductores/${fecha}`,
+  );
+  return data;
+};
+
+// ─────────────── Destino del vehículo · RN-DAF-03 ───────────────
+
+/** `GET /transporte/destinos/:fecha`. Lo declarado ese día, con placa y zonal. */
+const consultarDestinos = async (
+  fecha: string,
+): Promise<DestinoVehiculo[]> => {
+  const { data } = await httpClient.get<DestinoVehiculo[]>(
+    `/transporte/destinos/${fecha}`,
+  );
+  return data;
+};
+
+/**
+ * `PUT /transporte/vehiculos/:id/destino/:fecha`.
+ *
+ * `PUT` porque declarar dos veces deja el mismo resultado: corregir es volver a declarar.
+ * El servidor lo resuelve con un `upsert` sobre la clave (vehículo, fecha).
+ */
+const declararDestino = async (
+  vehiculoId: number,
+  fecha: string,
+  destino: DeclararDestino,
+): Promise<void> => {
+  await httpClient.put(
+    `/transporte/vehiculos/${vehiculoId}/destino/${fecha}`,
+    destino,
+  );
+};
+
+/** `GET /administracion/ubicaciones-flota`. El catálogo de zonales de reposo. */
+const consultarUbicaciones = async (): Promise<UbicacionFlota[]> => {
+  const { data } = await httpClient.get<UbicacionFlota[]>(
+    "/administracion/ubicaciones-flota",
+  );
+  return data;
+};
+
+// ─────────────── Mantenimiento de la flota · P-16, RN-DAF-05 ───────────────
+
+/** `GET /transporte/vehiculos/:id/mantenimiento`. De la parada más reciente hacia atrás. */
+const listarMantenimientos = async (
+  vehiculoId: number,
+): Promise<MantenimientoVehiculo[]> => {
+  const { data } = await httpClient.get<MantenimientoVehiculo[]>(
+    `/transporte/vehiculos/${vehiculoId}/mantenimiento`,
+  );
+  return data;
+};
+
+/** `POST /transporte/vehiculos/:id/mantenimiento`. */
+const registrarMantenimiento = async (
+  vehiculoId: number,
+  datos: CrearMantenimiento,
+): Promise<MantenimientoVehiculo> => {
+  const { data } = await httpClient.post<MantenimientoVehiculo>(
+    `/transporte/vehiculos/${vehiculoId}/mantenimiento`,
+    datos,
+  );
+  return data;
+};
+
+/** `DELETE /transporte/vehiculos/:id/mantenimiento/:mantenimientoId`. */
+const retirarMantenimiento = async (
+  vehiculoId: number,
+  mantenimientoId: number,
+): Promise<void> => {
+  await httpClient.delete(
+    `/transporte/vehiculos/${vehiculoId}/mantenimiento/${mantenimientoId}`,
+  );
 };
 
 /** `GET /transporte/capacidad/:fecha`. El indicador de P-03 y de la cabecera de P-04. */
@@ -94,8 +225,17 @@ const declararCapacidad = async (
 export const TransporteService = {
   consultarPendientes,
   consultarConductores,
+  consultarVehiculos,
   asignar,
+  desasignar,
   declararPropiosMedios,
+  consultarJornadaConductores,
+  consultarDestinos,
+  declararDestino,
+  consultarUbicaciones,
+  listarMantenimientos,
+  registrarMantenimiento,
+  retirarMantenimiento,
   consultarCapacidad,
   declararCapacidad,
 };

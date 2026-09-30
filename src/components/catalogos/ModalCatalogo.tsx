@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import type * as Yup from "yup";
 
 import MarcoModal from "../common/MarcoModal.tsx";
+import EnfocarPrimerError from "../forms/EnfocarPrimerError.tsx";
 
 type ModalCatalogoProps<T extends Record<string, unknown>> = {
   abierto: boolean;
@@ -60,7 +61,7 @@ const ModalCatalogo = <T extends Record<string, unknown>>({
       ancho="lg"
       onCerrar={guardando ? undefined : onCancelar}
     >
-        <h3 className="mb-4 text-lg font-bold">{titulo}</h3>
+        <h3 className="mb-4 text-lg font-semibold">{titulo}</h3>
 
         {aviso && (
           <div
@@ -78,6 +79,7 @@ const ModalCatalogo = <T extends Record<string, unknown>>({
           onSubmit={onGuardar}
         >
           <Form className="flex flex-col gap-3">
+            <EnfocarPrimerError />
             {campos}
 
             <div className="mt-2 flex justify-end gap-2">
@@ -94,7 +96,17 @@ const ModalCatalogo = <T extends Record<string, unknown>>({
                 className="btn btn-primary btn-sm"
                 disabled={guardando}
               >
-                {guardando ? "Guardando…" : "Guardar"}
+                {guardando ? (
+                  <>
+                    <span
+                      className="loading loading-spinner loading-sm"
+                      aria-hidden="true"
+                    />
+                    Guardando…
+                  </>
+                ) : (
+                  "Guardar"
+                )}
               </button>
             </div>
           </Form>

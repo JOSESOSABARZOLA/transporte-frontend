@@ -49,9 +49,23 @@ import type {
 } from "../interfaces/Administracion.ts";
 import { AdministracionService } from "../services/administracion.service.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
-import { NOMBRE_ROL } from "../utils/parametro.util.ts";
+import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
+import { usePermiso } from "../hooks/usePermiso.ts";
 
 const AdminVentanasPage = () => {
+  /** El catálogo de roles sale del servidor: aquí no hay ninguno escrito. */
+  const { nombreDe } = useCatalogoRoles();
+
+  /*
+    LAS VENTANAS DE CARGA son de la administración general (ADMINISTRADOR y DMIP). El
+    ADMINISTRADOR_DMIT entra a esta pantalla SOLO por las ventanas de los turnos de la
+    cobertura (el servidor le filtra los parámetros), así que a él no se le pinta esta
+    sección ni se le piden sus datos. Quien tenga ambos roles la ve.
+  */
+  // RBAC: la sección de «Ventanas de carga» la ve quien tiene el permiso de administrarlas;
+  // el DMIT entra solo por los parámetros de turno y no la ve.
+  const gestionaVentanas = usePermiso("ventanas:administrar");
+
   const [parametros, setParametros] = useState<ParametroPolitica[]>([]);
   const [ventanas, setVentanas] = useState<VentanaCarga[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -77,7 +91,10 @@ const AdminVentanasPage = () => {
     try {
       const [listaParametros, listaVentanas] = await Promise.all([
         AdministracionService.listarParametros(),
-        AdministracionService.listarVentanas(),
+        // El DMIT no gestiona ventanas de carga: no se le piden (evita un 403 inútil).
+        gestionaVentanas
+          ? AdministracionService.listarVentanas()
+          : Promise.resolve([]),
       ]);
       setParametros(listaParametros);
       setVentanas(listaVentanas);
@@ -90,7 +107,7 @@ const AdminVentanasPage = () => {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [gestionaVentanas]);
 
   useEffect(() => {
     void cargar();
@@ -160,7 +177,7 @@ const AdminVentanasPage = () => {
         setAdvertencias(resultado.advertencias);
         setEnEdicion(null);
         setExito(
-          `La ventana de ${NOMBRE_ROL[enEdicion.rol]} quedó guardada. Rige desde la próxima evaluación.`,
+          `La ventana de ${nombreDe(enEdicion.rol)} quedó guardada. Rige desde la próxima evaluación.`,
         );
       } catch (fallo: unknown) {
         setAvisoVentana(presentarError(fallo).mensaje);
@@ -174,10 +191,10 @@ const AdminVentanasPage = () => {
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+        <p className="page-heading-kicker font-semibold uppercase">
           Administración
         </p>
-        <h1 className="page-heading-title text-2xl font-semibold">
+        <h1 className="page-heading-title">
           Ventanas y parámetros
         </h1>
         <p className="page-heading-subtitle text-sm">
@@ -210,39 +227,42 @@ const AdminVentanasPage = () => {
         </div>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
-            Ventanas de carga
-          </h2>
-          <span className="badge badge-ghost badge-sm">
-            {cargando ? "Cargando…" : `${ventanas.length} roles`}
-          </span>
+      {gestionaVentanas && (
+        <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+          <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
+              Ventanas de carga
+            </h2>
+            <span className="badge badge-ghost badge-sm">
+              {cargando ? "Cargando…" : `${ventanas.length} roles`}
+            </span>
+          </div>
+
+          <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
+            <p className="text-xs text-base-content/70">
+              Hay una ventana por rol y no se crean ni se eliminan: eliminar una
+              abriría la carga de ese rol las veinticuatro horas. Para quitar la
+              restricción se desactiva, que dice lo mismo y deja rastro.
+            </p>
+
+            <TablaVentanas
+              nombreDe={nombreDe}
+              ventanas={ventanas}
+              cargando={cargando}
+              procesando={guardandoVentana}
+              onEditar={(ventana) => {
+                setEnEdicion(ventana);
+                setAvisoVentana(null);
+                setAdvertencias([]);
+              }}
+            />
+          </div>
         </div>
+      )}
 
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-base-content/70">
-            Hay una ventana por rol y no se crean ni se eliminan: eliminar una
-            abriría la carga de ese rol las veinticuatro horas. Para quitar la
-            restricción se desactiva, que dice lo mismo y deja rastro.
-          </p>
-
-          <TablaVentanas
-            ventanas={ventanas}
-            cargando={cargando}
-            procesando={guardandoVentana}
-            onEditar={(ventana) => {
-              setEnEdicion(ventana);
-              setAvisoVentana(null);
-              setAdvertencias([]);
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Parámetros de política
           </h2>
           <span className="badge badge-ghost badge-sm">

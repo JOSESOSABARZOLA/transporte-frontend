@@ -8,13 +8,14 @@
  * Fecha: 2026-03-19
  */
 import { type FC } from "react";
-import Iconos from "./Iconos";
+import Iconos, { type NombreIcono } from "./Iconos.tsx";
 
 type BotonProps = {
   indicativo?: { activo: boolean; cantidad: number };
   deshabilitado: boolean;
   estilos: string;
-  icono?: string;
+  /** Tipado: el nombre lo valida el compilador (regla 13). */
+  icono?: NombreIcono;
   label?: string;
   onClick?: () => void;
   texto: string;

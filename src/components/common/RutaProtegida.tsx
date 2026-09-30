@@ -25,16 +25,17 @@ import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 
 import Loading from "./Loading";
-import type { RolDepartamental } from "../../config/env";
 import { useUser } from "../../hooks/useUser";
+import { tienePermiso } from "../../hooks/usePermiso";
 import { urlDelPortal } from "../../services/sesion.service";
 
 type RutaProtegidaProps = {
-  rolesPermitidos: RolDepartamental[];
+  /** Permisos que abren la ruta. Basta tener UNO (semántica OR). */
+  permisosPermitidos: string[];
   children: ReactNode;
 };
 
-const RutaProtegida = ({ rolesPermitidos, children }: RutaProtegidaProps) => {
+const RutaProtegida = ({ permisosPermitidos, children }: RutaProtegidaProps) => {
   const { user, estado } = useUser();
 
   if (estado === "resolviendo") {
@@ -48,9 +49,9 @@ const RutaProtegida = ({ rolesPermitidos, children }: RutaProtegidaProps) => {
     return <Loading />;
   }
 
-  // INTERSECCIÓN, no igualdad: basta con que UNO de sus roles esté permitido. Desde el
-  // 2026-08-19 una persona puede tener varios y ve la unión de lo que cada uno abre.
-  if (!user.rolCodes.some((rol) => rolesPermitidos.includes(rol))) {
+  // POR PERMISO (RBAC), no por rol: basta con tener UNO de los que abren la ruta. Así un
+  // rol nuevo con el permiso otorgado entra sin tocar el frontend. El servidor reautoriza.
+  if (!tienePermiso(user.permisos, permisosPermitidos)) {
     return <Navigate to="/home" replace />;
   }
 

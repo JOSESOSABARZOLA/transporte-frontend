@@ -30,8 +30,15 @@
  * llega a cuentas con rol transversal —`GET /formularios/permitidos` les devuelve los
  * nueve—, eran ocho botones apagados, y el distintivo que llevaban además **mentía**.
  *
- * Y SE PUEDE PULSAR. Lleva a «Mis operativos» con ese formulario ya filtrado, que es
- * donde se asigna el personal: sobre un operativo que ya existe.
+ * Y SE PUEDE PULSAR. **Abre el formulario en la misma pantalla**, en lectura, con los
+ * operativos del día debajo para asignarles personal.
+ *
+ * HASTA EL 2026-08-31 NAVEGABA A «MIS OPERATIVOS» con el formulario ya filtrado. Se
+ * retiró por un defecto concreto: el enlace mandaba el **código** —`ECU`— y P-02 filtraba
+ * comparando contra el **texto visible** de la columna, `4. PATRULLA ECU DIURNA`. Con la
+ * ECU casaba de milagro, porque el código es subcadena del nombre; con la patrulla 6
+ * —código `REACN`, nombre «PATRULLA REACCIÓN NOCTURNA»— **no casaba**, y quien pulsaba
+ * aterrizaba en una pantalla vacía sin saber por qué.
  *
  * No registra —eso es del dueño— pero **hace la única cosa para la que ese formulario le
  * sirve a este departamento**. Un botón apagado dejaba constancia y nada más, y quien
@@ -108,14 +115,28 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
         </div>
       )}
 
+      {/*
+        REJILLA, NO FILA IRREGULAR. Los nueve botones se alinean en columnas de igual
+        ancho —una en móvil, dos en tablet, tres desde `lg` (un 3×3 limpio para los nueve)—
+        en vez de quedar dentados según el largo de cada nombre. Cada botón va `w-full`
+        para llenar su celda; el rótulo largo se parte dentro de ella (`h-auto`).
+      */}
       <div
-        className="flex flex-wrap gap-2"
+        className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
         role="group"
         aria-label="Formularios disponibles"
       >
         {visibles.map((formulario) => {
           const aporta = formulario.acceso === "COMPARTIDO";
-          const activo = !aporta && formulario.codigo === seleccionado;
+          /*
+           * ACTIVO TAMBIÉN CUANDO SE APORTA, desde el 2026-08-31.
+           *
+           * Antes se excluía —`!aporta && …`— porque el clic navegaba fuera y el botón
+           * nunca llegaba a quedar seleccionado. Ahora el formulario de aporte se abre
+           * **en esta misma pantalla**, así que tiene que verse cuál está abierto: sin
+           * esto, quedaría un formulario desplegado abajo y ningún botón marcado arriba.
+           */
+          const activo = formulario.codigo === seleccionado;
           // Sin `onAportar` no hay a dónde llevarlo, y entonces sí se apaga.
           const inerte = aporta && !onAportar;
 
@@ -133,7 +154,7 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
               title={
                 aporta
                   ? formulario.nombre +
-                    ". Su departamento aporta personal a este formulario; los operativos los registra el departamento dueño. Le lleva a «Mis operativos» para asignar a su gente."
+                    ". Su departamento aporta personal a este formulario; los operativos los registra el departamento dueño. Abre los operativos del día para asignar a su gente."
                   : formulario.nombre
               }
               onClick={() =>
@@ -142,16 +163,19 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
                   : onSeleccionar(formulario.codigo)
               }
               className={[
-                "btn btn-sm justify-start gap-2 normal-case",
+                // `w-full` llena la celda de la rejilla, así los nueve botones tienen el
+                // mismo ancho y quedan alineados. `h-auto` + `py-1` dejan que un nombre
+                // largo se parta en varias líneas (`min-w-0` en el rótulo) sin desbordar.
+                "btn btn-sm h-auto w-full justify-start gap-2 py-1 normal-case",
                 activo ? "btn-primary" : "btn-outline",
               ].join(" ")}
             >
               <span
                 aria-hidden="true"
-                className="inline-block h-4 w-1.5 rounded"
+                className="inline-block h-4 w-1.5 shrink-0 rounded"
                 style={{ backgroundColor: formulario.colorFondo }}
               />
-              <span>
+              <span className="min-w-0 text-left">
                 {formulario.numero}. {formulario.nombre}
               </span>
               {/*

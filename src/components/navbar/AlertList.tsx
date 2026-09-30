@@ -17,7 +17,7 @@ type AlertListProps = {
 
 /**
  * Los canales de notificación (NOT-01 a NOT-07) están pendientes de definición del
- * negocio, por lo que la lista llega vacía. Ver docs/PENDIENTES-VALIDACION.md.
+ * negocio, por lo que la lista llega vacía. Ver docs/implementacion/PENDIENTES-VALIDACION.md.
  */
 const AlertList: FC<AlertListProps> = ({ items }) => {
   if (!items.length) {
@@ -38,7 +38,7 @@ const AlertList: FC<AlertListProps> = ({ items }) => {
                 />
                 <BadgePriority text={item.elapsedTime} />
               </div>
-              <p className="w-96 truncate">{item.message}</p>
+              <p className="w-full truncate">{item.message}</p>
               <div className="card-actions justify-end">
                 <button className="btn btn-xs btn-info">Ver</button>
               </div>

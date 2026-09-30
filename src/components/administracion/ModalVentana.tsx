@@ -31,9 +31,9 @@ import type {
   VentanaCarga,
 } from "../../interfaces/Administracion.ts";
 import {
-  NOMBRE_ROL,
-  NOMBRE_TIPO_VENTANA,
+    NOMBRE_TIPO_VENTANA,
 } from "../../utils/parametro.util.ts";
+import { useCatalogoRoles } from "../../hooks/useCatalogoRoles.ts";
 
 const PATRON_HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -60,6 +60,8 @@ const ModalVentana: FC<ModalVentanaProps> = ({
   onGuardar,
   onCancelar,
 }) => {
+  const { nombreDe } = useCatalogoRoles();
+
   const [tipo, setTipo] = useState<TipoVentana>(ventana?.tipo ?? "DIARIO");
   const [horaApertura, setHoraApertura] = useState(ventana?.horaApertura ?? "");
   const [horaCierre, setHoraCierre] = useState(ventana?.horaCierre ?? "");
@@ -84,12 +86,12 @@ const ModalVentana: FC<ModalVentanaProps> = ({
   return (
     <MarcoModal
       abierto
-      etiqueta={`Ventana de ${NOMBRE_ROL[ventana.rol]}`}
+      etiqueta={`Ventana de ${nombreDe(ventana.rol)}`}
       ancho="lg"
       onCerrar={guardando ? undefined : onCancelar}
     >
-        <h3 className="mb-1 text-lg font-bold">
-          Ventana de {NOMBRE_ROL[ventana.rol]}
+        <h3 className="mb-1 text-lg font-semibold">
+          Ventana de {nombreDe(ventana.rol)}
         </h3>
         <p className="mb-4 text-xs text-base-content/70">
           Se evalúa en {ventana.zonaHoraria}. Dejar una hora vacía significa
@@ -246,7 +248,17 @@ const ModalVentana: FC<ModalVentanaProps> = ({
               })
             }
           >
-            {guardando ? "Guardando…" : "Guardar"}
+            {guardando ? (
+              <>
+                <span
+                  className="loading loading-spinner loading-sm"
+                  aria-hidden="true"
+                />
+                Guardando…
+              </>
+            ) : (
+              "Guardar"
+            )}
           </button>
         </div>
     </MarcoModal>

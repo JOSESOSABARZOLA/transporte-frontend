@@ -109,6 +109,7 @@ vi.mock("../../hooks/useCatalogosFormulario.ts", () => ({
     cargandoPuntos: false,
     errorPuntos: null,
     cargarPuntosDeZonal: vi.fn(),
+    cargarPuntosDeZonales: vi.fn(),
     limpiarPuntos: vi.fn(),
   }),
 }));
@@ -119,6 +120,7 @@ import { PersonalService } from "../../services/personal.service.ts";
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
     id: 1,
     identificador: "OCPMO-004-31-JUL-2026",
+    grupoRegistro: null,
     secuencial: 4,
     cuadroFecha: "2026-07-31",
     esAdicional: false,
@@ -157,7 +159,7 @@ const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
     estadoTransporte: "PENDIENTE",
     alertaActiva: false,
     alertas: [],
-    observaciones: null,
+    observaciones: [],
     creadoPorRol: "DMIP_OPERATIVOS",
     creadoPor: 1,
     modificadoPorRol: "DMIP_OPERATIVOS",
@@ -258,12 +260,12 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([]);
   });
 
-  it("con la ventana cerrada, «Editar» y «Retirar» se apagan y «Adicional» no", async () => {
+  it("con la ventana cerrada, «Editar» y «Eliminar» se apagan y «Adicional» no", async () => {
     estado.ventanaAbierta = false;
     await pintarPantalla();
 
     expect(screen.getByRole("button", { name: "Editar" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Retirar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Eliminar" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Adicional" })).toBeEnabled();
   });
 
@@ -361,8 +363,8 @@ describe("el panel del adicional", () => {
     catalogos: null,
     puntos: [],
     cargandoPuntos: false,
-    onZonalElegida: vi.fn(),
-    onHorarioElegido: vi.fn(),
+    onZonalesElegidas: vi.fn(),
+    onCambiarHorarioPersona: vi.fn(),
     candidatos: [],
     cargandoPersonal: false,
     personalAgregado: [],
@@ -427,17 +429,26 @@ describe("el panel del adicional", () => {
       <PanelAdicionalOperativo
         {...propiedades}
         origen={operativo({
-          observaciones: "Coordinado con la AMT desde el lunes.",
+          observaciones: [
+            {
+              texto: "Coordinado con la AMT desde el lunes.",
+              creadoPorRol: "DMIP_OPERATIVOS",
+              creadoEn: "2026-07-31T12:00:00.000Z",
+            },
+          ],
         })}
         ventanaCerrada={false}
       />,
     );
 
+    // El adicional nace SIN notas: no hereda las del padre (bitácora, 2026-09-09). El
+    // capturador arranca vacío y el texto del original no aparece.
     expect(
-      screen.getByPlaceholderText(
-        "Coordinaciones, novedades o detalles del operativo",
-      ),
+      screen.getByPlaceholderText("Escriba una nota y pulse Agregar"),
     ).toHaveValue("");
+    expect(
+      screen.queryByText("Coordinado con la AMT desde el lunes."),
+    ).toBeNull();
   });
 });
 
@@ -491,8 +502,8 @@ describe("heredar el personal del operativo original", () => {
     catalogos: null,
     puntos: [],
     cargandoPuntos: false,
-    onZonalElegida: vi.fn(),
-    onHorarioElegido: vi.fn(),
+    onZonalesElegidas: vi.fn(),
+    onCambiarHorarioPersona: vi.fn(),
     cargandoPersonal: false,
     personalAgregado: [],
     onRetirarPersona: vi.fn(),
@@ -520,26 +531,13 @@ describe("heredar el personal del operativo original", () => {
   });
 
   /**
-   * Fija el horario del adicional, que es lo que dispara la herencia.
-   *
-   * El horario nace en blanco a propósito: copiarlo del padre haría que el equipo
-   * heredado chocara consigo mismo (RN-28). Hasta que se elige, no hay contra qué
-   * comprobar la elegibilidad y no se hereda a nadie.
-   */
-  const elegirHorario = async () => {
-    await userEvent.selectOptions(
-      screen.getByLabelText(/Hora de inicio/),
-      "17:00",
-    );
-    await userEvent.selectOptions(screen.getByLabelText(/Hora de fin/), "21:00");
-  };
-
-  /**
    * ES AUTOMÁTICO, NO UN BOTÓN. Un adicional hereda los recursos del operativo del que
-   * nace: es lo que define la figura, no una comodidad. Esta prueba es la que caería si
-   * alguien volviera a ponerlo tras una pulsación.
+   * nace: es lo que define la figura, no una comodidad. Desde RN-66 (2026-09-08) ya no
+   * depende del horario —el adicional no tiene uno único—: se dispara en cuanto llega la
+   * lista de elegibles. Esta prueba es la que caería si alguien volviera a ponerlo tras
+   * una pulsación.
    */
-  it("hereda el equipo solo, en cuanto se fija el horario", async () => {
+  it("hereda el equipo solo, en cuanto llegan los elegibles", async () => {
     const agregar = vi.fn();
 
     render(
@@ -554,18 +552,15 @@ describe("heredar el personal del operativo original", () => {
       />,
     );
 
-    // Sin horario no se hereda a nadie: no hay contra qué comprobar.
-    expect(agregar).not.toHaveBeenCalled();
-
-    await elegirHorario();
-
-    expect(agregar).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => {
+      expect(agregar).toHaveBeenCalledTimes(2);
+    });
   });
 
   /**
-   * LA COMPROBACIÓN NO SE SALTA. Quien no puede salir a esa hora **no se agrega**, aunque
-   * estuviera en el operativo original. Es la prueba que impide que heredar se convierta
-   * en un atajo para meter gente que el servidor rechazaría.
+   * LA COMPROBACIÓN NO SE SALTA. Quien ya no es elegible **no se agrega**, aunque estuviera
+   * en el operativo original. Es la prueba que impide que heredar se convierta en un atajo
+   * para meter gente que el servidor rechazaría.
    */
   it("NO hereda a quien el servidor declara no elegible, y dice por qué", async () => {
     const agregar = vi.fn();
@@ -582,22 +577,21 @@ describe("heredar el personal del operativo original", () => {
           rechazado(
             2,
             "PAREDES",
-            "PAREDES ANA ya figura en otro operativo de 14H00 a 18H00.",
+            "PAREDES ANA no está disponible: figura de baja en el maestro.",
           ),
         ]}
         onAgregarPersona={agregar}
       />,
     );
 
-    await elegirHorario();
-
-    expect(agregar).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(agregar).toHaveBeenCalledTimes(1);
+    });
     expect(agregar).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
-    // El motivo del servidor, tal cual (regla 7).
-    // El motivo se repite en el selector de abajo; lo que importa es que el aviso de
-    // herencia lo diga con el nombre de la persona.
+    // El motivo del servidor, tal cual (regla 7). Se repite en el selector de abajo; lo
+    // que importa es que el aviso de herencia lo diga con el nombre de la persona.
     expect(
-      screen.getAllByText(/ya figura en otro operativo de 14H00 a 18H00/).length,
+      screen.getAllByText(/figura de baja en el maestro/).length,
     ).toBeGreaterThan(0);
     expect(screen.getByText("PAREDES ANA")).toBeInTheDocument();
   });
@@ -611,16 +605,16 @@ describe("heredar el personal del operativo original", () => {
       <PanelAdicionalOperativo
         {...propiedades}
         origen={conEquipo([{ funcionarioId: 9, nombre: "SALAZAR LUIS" }])}
-        candidatos={[]}
+        candidatos={[elegible(1, "OTRO")]}
         onAgregarPersona={vi.fn()}
       />,
     );
 
-    await elegirHorario();
-
-    expect(
-      screen.getByText(/Ya no figura entre el personal elegible/),
-    ).toBeInTheDocument();
+    await vi.waitFor(() => {
+      expect(
+        screen.getByText(/Ya no figura entre el personal elegible/),
+      ).toBeInTheDocument();
+    });
   });
 
   /** Sin equipo en el original no hay nada que heredar, y el control no aparece. */

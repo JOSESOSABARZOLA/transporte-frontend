@@ -114,6 +114,41 @@ const asignarPersonal = async (
   return data;
 };
 
+/**
+ * `PATCH /operativos/patrulla/:grupoRegistro`. 2026-09-18.
+ *
+ * Edita los campos GENERALES de toda una patrulla (Form 5/6) de una vez: se aplican a TODOS sus
+ * códigos (inspectores + instrucción). Solo el registrante (DMIP) puede; el servidor lo comprueba.
+ * Sin `version` ni horario (el horario es por persona). Devuelve los operativos ya actualizados.
+ */
+const editarPatrulla = async (
+  grupoRegistro: string,
+  cambios: Omit<ActualizarOperativo, "version">,
+): Promise<Operativo[]> => {
+  const { data } = await httpClient.patch<Operativo[]>(
+    `/operativos/patrulla/${grupoRegistro}`,
+    cambios,
+  );
+  return data;
+};
+
+/**
+ * `PUT /operativos/:id/personal`. 2026-09-18.
+ *
+ * Reemplaza a la persona de un operativo de una sola persona (patrulla) conservando el MISMO
+ * código y su horario. El servidor exige que la persona nueva sea de la misma área que la saliente.
+ */
+const reemplazarPersonal = async (
+  id: number,
+  funcionarioId: number,
+): Promise<Operativo> => {
+  const { data } = await httpClient.put<Operativo>(
+    `/operativos/${id}/personal`,
+    { funcionarioId },
+  );
+  return data;
+};
+
 /** `DELETE /operativos/:id/personal/:funcionarioId`. */
 const retirarPersonal = async (
   id: number,
@@ -125,13 +160,33 @@ const retirarPersonal = async (
   return data;
 };
 
+/**
+ * `PATCH /operativos/:id/personal/:funcionarioId`. Cambia el turno de una persona ya
+ * asignada (RN-66). El servidor re-deriva la ventana del operativo y devuelve el operativo
+ * con sus alertas al día. Las dos horas son obligatorias.
+ */
+const actualizarTurnoPersonal = async (
+  id: number,
+  funcionarioId: number,
+  turno: { horaInicio: string; horaFin: string },
+): Promise<Operativo> => {
+  const { data } = await httpClient.patch<Operativo>(
+    `/operativos/${id}/personal/${funcionarioId}`,
+    turno,
+  );
+  return data;
+};
+
 export const OperativoService = {
   consultar,
   obtener,
   registrar,
   crearAdicional,
   editar,
+  editarPatrulla,
   retirar,
   asignarPersonal,
+  reemplazarPersonal,
   retirarPersonal,
+  actualizarTurnoPersonal,
 };

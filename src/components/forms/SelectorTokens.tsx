@@ -228,15 +228,25 @@ const SelectorTokens = <T extends OpcionToken>({
           {visibles.map((opcion) => (
             <span
               key={opcion.id}
-              className="badge badge-primary gap-2"
+              /*
+                `min-w-0` en el distintivo y `min-w-0 truncate` en la etiqueta: un valor
+                largo se recorta con puntos suspensivos en vez de estirar el distintivo y
+                salirse del contenedor `flex-wrap`. El `×` conserva su tamaño. El nombre
+                completo sigue disponible en el `aria-label` del botón de quitar.
+              */
+              className="badge badge-primary gap-2 min-w-0"
             >
-              {etiquetaCorta(opcion)}
+              <span className="min-w-0 truncate">{etiquetaCorta(opcion)}</span>
               <button
                 type="button"
                 aria-label={`Quitar ${etiquetaLarga(opcion)}`}
                 disabled={deshabilitado}
                 onClick={() => quitar(opcion.id)}
-                className="btn btn-ghost btn-xs"
+                /*
+                  `btn-sm` y no `btn-xs`: mismo criterio de área táctil (D-9) que la «×» de
+                  `SelectorPersonal`, para que los dos multiselección hermanos coincidan.
+                */
+                className="btn btn-ghost btn-sm"
               >
                 ×
               </button>
@@ -251,7 +261,7 @@ const SelectorTokens = <T extends OpcionToken>({
           {resumido && (
             <button
               type="button"
-              className="btn btn-ghost btn-xs"
+              className="btn btn-ghost btn-sm"
               onClick={() => setExpandido(true)}
             >
               +{ocultas}
@@ -260,7 +270,7 @@ const SelectorTokens = <T extends OpcionToken>({
           {expandido && elegidas.length > TOPE_VISIBLE && (
             <button
               type="button"
-              className="btn btn-ghost btn-xs"
+              className="btn btn-ghost btn-sm"
               onClick={() => setExpandido(false)}
             >
               Resumir
@@ -278,6 +288,8 @@ const SelectorTokens = <T extends OpcionToken>({
           aria-expanded={!deshabilitado}
           aria-controls={listaId}
           aria-required={obligatorio}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${id}-error` : undefined}
           aria-autocomplete="list"
           aria-activedescendant={
             disponibles[activa]
@@ -357,10 +369,21 @@ const SelectorTokens = <T extends OpcionToken>({
         )}
       </div>
 
+      {/*
+        El mensaje NO va dentro de un `<label>`: un error no etiqueta nada. Lleva `id`
+        para que el control lo cite en `aria-describedby` y `role="alert"` para que se
+        anuncie al aparecer. Mismo tratamiento que `CampoEnvoltura` de FormikField.
+      */}
       {error && (
-        <label className="label">
-          <span className="label-text-alt text-error">{error}</span>
-        </label>
+        <div className="label">
+          <span
+            id={`${id}-error`}
+            role="alert"
+            className="label-text-alt text-error"
+          >
+            {error}
+          </span>
+        </div>
       )}
     </div>
   );

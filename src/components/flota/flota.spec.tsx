@@ -45,6 +45,13 @@ vi.mock("../../services/flota.service.ts", () => ({
     crearVehiculo: vi.fn(),
     actualizarVehiculo: vi.fn(),
     desactivarVehiculo: vi.fn(),
+    // RN-DAF-03, agregadas el 2026-08-31. Van en el doble aunque estas pruebas no las
+    // afirmen: la pantalla las pide dentro del mismo `Promise.all` que los dos maestros,
+    // y una sola ausente rechaza la promesa entera y deja la tabla vacía. El síntoma
+    // aparecía a cinco pruebas de distancia, como «no encuentro PBA-1234».
+    listarUbicaciones: vi.fn(),
+    crearUbicacion: vi.fn(),
+    actualizarUbicacion: vi.fn(),
   },
 }));
 
@@ -66,6 +73,11 @@ const conductor = (parcial: Partial<Conductor> = {}): Conductor => ({
   licenciaTipo: "C",
   vehiculoHabitual: { id: 1, placa: "PBA-1234" },
   activo: true,
+  // Los tres del 2026-08-31 nacen sin registrar, que es como llega un conductor recién
+  // cargado a mano: cada regla comprueba primero si el dato consta.
+  sector: null,
+  parqueaderoAutorizado: false,
+  tipoContrato: null,
   ...parcial,
 });
 
@@ -234,8 +246,10 @@ describe("el modal de conductor", () => {
       />,
     );
 
-    // El único `<select>` del modal es el del vehículo habitual.
-    const desplegable = screen.getByRole("combobox");
+    // Hasta el 2026-08-31 este era el único `<select>` del modal y bastaba con
+    // `getByRole("combobox")`. Ahora hay tres —sector y tipo de contrato se sumaron con
+    // los campos del levantamiento con la DAF— y hay que nombrar el que se comprueba.
+    const desplegable = screen.getByLabelText(/Vehículo habitual/);
 
     expect(within(desplegable).getByText(/PBA-1234/)).toBeInTheDocument();
     expect(within(desplegable).queryByText(/PCC-9999/)).toBeNull();
@@ -327,6 +341,9 @@ describe("la pantalla", () => {
     vi.clearAllMocks();
     vi.mocked(FlotaService.listarVehiculos).mockResolvedValue([vehiculo()]);
     vi.mocked(FlotaService.listarConductores).mockResolvedValue([conductor()]);
+    // El catálogo de zonales nace vacío —es Q-01— y así es como lo encuentra la pantalla
+    // hasta que el administrador lo cargue.
+    vi.mocked(FlotaService.listarUbicaciones).mockResolvedValue([]);
   });
 
   /**

@@ -27,7 +27,23 @@ type PanelCatalogoProps = {
   /** Lo que acompaña al botón. Normalmente el recuento de valores vigentes. */
   distintivo: ReactNode;
   procesando: boolean;
-  onAgregar: () => void;
+  /**
+   * El alta del catálogo. OPCIONAL desde el 2026-09-04: los puntos de encuentro movieron
+   * su «Agregar» dentro de la tabla de zonales —se agrega a una zonal concreta—, así que
+   * su panel ya no lleva botón en la cabecera. Sin esta función, la cabecera solo muestra
+   * el distintivo.
+   */
+  onAgregar?: () => void;
+  /**
+   * Rótulo del botón. «Agregar» en los tres catálogos de lista.
+   *
+   * Se parametrizó el 2026-08-27, cuando entró un panel que no agrega filas sino que
+   * guarda un conjunto: las áreas admitidas del formulario. La alternativa era duplicar
+   * el marco del panel, y este componente existe justamente para que haya uno solo.
+   */
+  textoAccion?: string;
+  /** Apaga el botón sin apagar el panel: no hay nada que guardar todavía. */
+  accionDeshabilitada?: boolean;
   children: ReactNode;
 };
 
@@ -36,23 +52,27 @@ const PanelCatalogo: FC<PanelCatalogoProps> = ({
   distintivo,
   procesando,
   onAgregar,
+  textoAccion = "Agregar",
+  accionDeshabilitada = false,
   children,
 }) => (
-  <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+  <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
     <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+      <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
         {titulo}
       </h2>
       <div className="flex items-center gap-2">
         {distintivo}
-        <button
-          type="button"
-          className="btn btn-sm app-modules-panel-action"
-          onClick={onAgregar}
-          disabled={procesando}
-        >
-          Agregar
-        </button>
+        {onAgregar && (
+          <button
+            type="button"
+            className="btn btn-sm app-modules-panel-action"
+            onClick={onAgregar}
+            disabled={procesando || accionDeshabilitada}
+          >
+            {textoAccion}
+          </button>
+        )}
       </div>
     </div>
 

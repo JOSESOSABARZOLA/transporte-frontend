@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CheckboxInput,
   DateInput,
+  DateTextInput,
   EmailInput,
   NumberInput,
   PhoneInput,
@@ -57,6 +58,7 @@ describe("los cinco campos de texto comparten implementación y conservan su tip
     { nombre: "NumberInput", componente: NumberInput, tipo: "number" },
     { nombre: "EmailInput", componente: EmailInput, tipo: "email" },
     { nombre: "PhoneInput", componente: PhoneInput, tipo: "tel" },
+    { nombre: "DateTextInput", componente: DateTextInput, tipo: "date" },
   ] as const;
 
   it.each(casos)("$nombre usa type=$tipo", ({ componente, tipo }) => {
@@ -227,6 +229,22 @@ describe("DateInput · convierte, y por eso no comparte implementación", () => 
     const { container } = montar(DateInput as never, { label: "Fecha" });
 
     expect(container.querySelector('input[type="date"]')).toHaveValue("");
+  });
+});
+
+describe("DateTextInput · conserva la cadena, no convierte (regla 12)", () => {
+  it("presenta la cadena AAAA-MM-DD tal cual, sin pasar por Date", () => {
+    // A diferencia de DateInput: aquí el valor de calendario viaja como texto y un Date en
+    // Quito —UTC−5— lo desplazaría un día. El selector nativo aporta su teclado en táctil.
+    const { container } = montar(
+      DateTextInput as never,
+      { label: "Desde" },
+      { valorInicial: "2026-07-31" },
+    );
+
+    expect(container.querySelector('input[type="date"]')).toHaveValue(
+      "2026-07-31",
+    );
   });
 });
 

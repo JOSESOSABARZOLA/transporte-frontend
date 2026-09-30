@@ -24,28 +24,28 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
 import ModalExito from "../components/common/ModalExito.tsx";
-import ModalFuncionario, {
-  type PrecargaFuncionario,
-} from "../components/personal/ModalFuncionario.tsx";
+import ModalBajaConMotivo from "../components/personal/ModalBajaConMotivo.tsx";
 import PanelAusencias from "../components/personal/PanelAusencias.tsx";
 import Paginacion from "../components/common/Paginacion.tsx";
-import ModalDirectorioAuth from "../components/personal/ModalDirectorioAuth.tsx";
+import DrawerFlujoAlta, {
+  type ResultadoGuardado,
+} from "../components/personal/DrawerFlujoAlta.tsx";
+import type { ValoresFichaAlta } from "../components/personal/PasoFichaFuncionario.tsx";
+import { PARA_FICHA } from "../components/personal/propositoDirectorio.ts";
 import TablaPersonal from "../components/personal/TablaPersonal.tsx";
-import type { AreaPersonal } from "../interfaces/Formulario.ts";
-import {
-  partirNombre,
-  type FilaDirectorio,
-} from "../interfaces/DirectorioAuth.ts";
+import type { AreaPersonal, Zonal } from "../interfaces/Formulario.ts";
+import MatrizCobertura from "../components/personal/MatrizCobertura.tsx";
+import type { FilaDirectorio } from "../interfaces/DirectorioAuth.ts";
 import type {
-  CrearFuncionario,
+  BajaFuncionario,
   Disponibilidad,
   EstadoDisponibilidad,
   Funcionario,
   TipoContrato,
 } from "../interfaces/Personal.ts";
 import { PersonalService } from "../services/personal.service.ts";
+import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
 import { DatetimeUtil } from "../utils/datetime.util.ts";
 import { paginar } from "../utils/listadoOperativos.util.ts";
@@ -58,8 +58,6 @@ import {
   type FiltrosPersonal,
 } from "../utils/personal.util.ts";
 
-type ValoresFuncionario = CrearFuncionario & { telefono: string; cargo: string };
-
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * UNA SOLA VISTA, Y EL DIRECTORIO COMO PRIMER PASO DEL ALTA. 2026-08-24.
@@ -71,7 +69,7 @@ type ValoresFuncionario = CrearFuncionario & { telefono: string; cargo: string }
  *
  * Lo que NO cambia, porque `CLAUDE.md` §7 lo exige: **el maestro sigue administrándose
  * igual aunque Auth no responda**. La ventana del directorio lleva siempre la salida
- * «Registrar a mano», y `POST /administracion/personal` no toca Auth por ningún lado.
+ * «Crear Funcionario Operativo», y `POST /administracion/personal` no toca Auth por ningún lado.
  *
  * El directorio se sigue pidiendo **solo cuando hace falta** —al abrir la ventana, no al
  * entrar a la pantalla— y se conserva en memoria: la segunda vez la ventana abre sin
@@ -79,6 +77,58 @@ type ValoresFuncionario = CrearFuncionario & { telefono: string; cargo: string }
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 const AdminPersonalPage = () => {
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * QUÉ ÁREAS PUEDE DAR DE ALTA QUIEN ESTÁ MIRANDO. 2026-09-01, tarde.
+   *
+   * El negocio repartió el maestro por áreas: el administrador de la DMIP crea «Unidad de
+   * Operativos», «Inspector General» e «Inspector Técnico»; **«Personal de Instrucción» es
+   * solo del DMIT**. El desplegable del formulario se acota con esto.
+   *
+   * ESTE ESTADO SUSTITUYE AL DE DIRECCIONES, que se retiró esa misma mañana al quitar el
+   * campo «Dirección» del formulario. Entonces quedó anotado que haría falta «el día que
+   * esta pantalla se abra a los administradores de área»; ese día es hoy.
+   *
+   * NACE VACÍO Y NO CON LAS CUATRO. Mientras la respuesta no llega no se ofrece ninguna:
+   * una lista completa por omisión haría que un alta rápida cayera en un área ajena si
+   * alguien fuera más rápido que la red, y el servidor la rechazaría con un 403 que quien
+   * captura no sabría explicarse.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const [areasQueGestiona, setAreasQueGestiona] = useState<AreaPersonal[]>([]);
+  // Catálogo de zonales para la ficha del personal DMIP (2026-09-21).
+  const [zonales, setZonales] = useState<Zonal[]>([]);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * SI QUIEN MIRA ADMINISTRA EL MAESTRO. Reescrito el 2026-09-02.
+   *
+   * PREGUNTABA POR UN ROL —`rolCodes.includes(ADMINISTRADOR_DMIP)`— Y ERA UN DEFECTO. Al
+   * repartirse el maestro entre dos administradores, el del DMIT entraba a la pantalla y
+   * **no le aparecía «Nuevo funcionario»**: la ruta lo admitía, el servidor le habría
+   * aceptado el alta, y la única que decía que no era esta línea. Un rol quemado en el
+   * navegador que contradecía al servidor.
+   *
+   * AHORA SE DERIVA DEL ALCANCE: quien alcanza al menos un área administra, y qué áreas
+   * alcanza lo dice el servidor contra `t_rol_direccion`. No aparece ningún rol escrito, y
+   * el día que el negocio dé personal a un cuarto administrador esta pantalla se entera
+   * sola.
+   *
+   * ES LA MISMA PREGUNTA QUE YA RESPONDE EL DESPLEGABLE DE ÁREA, y por eso sale del mismo
+   * dato: no puede haber un formulario que ofrezca tres áreas y un botón que diga que no
+   * se administra nada.
+   *
+   * MIENTRAS LA RESPUESTA NO LLEGA ES `false`, y es correcto: pintar el botón antes de
+   * saberlo dejaría abrir un formulario cuyo desplegable de área estaría vacío.
+   *
+   * ESTO NO ES LA AUTORIZACIÓN, ES LA PRESENTACIÓN. Quien decide es el servidor; si
+   * alguien llamara al endpoint a mano recibiría un 403 igualmente. Lo que no puede hacer
+   * no se pinta —y no se pinta apagado—: un botón deshabilitado insinúa que en otro
+   * momento serviría.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const puedeAdministrar = areasQueGestiona.length > 0;
+
   const hoy = useMemo(() => DatetimeUtil.formatDate(new Date()), []);
 
   const [personal, setPersonal] = useState<Funcionario[]>([]);
@@ -91,7 +141,8 @@ const AdminPersonalPage = () => {
 
   const [filtros, setFiltros] = useState<FiltrosPersonal>({});
   const [pagina, setPagina] = useState(0);
-  const [tamanio, setTamanio] = useState(10);
+  // 25 filas por página por defecto (2026-09-30): el maestro es pequeño y se recorre mejor de 25.
+  const [tamanio, setTamanio] = useState(25);
 
   /** La ventana del directorio, que es por donde empieza un alta. */
   const [eligiendoDeAuth, setEligiendoDeAuth] = useState(false);
@@ -104,15 +155,15 @@ const AdminPersonalPage = () => {
   const [directorioDisponible, setDirectorioDisponible] = useState(true);
   const [motivoDirectorio, setMotivoDirectorio] = useState<string | null>(null);
 
+  // ALTA y EDICIÓN comparten el cajón (`DrawerFlujoAlta`): el alta cuando `eligiendoDeAuth`, la
+  // edición cuando `editando` tiene una ficha. Ya no hay `ModalFuncionario`.
   const [editando, setEditando] = useState<Funcionario | null>(null);
-  const [creando, setCreando] = useState(false);
-  /** Cédula y nombre traídos de Auth para un alta. `null` en un alta desde cero. */
-  const [precarga, setPrecarga] = useState<PrecargaFuncionario | null>(null);
   const [enAusencias, setEnAusencias] = useState<Funcionario | null>(null);
   const [porDarDeBaja, setPorDarDeBaja] = useState<Funcionario | null>(null);
   const [procesando, setProcesando] = useState(false);
+  // Fila recién guardada/editada, para resaltarla tras navegar a su página (ajuste 4).
+  const [resaltadoId, setResaltadoId] = useState<number | null>(null);
 
-  const [avisoFicha, setAvisoFicha] = useState<string | null>(null);
   const [avisoAusencia, setAvisoAusencia] = useState<string | null>(null);
   const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
     null,
@@ -124,8 +175,17 @@ const AdminPersonalPage = () => {
     setCargando(true);
 
     try {
-      const fichas = await PersonalService.listar(true);
+      // Las dos juntas: la pantalla no sirve sin el maestro, y el alta no sirve sin saber
+      // qué áreas puede crear quien mira.
+      const [fichas, areas, zonalesDelCatalogo] = await Promise.all([
+        PersonalService.listar(true),
+        PersonalService.areasQueGestiona(),
+        // Para el campo Zonal de la ficha (personal DMIP). Si falla, el maestro sigue sirviendo.
+        CatalogoCuadroService.listarZonales().catch(() => [] as Zonal[]),
+      ]);
       setPersonal(fichas);
+      setAreasQueGestiona(areas);
+      setZonales(zonalesDelCatalogo);
       setAviso(null);
     } catch (fallo: unknown) {
       const error = presentarError(fallo);
@@ -180,7 +240,6 @@ const AdminPersonalPage = () => {
   /** «Nuevo funcionario»: el alta empieza en el directorio. */
   const abrirDirectorio = useCallback(() => {
     setEligiendoDeAuth(true);
-    setAvisoFicha(null);
 
     if (directorioPedido.current) return;
 
@@ -191,6 +250,28 @@ const AdminPersonalPage = () => {
   const coincidentes = useMemo(
     () => filtrarPersonal(personal, filtros),
     [personal, filtros],
+  );
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * LAS ÁREAS DEL DESPLEGABLE SALEN DE LO QUE HAY, NO DEL ENUMERADO. PER-09, 27-AGO.
+   *
+   * Desde que el servidor acota el maestro a la dirección de quien consulta, a un rol
+   * departamental le llega **una sola área**. Seguir ofreciendo las cuatro dejaría tres
+   * opciones que vacían la tabla sin explicar por qué, y quien las pulsara concluiría que
+   * el sistema perdió a su gente.
+   *
+   * Se derivan del maestro **sin filtrar** —`personal`, no `coincidentes`—: si salieran de
+   * lo filtrado, elegir un área dejaría el desplegable con una sola opción y no habría
+   * forma de volver atrás.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const areasPresentes = useMemo(
+    () =>
+      (Object.keys(NOMBRE_AREA) as AreaPersonal[]).filter((area) =>
+        personal.some((funcionario) => funcionario.area === area),
+      ),
+    [personal],
   );
 
   const pagina0 = useMemo(
@@ -252,117 +333,113 @@ const AdminPersonalPage = () => {
     return suyas;
   }, []);
 
-  /**
-   * Abrir el alta con lo que Auth sabe de esa persona. 2026-08-21.
-   *
-   * SE PARTE EL NOMBRE AQUÍ Y SE DEJA EDITABLE. Auth guarda un solo campo y la partición
-   * es una heurística —dos primeras palabras, apellidos—: «DE LA TORRE PEREZ JUAN» sale
-   * mal, y quien da de alta lo corrige mirándolo. Lo que **no** se propone es el área ni
-   * el tipo de contrato: Auth no los sabe, y un valor por omisión invita a no mirarlo
-   * justo en el campo del que depende RN-26.
-   */
-  const crearFichaDesdeAuth = useCallback((fila: FilaDirectorio) => {
-    const { apellidos, nombres } = partirNombre(fila.nombre);
-
-    // Las dos ventanas van EN SECUENCIA, no anidadas: `MarcoModal` bloquea el
-    // desplazamiento y atrapa el foco, y dos a la vez se pelearían por los dos.
+  /** Cierra el cajón (sirva al ALTA o a la EDICIÓN) y descarta su estado. */
+  const cerrarCajon = useCallback(() => {
     setEligiendoDeAuth(false);
-    setPrecarga({ cedula: fila.cedula, apellidos, nombres });
-    setCreando(true);
     setEditando(null);
-    setAvisoFicha(null);
   }, []);
 
-  /**
-   * La salida que no pasa por Auth. `CLAUDE.md` §7: «el maestro sigue administrándose
-   * igual. No acople una a la otra».
-   */
-  const registrarAMano = useCallback(() => {
-    setEligiendoDeAuth(false);
-    setPrecarga(null);
-    setCreando(true);
-    setEditando(null);
-    setAvisoFicha(null);
-  }, []);
+  /** Valores del cajón a partir de una ficha existente, para editarla. */
+  const aValoresFicha = (funcionario: Funcionario): ValoresFichaAlta => ({
+    cedula: funcionario.cedula,
+    apellidos: funcionario.apellidos,
+    nombres: funcionario.nombres,
+    telefono: funcionario.telefono ?? "",
+    correo: funcionario.correo ?? "",
+    cargo: funcionario.cargo ?? "",
+    area: funcionario.area,
+    tipoContrato: funcionario.tipoContrato,
+    zonalId: funcionario.zonalId != null ? String(funcionario.zonalId) : "",
+  });
 
   /**
-   * Cerrar la ficha: si el alta nació del directorio, se **vuelve** a él.
-   *
-   * Quien se equivocó de persona quiere elegir otra, no volver al maestro y empezar de
-   * cero. Al editar una ficha existente, o al haber entrado por «Registrar a mano», no hay
-   * directorio al que volver.
+   * Tras guardar/editar (ajuste 4): si los filtros ocultan la ficha, se LIMPIAN para que se vea; se
+   * fija el resaltado y un efecto navega a su página cuando la lista se asiente.
    */
-  const cerrarFicha = useCallback(() => {
-    const veniaDelDirectorio = precarga !== null;
+  const resaltarFicha = useCallback(
+    (funcionario: Funcionario) => {
+      if (filtrarPersonal([funcionario], filtros).length === 0) setFiltros({});
+      setResaltadoId(funcionario.id);
+    },
+    [filtros],
+  );
 
-    setCreando(false);
-    setEditando(null);
-    setPrecarga(null);
-    setAvisoFicha(null);
-    setEligiendoDeAuth(veniaDelDirectorio);
-  }, [precarga]);
+  /**
+   * Guardar DESDE EL CAJÓN: crea (alta) o actualiza (edición) según `editando`. Devuelve el
+   * resultado enrutado para que el cajón lo muestre donde toca: éxito (con o sin «crear otro»),
+   * error de cédula al campo, o aviso general. Sin «crear otro», la página abre su `ModalExito`,
+   * refresca y resalta la fila.
+   */
+  const guardarDesdeDrawer = useCallback(
+    async (
+      valores: ValoresFichaAlta,
+      { crearOtro }: { crearOtro: boolean },
+    ): Promise<ResultadoGuardado> => {
+      // ZONAL SOLO PARA EL PERSONAL DMIP: para el resto va `undefined` (no se envía).
+      const zonalId =
+        valores.area !== "" &&
+        ["OPERATIVOS", "GENERAL", "TECNICO"].includes(valores.area) &&
+        valores.zonalId !== ""
+          ? Number(valores.zonalId)
+          : undefined;
 
-  const guardarFicha = useCallback(
-    async (valores: ValoresFuncionario) => {
-      setProcesando(true);
-      setAvisoFicha(null);
+      const datos = {
+        apellidos: valores.apellidos,
+        nombres: valores.nombres,
+        telefono: valores.telefono || undefined,
+        correo: valores.correo || undefined,
+        cargo: valores.cargo || undefined,
+        area: valores.area as AreaPersonal,
+        tipoContrato: valores.tipoContrato as TipoContrato,
+        zonalId,
+      };
 
       try {
-        if (editando) {
-          await PersonalService.actualizar(editando.id, {
-            apellidos: valores.apellidos,
-            nombres: valores.nombres,
-            telefono: valores.telefono || undefined,
-            cargo: valores.cargo || undefined,
-            area: valores.area,
-            tipoContrato: valores.tipoContrato,
-            direccion: valores.direccion,
-          });
-          setExito(`Ficha de ${valores.apellidos} ${valores.nombres} actualizada.`);
-        } else {
-          await PersonalService.crear({
-            cedula: valores.cedula,
-            apellidos: valores.apellidos,
-            nombres: valores.nombres,
-            telefono: valores.telefono || undefined,
-            cargo: valores.cargo || undefined,
-            area: valores.area,
-            tipoContrato: valores.tipoContrato,
-            direccion: valores.direccion,
-          });
-          setExito(
-            `${valores.apellidos} ${valores.nombres} se agregó al maestro. Ya se ofrece en los desplegables de personal.`,
-          );
-        }
+        // `area`/`tipoContrato` ya no son "" aquí: Yup los exige antes de llegar.
+        const guardado = editando
+          ? await PersonalService.actualizar(editando.id, datos)
+          : await PersonalService.crear({ ...datos, cedula: valores.cedula });
 
-        setEditando(null);
-        setCreando(false);
-        setPrecarga(null);
+        const nombre = `${valores.apellidos} ${valores.nombres}`;
 
-        // LAS DOS RECARGAS VAN EN PARALELO, y la diferencia se nota: el maestro lo sirve
-        // nuestra base en milisegundos, pero el directorio sale a Auth central, que tiene
-        // cinco segundos de espera máxima. Encadenadas, quien acaba de guardar una ficha
-        // esperaba una detrás de la otra sin motivo: ninguna necesita el resultado de la
-        // otra, las dos releen del servidor.
-        //
-        // Si el directorio no se ha llegado a pedir, no se pide ahora: solo se refresca lo
-        // que está a la vista. Esa fila acaba de dejar de estar «sin ficha» y tiene que
-        // dejar de decirlo.
+        // Refresca el maestro (y el directorio si ya se pidió, solo en alta) en paralelo.
         await Promise.all([
           cargar(),
-          directorioPedido.current ? cargarDirectorio() : Promise.resolve(),
+          !editando && directorioPedido.current
+            ? cargarDirectorio()
+            : Promise.resolve(),
         ]);
+
+        // «Guardar y crear otro» avisa DENTRO del cajón; solo «Guardar» abre el ModalExito.
+        if (!crearOtro) {
+          setExito(
+            editando
+              ? `Ficha de ${nombre} actualizada.`
+              : `${nombre} se agregó al maestro. Ya se ofrece en los desplegables de personal.`,
+          );
+          resaltarFicha(guardado);
+        }
+
+        return { ok: true, nombre };
       } catch (fallo: unknown) {
-        // El mensaje del servidor nombra a quién pertenece la cédula repetida, o qué
-        // tiene de malo el dato. Se muestra tal cual, dentro del modal, sin perder lo
-        // capturado.
-        setAvisoFicha(presentarError(fallo).mensaje);
-      } finally {
-        setProcesando(false);
+        // Un 409 es la cédula repetida: su mensaje va AL CAMPO cédula (regla 7 + ajuste 6).
+        const error = presentarError(fallo);
+        return error.trato === "conflicto"
+          ? { ok: false, errorCedula: error.mensaje }
+          : { ok: false, aviso: error.mensaje };
       }
     },
-    [editando, cargar, cargarDirectorio],
+    [editando, cargar, cargarDirectorio, resaltarFicha],
   );
+
+  /** Navega a la página de la fila resaltada cuando la lista se asienta, y la desvanece a los 4 s. */
+  useEffect(() => {
+    if (resaltadoId == null) return;
+    const indice = coincidentes.findIndex((f) => f.id === resaltadoId);
+    if (indice >= 0) setPagina(Math.floor(indice / tamanio));
+    const temporizador = setTimeout(() => setResaltadoId(null), 4000);
+    return () => clearTimeout(temporizador);
+  }, [resaltadoId, coincidentes, tamanio]);
 
   const registrarAusencia = useCallback(
     async (valores: {
@@ -416,36 +493,64 @@ const AdminPersonalPage = () => {
     [enAusencias, refrescarAusencias],
   );
 
-  const darDeBaja = useCallback(async () => {
-    if (!porDarDeBaja) return;
+  const darDeBaja = useCallback(
+    async (datosBaja: BajaFuncionario) => {
+      if (!porDarDeBaja) return;
 
-    setProcesando(true);
-    setAviso(null);
+      setProcesando(true);
+      setAviso(null);
 
-    try {
-      const baja = await PersonalService.desactivar(porDarDeBaja.id);
-      setPorDarDeBaja(null);
-      // El servidor redacta cuántos operativos conserva la ficha. Se muestra tal cual.
-      setExito(baja.mensaje);
-      await cargar();
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setPorDarDeBaja(null);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-    } finally {
-      setProcesando(false);
-    }
-  }, [porDarDeBaja, cargar]);
+      try {
+        const baja = await PersonalService.desactivar(porDarDeBaja.id, datosBaja);
+        setPorDarDeBaja(null);
+        // El servidor redacta cuántos operativos conserva la ficha. Se muestra tal cual.
+        setExito(baja.mensaje);
+        await cargar();
+      } catch (fallo: unknown) {
+        const error = presentarError(fallo);
+        setPorDarDeBaja(null);
+        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      } finally {
+        setProcesando(false);
+      }
+    },
+    [porDarDeBaja, cargar],
+  );
+
+  /**
+   * Reingreso. No pide confirmación —es reversible y no destruye nada—; la baja sí,
+   * porque advierte de que el histórico obliga a conservar la ficha. El servidor
+   * comprueba el alcance, igual que en la baja.
+   */
+  const reactivar = useCallback(
+    async (funcionario: Funcionario) => {
+      setProcesando(true);
+      setAviso(null);
+      try {
+        await PersonalService.reactivar(funcionario.id);
+        setExito(
+          `${funcionario.apellidos} ${funcionario.nombres} vuelve al maestro.`,
+        );
+        await cargar();
+      } catch (fallo: unknown) {
+        const error = presentarError(fallo);
+        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      } finally {
+        setProcesando(false);
+      }
+    },
+    [cargar],
+  );
 
   const filtrando = hayFiltrosDePersonal(filtros);
 
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+        <p className="page-heading-kicker font-semibold uppercase">
           Administración
         </p>
-        <h1 className="page-heading-title text-2xl font-semibold">
+        <h1 className="page-heading-title">
           Personal y disponibilidad
         </h1>
         <p className="page-heading-subtitle text-sm">
@@ -463,9 +568,9 @@ const AdminPersonalPage = () => {
         </div>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Maestro de personal
           </h2>
 
@@ -473,15 +578,17 @@ const AdminPersonalPage = () => {
             <span className="badge badge-ghost badge-sm">
               {cargando
                 ? "Cargando…"
-                : `${coincidentes.length} de ${personal.length} registros`}
+                : `Mostrando ${coincidentes.length} de ${personal.length}`}
             </span>
-            <button
-              type="button"
-              className="btn btn-sm app-modules-panel-action"
-              onClick={abrirDirectorio}
-            >
-              Nuevo funcionario
-            </button>
+            {puedeAdministrar && (
+              <button
+                type="button"
+                className="btn btn-sm app-modules-panel-action"
+                onClick={abrirDirectorio}
+              >
+                Nuevo funcionario
+              </button>
+            )}
           </div>
         </div>
 
@@ -515,12 +622,12 @@ const AdminPersonalPage = () => {
                 }}
               >
                 <option value="">Todas las áreas</option>
-                {Object.entries(NOMBRE_AREA).map(([valor, nombre]) => (
+                {areasPresentes.map((area) => (
                   <option
-                    key={valor}
-                    value={valor}
+                    key={area}
+                    value={area}
                   >
-                    {nombre}
+                    {NOMBRE_AREA[area]}
                   </option>
                 ))}
               </select>
@@ -565,36 +672,37 @@ const AdminPersonalPage = () => {
                 <option value="inactivos">Solo inactivos</option>
               </select>
 
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setFiltros({});
-                  setPagina(0);
-                }}
-                disabled={!filtrando}
-              >
-                Limpiar filtros
-              </button>
+              {/* «Limpiar filtros» solo aparece con filtros activos: sin ellos no limpia nada. */}
+              {filtrando && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setFiltros({});
+                    setPagina(0);
+                  }}
+                >
+                  Limpiar filtros
+                </button>
+              )}
             </div>
 
             <TablaPersonal
               personal={visibles}
+              zonales={zonales}
               ausencias={ausencias}
               hoy={hoy}
               seleccionadoId={enAusencias?.id ?? null}
+              resaltadoId={resaltadoId}
               onSeleccionar={(funcionario) => {
                 setEnAusencias(funcionario);
                 setAvisoAusencia(null);
                 void refrescarAusencias(funcionario.id);
               }}
-              onEditar={(funcionario) => {
-                setEditando(funcionario);
-                setCreando(false);
-                setPrecarga(null);
-                setAvisoFicha(null);
-              }}
+              onEditar={(funcionario) => setEditando(funcionario)}
               onDarDeBaja={setPorDarDeBaja}
+              onReactivar={(funcionario) => void reactivar(funcionario)}
+              puedeAdministrar={puedeAdministrar}
               mensajeVacio={
                 cargando
                   ? "Cargando el maestro…"
@@ -618,22 +726,34 @@ const AdminPersonalPage = () => {
       </div>
 
       {/*
-        LA VENTANA DEL ALTA. Va aquí y no dentro del panel: es del alta, no del maestro.
-
-        Se monta solo cuando se está eligiendo, de modo que `MarcoModal` y la ventana de la
-        ficha nunca coexisten. Ver `crearFichaDesdeAuth`.
+        COBERTURA POR TURNOS · SOLO INSTRUCCIÓN. Se monta únicamente cuando quien entró
+        gestiona el área de Instrucción, así que la vista de Inspección (DMIP) no cambia.
+        Adapta el Excel «COBERTURA POR TURNOS» a la pantalla, reutilizando el maestro.
       */}
-      <ModalDirectorioAuth
-        abierto={eligiendoDeAuth}
-        personas={directorio}
+      {areasQueGestiona.includes("INSTRUCCION" as AreaPersonal) && (
+        <MatrizCobertura />
+      )}
+
+      {/*
+        EL CAJÓN, compartido por el ALTA (dos pasos: buscar persona → completar ficha) y la
+        EDICIÓN (abre directo en la ficha, sin stepper, cédula en solo lectura). Va aquí y no dentro
+        del panel: es del flujo, no del maestro. P-11 (Cuentas) usa su propio cajón `DrawerFlujoCuenta`
+        sobre los mismos primitivos.
+      */}
+      <DrawerFlujoAlta
+        abierto={eligiendoDeAuth || editando !== null}
+        proposito={PARA_FICHA}
+        filas={directorio}
         disponible={directorioDisponible}
         motivo={motivoDirectorio}
         cargando={cargandoDirectorio}
-        procesando={procesando}
-        onElegir={crearFichaDesdeAuth}
-        onRegistrarAMano={registrarAMano}
         onActualizar={() => void cargarDirectorio()}
-        onCerrar={() => setEligiendoDeAuth(false)}
+        onCerrar={cerrarCajon}
+        areasQueGestiona={areasQueGestiona}
+        zonales={zonales}
+        onGuardar={guardarDesdeDrawer}
+        edicion={editando !== null}
+        valoresEdicion={editando ? aValoresFicha(editando) : null}
       />
 
       {enAusencias && (
@@ -650,29 +770,14 @@ const AdminPersonalPage = () => {
         />
       )}
 
-      <ModalFuncionario
-        abierto={creando || editando !== null}
-        funcionario={editando}
-        precarga={precarga}
-        guardando={procesando}
-        aviso={avisoFicha}
-        onGuardar={(valores) => void guardarFicha(valores)}
-        onCancelar={cerrarFicha}
-      />
-
-      {/* Caso 5: la confirmación advierte que la baja es lógica. */}
-      <ModalConfirmacion
+      {/* La baja exige un motivo (caso 5 + baja con motivo, 2026-09-30). `key` por ficha remonta el
+          modal con estado limpio en cada apertura. */}
+      <ModalBajaConMotivo
+        key={porDarDeBaja?.id ?? "baja"}
         abierto={porDarDeBaja !== null}
-        titulo="¿Dar de baja a este funcionario?"
-        mensaje={
-          porDarDeBaja
-            ? `${nombreCompleto(porDarDeBaja)} dejará de ofrecerse en los desplegables de personal. La ficha NO se borra: el histórico de los operativos en que participó depende de ella, y si reingresa se reactiva con su historial intacto.`
-            : ""
-        }
-        textoSi="Sí, dar de baja"
-        textoNo="Cancelar"
+        funcionario={porDarDeBaja}
         procesando={procesando}
-        onConfirmar={() => void darDeBaja()}
+        onConfirmar={(baja) => void darDeBaja(baja)}
         onCancelar={() => setPorDarDeBaja(null)}
       />
 

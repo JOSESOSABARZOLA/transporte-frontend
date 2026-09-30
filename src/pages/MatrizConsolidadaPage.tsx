@@ -42,6 +42,7 @@ import { DocumentoService } from "../services/documento.service.ts";
 import { descargarArchivo } from "../utils/banner.util.ts";
 import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
 import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
+import { conDiaYMesEnMayuscula } from "../utils/texto.util.ts";
 
 const MatrizConsolidadaPage = () => {
   /**
@@ -150,10 +151,10 @@ const MatrizConsolidadaPage = () => {
         <div className="flex flex-col gap-1">
           {/* El antetítulo dice de quién es la pantalla. En un sistema cuyo encargo nació
               del aislamiento de la información, esa línea no es adorno. */}
-          <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">
+          <p className="page-heading-kicker font-semibold uppercase">
             Dirección
           </p>
-          <h1 className="page-heading-title text-2xl font-semibold">
+          <h1 className="page-heading-title">
             Matriz Consolidada del Día
           </h1>
           <p className="page-heading-subtitle text-sm">
@@ -192,7 +193,7 @@ const MatrizConsolidadaPage = () => {
             {cabecera.ordenTrabajo}
           </span>
           <span className="badge badge-ghost badge-sm">
-            {cabecera.fechaNatural}
+            {conDiaYMesEnMayuscula(cabecera.fechaNatural)}
           </span>
           <span className="badge badge-ghost badge-sm">
             Semana {cabecera.nroSemana} de {cabecera.anioSemana}
@@ -255,9 +256,9 @@ const MatrizConsolidadaPage = () => {
         </div>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
             Matriz consolidada
           </h2>
 

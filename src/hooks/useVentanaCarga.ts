@@ -116,11 +116,29 @@ export const useVentanaCarga = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * EL REFRESCO DE FONDO NO DEBE PARPADEAR LA PANTALLA. Corregido el 2026-09-09.
+   *
+   * El temporizador vuelve a pedir la ventana cada minuto, y `useConsulta` pone `cargando`
+   * en verdadero durante ese instante. Como P-01/P-02/P-03 ocultan el aviso y bloquean el
+   * formulario mientras `cargando`, cada minuto el aviso desaparecía y los campos se
+   * deshabilitaban por un fotograma: se veía como un parpadeo, «como si algo se actualizara
+   * por debajo». Y lo hacía, pero no tenía por qué notarse.
+   *
+   * `cargando` pasa a significar SOLO la primera carga —cuando aún no hay dato—; un refresco
+   * con dato ya conocido no lo enciende. Y `puedeEscribir` se lee del ÚLTIMO dato conocido,
+   * no de `cargando`, así que no cae a falso durante el refresco. La seguridad de origen se
+   * conserva: sin dato todavía (primera carga) sigue siendo falso, y el servidor manda igual.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const primeraCarga = cargando && datos === null;
+
   return {
     ventana: datos,
-    cargando,
+    cargando: primeraCarga,
     error,
-    puedeEscribir: !cargando && (datos?.abierta ?? false),
+    puedeEscribir: datos?.abierta ?? false,
     mensaje: datos?.mensaje ?? "",
     horaCierre: datos?.horaCierre
       ? comoHoraInstitucional(datos.horaCierre)

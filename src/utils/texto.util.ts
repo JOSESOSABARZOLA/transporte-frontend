@@ -3,7 +3,8 @@
  * Módulo: Cuadro de Colores
  * Feature: Transversal
  * Archivo: texto.util.ts
- * Responsabilidad: Comparar texto escrito por personas, sin tildes ni mayúsculas.
+ * Responsabilidad: Utilidades de texto — comparar sin tildes ni mayúsculas, y capitalizar
+ *   el día y el mes de una fecha en palabras para las cabeceras.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-07
  *
@@ -24,3 +25,17 @@ export const normalizar = (texto: string): string =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+
+/**
+ * Inicial en mayúscula de cada palabra salvo los conectores —«martes 8 de septiembre de
+ * 2026» → «Martes 8 de Septiembre de 2026»—, para las cabeceras del cuadro. El servidor
+ * entrega `fechaNatural` en minúscula, que es la norma del español; poner la mayúscula es
+ * una preferencia de presentación del negocio y NO altera el dato: solo la vista cambia.
+ */
+const CONECTORES_DE_FECHA = new Set(["de", "del", "y"]);
+export const conDiaYMesEnMayuscula = (fecha: string): string =>
+  fecha.replace(/\p{L}+/gu, (palabra) =>
+    CONECTORES_DE_FECHA.has(palabra.toLowerCase())
+      ? palabra
+      : palabra.charAt(0).toUpperCase() + palabra.slice(1),
+  );

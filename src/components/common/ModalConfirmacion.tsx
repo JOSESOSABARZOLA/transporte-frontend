@@ -47,14 +47,24 @@ const ModalConfirmacion = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v4m0 4h.01M10.29 3.86l-8.48 14.7A1.5 1.5 0 003.11 21h17.78a1.5 1.5 0 001.3-2.44l-8.48-14.7a1.5 1.5 0 00-2.6 0z" />
           </svg>
         </div>
-        <h3 className="text-lg font-bold text-base-content">{titulo}</h3>
+        <h3 className="text-lg font-semibold text-base-content">{titulo}</h3>
         <p className="mt-1 text-sm text-base-content/70">{mensaje}</p>
         <div className="mt-6 flex gap-3">
           <button type="button" className="btn btn-outline flex-1" onClick={onCancelar} disabled={procesando}>
             {textoNo}
           </button>
           <button type="button" className="btn btn-primary flex-1" onClick={onConfirmar} disabled={procesando} autoFocus>
-            {procesando ? "Procesando…" : textoSi}
+            {procesando ? (
+              <>
+                <span
+                  className="loading loading-spinner loading-sm"
+                  aria-hidden="true"
+                />
+                Procesando…
+              </>
+            ) : (
+              textoSi
+            )}
           </button>
         </div>
     </MarcoModal>

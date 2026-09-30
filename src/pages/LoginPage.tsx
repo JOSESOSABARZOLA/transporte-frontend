@@ -49,10 +49,10 @@ const LoginPage = () => {
 
   return (
     <div className="flex flex-col items-center gap-4 px-6 text-center">
-      <p className="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em] text-primary-content">
+      <p className="page-heading-kicker font-semibold uppercase text-primary-content">
         Cuadro de Colores Operativo
       </p>
-      <h1 className="page-heading-title text-2xl font-semibold text-primary-content">
+      <h1 className="page-heading-title text-primary-content">
         El ingreso se realiza en el portal institucional
       </h1>
       <p className="text-sm text-primary-content/80">

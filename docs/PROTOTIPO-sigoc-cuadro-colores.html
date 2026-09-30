@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SIGOC · Cuadro de Colores Operativo — Prototipo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+/* ==========================================================================
+   TEMA daisyUI — valores exactos de transporte-frontend/src/index.css
+   ========================================================================== */
+:root, [data-theme="light"] {
+  --color-base-100:#ffffff; --color-base-200:#f1f3f6; --color-base-300:#d6deef;
+  --color-base-content:#26365f;
+  --color-primary:#1b77bb;   --color-primary-content:#ffffff;
+  --color-secondary:#20347d; --color-secondary-content:#ffffff;
+  --color-accent:#3744d0;    --color-accent-content:#ffffff;
+  --color-neutral:#72b9e7;   --color-neutral-content:#16355c;
+  --color-success:#6ed0bd;   --color-success-content:#143a34;
+  --color-info:#8fa1ff;      --color-info-content:#1f2b63;
+  --color-warning:#f48a42;   --color-warning-content:#ffffff;
+  --color-error:#cb1f03;     --color-error-content:#ffffff;
+  /* design-tokens.css */
+  --app-shell-background:#f1f3f6;
+  --app-shell-overlay-start:rgba(248,250,253,.82);
+  --app-shell-overlay-middle:rgba(241,243,246,.62);
+  --app-shell-overlay-end:rgba(241,243,246,.45);
+  --app-shell-chrome-bg:#20347d; --app-shell-chrome-fg:#f8fbff;
+  --app-shell-surface-border:rgba(90,109,153,.18);
+  --app-shell-surface-shadow:0 18px 42px rgba(32,52,125,.11);
+  --app-shell-sidebar-shadow:0 24px 48px rgba(11,29,77,.28);
+  --app-shell-sidebar-start:#20347d;
+  --app-shell-sidebar-hover-fill:rgba(114,185,231,.14);
+  --app-shell-sidebar-active-accent:#72b9e7;
+  --app-shell-sidebar-row-radius:.28rem;
+  --app-shell-sidebar-active-accent-width:.12rem;
+  --app-shell-sidebar-border-subtle:rgba(255,255,255,.12);
+  --app-shell-sidebar-group-selected-fill:rgba(92,187,237,.26);
+  --app-shell-sidebar-subitem-active-fill:rgba(92,187,237,.28);
+  --app-shell-sidebar-sublist-line:rgba(114,185,231,.42);
+  --app-shell-sidebar-subitem-color:rgba(248,251,255,.82);
+  --app-shell-sidebar-row-gap:.72rem;
+  --app-shell-sidebar-row-padding-x:.72rem;
+  --app-shell-sidebar-root-icon-size:1rem;
+  --app-shell-sidebar-subitem-icon-size:.9rem;
+  --app-shell-sidebar-sublist-offset:.98rem;
+  --app-shell-sidebar-sublist-padding-left:.8rem;
+  --app-shell-sidebar-subitem-indent:.96rem;
+  --app-shell-sidebar-chevron-size:.76rem;
+  --app-table-row-padding-y:.4724rem;
+  --muted:#5a6d99;
+}
+[data-theme="dark"] {
+  --color-base-100:#0d1630; --color-base-200:#121f40; --color-base-300:#233766;
+  --color-base-content:#edf4ff;
+  --color-error:#ea3446;
+  --app-shell-background:#08111f;
+  --app-shell-overlay-start:rgba(7,13,32,.24);
+  --app-shell-overlay-middle:rgba(10,18,40,.42);
+  --app-shell-overlay-end:rgba(8,16,31,.62);
+  --app-shell-chrome-bg:#101e49;
+  --app-shell-surface-border:rgba(143,161,255,.16);
+  --app-shell-surface-shadow:0 22px 52px rgba(2,8,24,.44);
+  --app-shell-sidebar-start:#101e49;
+  --app-shell-sidebar-hover-fill:rgba(114,185,231,.10);
+  --app-shell-sidebar-border-subtle:rgba(143,161,255,.12);
+  --app-shell-sidebar-group-selected-fill:rgba(92,187,237,.14);
+  --app-shell-sidebar-subitem-active-fill:rgba(92,187,237,.18);
+  --muted:rgba(237,244,255,.72);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--app-shell-background);color:var(--color-base-content);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+
+/* ---------- utilidades de color del tema ---------- */
+.bg-base-100{background-color:var(--color-base-100)}
+.bg-base-200{background-color:var(--color-base-200)}
+.bg-base-300{background-color:var(--color-base-300)}
+.border-base-300{border-color:var(--color-base-300)}
+.text-base-content{color:var(--color-base-content)}
+.text-primary{color:var(--color-primary)}
+.text-primary\/95{color:color-mix(in srgb,var(--color-primary) 95%,transparent)}
+.text-secondary{color:var(--color-secondary)}
+.text-error{color:var(--color-error)}
+.text-warning{color:var(--color-warning)}
+.text-success{color:var(--color-success)}
+.bg-primary\/5{background-color:color-mix(in srgb,var(--color-primary) 5%,transparent)}
+.bg-warning\/15{background-color:color-mix(in srgb,var(--color-warning) 15%,transparent)}
+.bg-warning\/25{background-color:color-mix(in srgb,var(--color-warning) 25%,transparent)}
+.bg-error\/10{background-color:color-mix(in srgb,var(--color-error) 10%,transparent)}
+.hover\:bg-info\/10:hover{background-color:color-mix(in srgb,var(--color-info) 10%,transparent)}
+.ring-error-inset{box-shadow:inset 0 0 0 1.5px var(--color-error)}
+
+/* ---------- app shell ---------- */
+.app-shell-frame{min-height:100vh}
+@supports (height:100dvh){.app-shell-frame{height:100dvh;min-height:100dvh}}
+.bg-system::before{content:"";position:fixed;inset:auto 0 -20px 0;height:46vh;z-index:0;pointer-events:none;opacity:.5;
+  background:radial-gradient(120% 80% at 80% 100%,rgba(114,185,231,.22),transparent 60%),
+             linear-gradient(to top,rgba(32,52,125,.10),transparent 70%)}
+.app-shell-overlay{background-image:linear-gradient(to bottom,var(--app-shell-overlay-start),var(--app-shell-overlay-middle),var(--app-shell-overlay-end))}
+
+/* topbar */
+.app-topbar{position:sticky;top:0;z-index:30;min-height:4rem;display:flex;align-items:center;
+  border-bottom:1px solid var(--color-base-300);background:var(--color-base-100);
+  color:var(--color-base-content);box-shadow:0 8px 24px rgba(15,23,42,.10)}
+[data-theme="dark"] .app-topbar{box-shadow:none}
+.app-topbar-brand{font-size:1.25rem;font-weight:700;letter-spacing:.025em;color:var(--color-primary)}
+.navbar-start{display:flex;align-items:center;flex:1 1 0;gap:.5rem}
+.navbar-center{display:flex;align-items:center}
+.navbar-end{display:flex;align-items:center;justify-content:flex-end;flex:1 1 0;gap:.25rem}
+
+/* sidebar */
+.app-sidebar{background:var(--app-shell-sidebar-start);border:1px solid var(--app-shell-sidebar-border-subtle);
+  box-shadow:var(--app-shell-sidebar-shadow);color:var(--app-shell-chrome-fg);display:flex;flex-direction:column;
+  min-height:0;height:100%;width:100%;overflow:hidden}
+.app-sidebar-header{border-bottom:1px solid var(--app-shell-sidebar-border-subtle);padding:1.1rem 1rem 1rem}
+.app-sidebar-brand{display:grid;min-height:7.1rem;grid-template-columns:4.7rem minmax(0,1fr);align-items:center;column-gap:.4rem}
+.app-sidebar-brand-logo-wrap{display:flex;align-items:center;justify-content:flex-start;align-self:stretch}
+.app-sidebar-brand-copy{display:flex;flex-direction:column;justify-content:center;min-width:0;padding-top:.08rem}
+.app-sidebar-brand-acronym{font-size:1.22rem;font-weight:700;line-height:1;letter-spacing:.068em;text-transform:uppercase}
+.app-sidebar-brand-name{margin-top:.35rem;font-size:1.03rem;font-weight:600;line-height:1.14;letter-spacing:.012em}
+.app-shell-sidebar-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:.75rem .625rem}
+.app-sidebar-details{margin-bottom:.1rem}
+.app-sidebar-summary{display:flex;align-items:center;justify-content:space-between;
+  border-radius:var(--app-shell-sidebar-row-radius);gap:var(--app-shell-sidebar-row-gap);
+  padding:.6rem var(--app-shell-sidebar-row-padding-x);font-size:.875rem;font-weight:600;line-height:1.2;
+  color:var(--app-shell-chrome-fg);cursor:pointer;list-style:none;
+  transition:background-color 180ms ease,color 180ms ease}
+.app-sidebar-summary::-webkit-details-marker{display:none}
+.app-sidebar-summary:hover{background-color:var(--app-shell-sidebar-hover-fill)}
+.app-sidebar-details[open]>.app-sidebar-summary{background:var(--app-shell-sidebar-group-selected-fill)}
+.app-sidebar-summary-main{display:flex;align-items:center;gap:var(--app-shell-sidebar-row-gap);min-width:0}
+.app-sidebar-summary-icon{display:inline-flex;align-items:center;justify-content:center;
+  width:var(--app-shell-sidebar-root-icon-size);flex-shrink:0}
+.app-sidebar-summary-icon svg{width:1rem;height:1rem}
+.app-sidebar-chevron{width:var(--app-shell-sidebar-chevron-size);height:var(--app-shell-sidebar-chevron-size);
+  transition:transform 200ms ease;opacity:.85;flex-shrink:0}
+.app-sidebar-details[open]>.app-sidebar-summary .app-sidebar-chevron{transform:rotate(90deg)}
+.app-sidebar-sublist{margin:.18rem 0 .3rem var(--app-shell-sidebar-sublist-offset);
+  padding-left:var(--app-shell-sidebar-sublist-padding-left);
+  border-left:1px solid var(--app-shell-sidebar-sublist-line);display:flex;flex-direction:column;gap:.06rem}
+.app-sidebar-link{display:flex;align-items:center;gap:var(--app-shell-sidebar-row-gap);
+  border:1px solid transparent;color:#fff;text-decoration:none;cursor:pointer;
+  transition:background-color 180ms ease,color 180ms ease}
+.app-sidebar-subitem-link{border-radius:var(--app-shell-sidebar-row-radius);
+  padding:.42rem var(--app-shell-sidebar-row-padding-x) .42rem var(--app-shell-sidebar-subitem-indent);
+  font-size:.8125rem;font-weight:500;line-height:1.2;color:var(--app-shell-sidebar-subitem-color)}
+.app-sidebar-link:hover{background-color:var(--app-shell-sidebar-hover-fill);color:var(--app-shell-chrome-fg)}
+.app-sidebar-subitem-link.is-active{background:var(--app-shell-sidebar-subitem-active-fill);color:#fff;font-weight:600;
+  box-shadow:inset var(--app-shell-sidebar-active-accent-width) 0 0 var(--app-shell-sidebar-active-accent)}
+.app-sidebar-subitem-link.bloqueado{opacity:.38;cursor:not-allowed}
+.app-sidebar-subitem-link.bloqueado:hover{background:transparent}
+.app-sidebar-pie{padding:.75rem 1rem;border-top:1px solid var(--app-shell-sidebar-border-subtle);
+  font-size:.68rem;color:var(--app-shell-sidebar-subitem-color)}
+
+/* paneles y encabezados de página */
+.app-page-shell{display:grid;width:100%;max-width:80rem;margin-inline:auto;align-content:start;gap:1.5rem}
+@media (max-width:767px){.app-page-shell{gap:1.25rem}}
+.page-heading-kicker{color:var(--color-primary)}
+.page-heading-title{color:var(--color-secondary)}
+.page-heading-subtitle{color:#5a6d99}
+[data-theme="dark"] .page-heading-kicker{color:#72b9e7}
+[data-theme="dark"] .page-heading-title{color:#f4f8ff}
+[data-theme="dark"] .page-heading-subtitle{color:rgba(237,244,255,.76)}
+.app-modules-panel{background:var(--color-base-100);border:1px solid var(--color-base-300);
+  border-radius:1.5rem;box-shadow:0 12px 32px rgba(15,23,42,.12);overflow:visible}
+[data-theme="dark"] .app-modules-panel{box-shadow:var(--app-shell-surface-shadow)}
+.app-section-header{display:flex;flex-direction:column;gap:.75rem;
+  border-bottom:1px solid var(--color-base-300);padding:1rem 1.5rem}
+@media (min-width:640px){.app-section-header{flex-direction:row;align-items:center;justify-content:space-between}}
+.app-section-heading{font-size:.875rem;font-weight:600;text-transform:uppercase;letter-spacing:.18em;color:color-mix(in srgb,var(--color-primary) 95%,transparent)}
+.app-data-panel-body{padding:.5rem .5rem 1rem}
+@media (min-width:768px){.app-data-panel-body{padding-left:1rem;padding-right:1rem}}
+
+/* ---------- componentes daisyUI replicados ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;border-radius:.5rem;
+  border:1px solid transparent;font-weight:600;cursor:pointer;text-align:center;
+  height:3rem;padding:0 1rem;font-size:.875rem;
+  transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease,opacity 150ms ease}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-sm{height:2rem;padding:0 .75rem;font-size:.8125rem}
+.btn-xs{height:1.5rem;padding:0 .5rem;font-size:.6875rem}
+.btn-primary{background:var(--color-primary);color:var(--color-primary-content);border-color:var(--color-primary)}
+.btn-primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn-secondary{background:var(--color-secondary);color:var(--color-secondary-content);border-color:var(--color-secondary)}
+.btn-accent{background:var(--color-accent);color:var(--color-accent-content);border-color:var(--color-accent)}
+.btn-ghost{background:transparent;color:var(--color-base-content);border-color:transparent}
+.btn-ghost:hover:not(:disabled){background:color-mix(in srgb,var(--color-base-content) 8%,transparent)}
+.btn-outline{background:transparent;border-color:var(--color-base-300);color:var(--color-base-content)}
+.btn-outline:hover:not(:disabled){background:var(--color-base-200)}
+.btn-error{background:var(--color-error);color:#fff;border-color:var(--color-error)}
+.btn-circle{width:2.5rem;height:2.5rem;padding:0;border-radius:9999px}
+
+.badge{display:inline-flex;align-items:center;gap:.25rem;border-radius:9999px;border:1px solid transparent;
+  padding:.15rem .6rem;font-size:.75rem;font-weight:600;white-space:nowrap}
+.badge-sm{padding:.1rem .5rem;font-size:.6875rem}
+.badge-xs{padding:.05rem .4rem;font-size:.625rem}
+.badge-primary{background:color-mix(in srgb,var(--color-primary) 14%,transparent);color:var(--color-primary);border-color:color-mix(in srgb,var(--color-primary) 30%,transparent)}
+.badge-accent{background:color-mix(in srgb,var(--color-accent) 14%,transparent);color:var(--color-accent);border-color:color-mix(in srgb,var(--color-accent) 32%,transparent)}
+.badge-neutral{background:color-mix(in srgb,var(--color-neutral) 22%,transparent);color:var(--color-neutral-content);border-color:color-mix(in srgb,var(--color-neutral) 40%,transparent)}
+.badge-success{background:color-mix(in srgb,var(--color-success) 26%,transparent);color:var(--color-success-content);border-color:color-mix(in srgb,var(--color-success) 45%,transparent)}
+.badge-info{background:color-mix(in srgb,var(--color-info) 24%,transparent);color:var(--color-info-content);border-color:color-mix(in srgb,var(--color-info) 42%,transparent)}
+.badge-warning{background:color-mix(in srgb,var(--color-warning) 20%,transparent);color:#8a4a08;border-color:color-mix(in srgb,var(--color-warning) 45%,transparent)}
+.badge-error{background:color-mix(in srgb,var(--color-error) 12%,transparent);color:var(--color-error);border-color:color-mix(in srgb,var(--color-error) 32%,transparent)}
+.badge-ghost{background:var(--color-base-200);color:var(--muted);border-color:var(--color-base-300)}
+[data-theme="dark"] .badge-warning{color:#f8c894}
+[data-theme="dark"] .badge-neutral,[data-theme="dark"] .badge-info,[data-theme="dark"] .badge-success{color:#eaf2ff}
+
+.input,.select,.textarea{width:100%;border-radius:.5rem;border:1px solid var(--color-base-300);
+  background:var(--color-base-100);color:var(--color-base-content);height:3rem;padding:0 .75rem;font-size:.875rem}
+.textarea{height:auto;padding:.5rem .75rem;min-height:4.5rem;font-family:inherit}
+.input-sm,.select-sm{height:2rem;padding:0 .5rem;font-size:.8125rem}
+.input-xs,.select-xs{height:1.5rem;padding:0 .4rem;font-size:.6875rem}
+.input:focus,.select:focus,.textarea:focus{outline:none;border-color:var(--color-primary);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--color-primary) 22%,transparent)}
+.input:disabled,.select:disabled,.textarea:disabled{background:var(--color-base-200);color:var(--muted);
+  cursor:not-allowed;opacity:.7}
+.input-error{border-color:var(--color-error)}
+.label{display:flex;padding:0 0 .25rem}
+.label-text{font-size:.8125rem;font-weight:500;color:var(--color-base-content)}
+.form-control{display:flex;flex-direction:column;width:100%}
+.checkbox{width:1rem;height:1rem;accent-color:var(--color-primary);border-radius:.25rem}
+
+.alert{display:flex;align-items:flex-start;gap:.75rem;border-radius:.75rem;border:1px solid transparent;
+  padding:.75rem 1rem;font-size:.8125rem;line-height:1.45}
+.alert svg{width:1.15rem;height:1.15rem;flex-shrink:0;margin-top:.05rem}
+.alert-info{background:color-mix(in srgb,var(--color-info) 16%,transparent);border-color:color-mix(in srgb,var(--color-info) 38%,transparent);color:var(--color-info-content)}
+.alert-warning{background:color-mix(in srgb,var(--color-warning) 15%,transparent);border-color:color-mix(in srgb,var(--color-warning) 40%,transparent);color:#8a4a08}
+.alert-error{background:color-mix(in srgb,var(--color-error) 10%,transparent);border-color:color-mix(in srgb,var(--color-error) 32%,transparent);color:var(--color-error)}
+.alert-success{background:color-mix(in srgb,var(--color-success) 22%,transparent);border-color:color-mix(in srgb,var(--color-success) 45%,transparent);color:var(--color-success-content)}
+[data-theme="dark"] .alert-info,[data-theme="dark"] .alert-success{color:#eaf2ff}
+[data-theme="dark"] .alert-warning{color:#f8c894}
+
+.table{width:100%;border-collapse:separate;border-spacing:0;font-size:.875rem}
+.table th,.table td{text-align:left;vertical-align:middle;border-bottom:1px solid var(--color-base-300)}
+.table-sm th,.table-sm td{padding:var(--app-table-row-padding-y) .5rem}
+.table thead th{font-weight:600}
+
+.loading{display:inline-block;border-radius:9999px;border:3px solid color-mix(in srgb,var(--color-primary) 25%,transparent);
+  border-top-color:var(--color-primary);animation:giro .7s linear infinite}
+.loading-lg{width:2.5rem;height:2.5rem}
+.loading-xs{width:1rem;height:1rem;border-width:2px}
+@keyframes giro{to{transform:rotate(360deg)}}
+
+.modal{position:fixed;inset:0;z-index:10002;display:none;align-items:center;justify-content:center;padding:1rem;
+  background:rgba(0,0,0,.5)}
+.modal.is-open{display:flex}
+.dropdown-content{position:absolute;right:0;top:calc(100% + .5rem);z-index:60;
+  border-radius:1rem;border:1px solid var(--color-base-300);background:var(--color-base-100);
+  box-shadow:0 26px 56px rgba(32,52,125,.18);padding:.5rem;min-width:16rem}
+.dropdown-content.oculto{display:none}
+
+/* piezas propias del prototipo */
+.cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;font-size:.75rem;white-space:nowrap;color:var(--color-secondary)}
+[data-theme="dark"] .cod{color:#9fc7f2}
+.tel{display:block;font-size:.6875rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.cargo{display:block;font-size:.625rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.hora{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600}
+.banner-row td{font-weight:700;text-transform:uppercase;letter-spacing:.1em;font-size:.75rem;
+  padding:.6rem .7rem;color:#1f2937;border-bottom:1px solid rgba(0,0,0,.08)}
+.banner-head th{font-size:.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#1f2937}
+.fila-evidencia td{background:color-mix(in srgb,var(--color-error) 10%,transparent);
+  font-size:.8125rem;font-style:italic;color:var(--color-error);padding:.6rem .7rem}
+.celda-alerta{background:color-mix(in srgb,var(--color-warning) 25%,transparent);font-weight:600}
+.celda-alerta-critica{box-shadow:inset 0 0 0 1.5px var(--color-error)}
+.barra-bloque{height:.375rem;width:100%;border-radius:9999px;display:block}
+.pantalla{display:none}
+.pantalla.is-active{display:block}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.tarjeta-orden{border:1px solid var(--color-base-300);background:var(--color-base-100);border-radius:1rem;padding:1.25rem}
+.os-dato{padding:.6rem 0;border-bottom:1px solid var(--color-base-300)}
+.os-dato:last-child{border-bottom:0}
+.os-et{font-size:.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.os-vl{font-size:1rem;font-weight:700;margin-top:.15rem}
+:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms !important;animation-duration:.01ms !important}}
+</style>
+</head>
+
+<body class="bg-system">
+<div class="app-shell-frame relative overflow-hidden">
+  <div class="app-shell-overlay pointer-events-none absolute inset-0"></div>
+
+  <div id="shell" class="app-shell-frame relative z-10 flex min-h-full flex-col overflow-hidden lg:grid"
+       style="grid-template-columns:16.375rem minmax(0,1fr)">
+
+    <!-- ============ SIDEBAR ============ -->
+    <div class="hidden h-full overflow-hidden lg:block">
+      <aside class="app-sidebar" style="border-radius:0;border-top:0;border-bottom:0;border-left:0" aria-label="Menú principal">
+        <div class="app-sidebar-header">
+          <div class="app-sidebar-brand">
+            <div class="app-sidebar-brand-logo-wrap">
+              <svg viewBox="0 0 64 72" style="width:4.3rem;height:auto" aria-hidden="true">
+                <path d="M32 2 60 12v28c0 16-12 26-28 30C16 66 4 56 4 40V12L32 2z" fill="#f8fbff" opacity=".97"/>
+                <path d="M32 8 54 16v24c0 12.5-9.5 20.5-22 24-12.5-3.5-22-11.5-22-24V16L32 8z" fill="#1b77bb"/>
+                <path d="M32 20c6.6 0 12 5.4 12 12s-5.4 12-12 12-12-5.4-12-12 5.4-12 12-12zm0 5a7 7 0 100 14 7 7 0 000-14z" fill="#f8fbff"/>
+                <path d="M38 40l7 9-6 1-1 5-6-9 6-6z" fill="#f8fbff"/>
+              </svg>
+            </div>
+            <div class="app-sidebar-brand-copy">
+              <p class="app-sidebar-brand-acronym">SIGOC</p>
+              <h2 class="app-sidebar-brand-name"><span class="block">Sistema de Gestión</span><span class="block">Orden y Control</span></h2>
+            </div>
+          </div>
+        </div>
+        <nav class="app-shell-sidebar-scroll" id="nav"></nav>
+        <div class="app-sidebar-pie" id="pieSidebar"></div>
+      </aside>
+    </div>
+
+    <!-- ============ COLUMNA PRINCIPAL ============ -->
+    <div class="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
+
+      <header class="app-topbar px-4 md:px-6">
+        <div class="navbar-start">
+          <button class="btn btn-ghost btn-circle lg:hidden" onclick="alternarCajon()" aria-label="Abrir menú">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="w-5 h-5"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+        </div>
+        <div class="navbar-center">
+          <a class="app-topbar-brand">SIGOC</a>
+        </div>
+        <div class="navbar-end">
+          <div class="relative">
+            <button class="btn btn-ghost btn-sm" onclick="alternarPerfiles()" aria-haspopup="true">
+              <span id="etiquetaPerfil">DMIP · Operativos</span>
+              <svg viewBox="0 0 20 20" fill="none" class="w-4 h-4"><path d="M5.5 7.5L10 12l4.5-4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <ul class="dropdown-content oculto" id="menuPerfiles" role="menu"></ul>
+          </div>
+          <button class="btn btn-ghost btn-circle relative" onclick="abrirModal('modalAlertas')" aria-label="Alertas">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 11-6 0"/></svg>
+            <span class="badge badge-error badge-xs absolute top-1 right-1">7</span>
+          </button>
+          <button class="btn btn-ghost btn-circle" onclick="alternarTema()" aria-label="Cambiar tema">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="w-5 h-5"><path stroke-linecap="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.4 6.4l-.7-.7M6.3 6.3l-.7-.7m12.8 0l-.7.7M6.3 17.7l-.7.7M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="flex-1 min-h-0 overflow-y-auto px-4 py-6 md:px-6 lg:px-8">
+        <div class="flex flex-col mx-auto w-full" style="max-width:83.333%">
+
+          <!-- ==================== P-01 REGISTRO ==================== -->
+          <section class="pantalla" id="p01">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]" id="p01Kicker"></p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Registro de operativo</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Cuadro del viernes 31 de julio de 2026 · Semana 31 · se llena el día anterior</p>
+              </div>
+
+              <div class="alert alert-info" role="status">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>Ventana de carga <strong>abierta</strong> hasta las 15H00. Después, el cuadro pasa a Transportes y no admite cambios.</span>
+              </div>
+
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Registrar operativo</h2>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="badge badge-ghost badge-sm">Semana 31</span>
+                    <span class="badge badge-ghost badge-sm" id="p01Id">OCF-004-31-JUL-2026</span>
+                    <span class="badge badge-ghost badge-sm">31-JUL-2026</span>
+                  </div>
+                </div>
+
+                <div class="px-6 py-5">
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    <div class="form-control">
+                      <label class="label" for="f01Form"><span class="label-text">Formulario <span class="text-error">*</span></span></label>
+                      <select class="select" id="f01Form" onchange="cambiarFormularioDemo()"></select>
+                      <span class="barra-bloque mt-2" id="p01Barra"></span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="form-control">
+                        <label class="label" for="f01Ini"><span class="label-text">Hora inicio <span class="text-error">*</span></span></label>
+                        <select class="select" id="f01Ini"></select>
+                      </div>
+                      <div class="form-control">
+                        <label class="label" for="f01Fin"><span class="label-text">Hora fin <span class="text-error">*</span></span></label>
+                        <select class="select" id="f01Fin"></select>
+                      </div>
+                    </div>
+                    <div class="form-control">
+                      <label class="label"><span class="label-text">Zonal <span class="text-error">*</span></span></label>
+                      <div class="rounded-lg border border-base-300 p-2 overflow-y-auto" style="max-height:8rem" id="p01Zonales"></div>
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="f01Punto"><span class="label-text">Punto de encuentro <span class="text-error">*</span></span></label>
+                      <select class="select" id="f01Punto"></select>
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="f01Tipo"><span class="label-text">Tipo de control <span class="text-error">*</span></span></label>
+                      <select class="select" id="f01Tipo"></select>
+                    </div>
+                    <div class="form-control">
+                      <label class="label"><span class="label-text">Instituciones <span class="text-error">*</span></span></label>
+                      <div class="rounded-lg border border-base-300 p-2 overflow-y-auto" style="max-height:8rem" id="p01Inst"></div>
+                    </div>
+                    <div class="form-control xl:col-span-2">
+                      <label class="label" for="f01Pers"><span class="label-text">Personal asignado <span class="text-error">*</span> <span style="color:var(--muted);font-weight:400">· el teléfono viene del maestro</span></span></label>
+                      <div class="flex gap-2">
+                        <select class="select" id="f01Pers"></select>
+                        <button class="btn btn-ghost btn-sm" style="height:3rem" type="button">+ Agregar</button>
+                      </div>
+                      <div class="flex flex-wrap gap-1.5 mt-2" id="p01Chips"></div>
+                    </div>
+                    <div class="form-control sm:col-span-2">
+                      <label class="label" for="f01Obs"><span class="label-text">Observaciones</span></label>
+                      <input class="input" id="f01Obs" placeholder="Coordinaciones o novedades del operativo" />
+                    </div>
+                  </div>
+
+                  <div class="alert alert-warning mt-4" role="status">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L2.4 17.5A2 2 0 004.1 20.5h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+                    <span><strong>Conductor y placa no se cargan aquí.</strong> Al registrar, esas celdas quedan en Amarillo de Alerta hasta que la <strong>DAF · Transportes</strong> asigne la unidad vehicular.</span>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 mt-4">
+                    <button class="btn btn-primary btn-sm" onclick="abrirModal('modalExito')">
+                      <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      Registrar Operativo
+                    </button>
+                    <button class="btn btn-ghost btn-sm">Limpiar</button>
+                    <span class="ml-auto text-xs self-center" style="color:var(--muted)" id="p01Pista"></span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Mis operativos del día</h2>
+                  <span class="badge badge-primary badge-sm" id="p01Conteo">4 registros</span>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP01"></table></div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-02 MIS OPERATIVOS ==================== -->
+          <section class="pantalla" id="p02">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]" id="p02Kicker"></p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Mis operativos</h1>
+                <p class="page-heading-subtitle text-sm mt-1" id="p02Sub"></p>
+              </div>
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Operativos registrados</h2>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs" style="color:var(--muted)" id="p02Conteo"></span>
+                    <button class="btn btn-primary btn-sm" onclick="irA('p01')">+ Nuevo operativo</button>
+                  </div>
+                </div>
+                <div class="flex flex-col gap-2 px-6 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <input class="input input-bordered input-sm w-full sm:max-w-md" placeholder="Buscar por identificador, punto o funcionario…" />
+                  <button class="btn btn-ghost btn-sm">Limpiar filtros</button>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP02"></table></div>
+                  <div class="mt-3 flex flex-col items-center gap-3 px-2 sm:flex-row sm:justify-between">
+                    <div class="flex items-center gap-2 text-xs" style="color:var(--muted)">
+                      <span>Mostrar</span>
+                      <select class="select select-xs" style="width:auto"><option>10</option><option>25</option><option>50</option></select>
+                      <span>por página</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <button class="btn btn-ghost btn-xs" disabled>«</button>
+                      <button class="btn btn-ghost btn-xs" disabled>‹</button>
+                      <span class="px-2 text-xs" style="color:var(--muted)">Página 1 de 1</span>
+                      <button class="btn btn-ghost btn-xs" disabled>›</button>
+                      <button class="btn btn-ghost btn-xs" disabled>»</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="border-t border-base-300 px-6 py-3 text-xs" style="color:var(--muted)">
+                  Solo ve los formularios de su departamento. La Matriz Consolidada del Día es exclusiva de la Dirección.
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-03 TRANSPORTE ==================== -->
+          <section class="pantalla" id="p03">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Dirección Administrativa Financiera</p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Asignación de transporte</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Cuadro del 31 de julio de 2026 · Ventana de 15H00 a 16H30</p>
+              </div>
+
+              <div class="alert alert-info" role="status">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zM16 11V7a4 4 0 00-8 0v4"/></svg>
+                <span><strong>Edición restringida.</strong> Los nueve formularios llegan bloqueados: solo puede completar <strong>conductor</strong> y <strong>placa del vehículo</strong>. No puede crear ni eliminar operativos.</span>
+              </div>
+
+              <section class="app-modules-panel" id="panelDAF" style="display:none">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Asignar transporte a <span class="cod" id="dafId"></span></h2>
+                  <button class="btn btn-ghost btn-sm" onclick="cerrarPanelDAF()">Cancelar</button>
+                </div>
+                <div class="px-6 py-5">
+                  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    <div class="form-control"><label class="label"><span class="label-text">Formulario</span></label><input class="input" id="dafForm" disabled /></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Horario</span></label><input class="input" id="dafHorario" disabled /></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Zonal</span></label><input class="input" id="dafZonal" disabled /></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Punto de encuentro</span></label><input class="input" id="dafPunto" disabled /></div>
+                    <div class="form-control xl:col-span-2"><label class="label"><span class="label-text">Personal asignado</span></label><input class="input" id="dafPersonal" disabled /></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Tipo de control</span></label><input class="input" id="dafTipo" disabled /></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Instituciones</span></label><input class="input" id="dafInst" disabled /></div>
+                    <div class="form-control">
+                      <label class="label" for="dafCond"><span class="label-text">Conductor / Teléfono <span class="badge badge-accent badge-xs ml-1">Editable</span></span></label>
+                      <select class="select" id="dafCond" onchange="derivarPlaca()"></select>
+                    </div>
+                    <div class="form-control">
+                      <label class="label" for="dafPlaca"><span class="label-text">Placa del vehículo <span class="badge badge-accent badge-xs ml-1">Editable</span></span></label>
+                      <input class="input" id="dafPlaca" placeholder="Se completa con el conductor" />
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap gap-2 mt-4">
+                    <button class="btn btn-primary btn-sm" onclick="abrirModal('modalExito')">
+                      <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      Guardar asignación
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="abrirModal('modalExito')">Marcar como propios medios</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Planificaciones recibidas</h2>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="badge badge-error badge-sm" title="La demanda supera la capacidad declarada">Flota 18/15 solicitados</span>
+                    <span class="badge badge-warning badge-sm" id="p03Pend">4 pendientes</span>
+                  </div>
+                </div>
+                <div class="flex flex-col gap-2 px-6 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <input class="input input-bordered input-sm w-full sm:max-w-md" placeholder="Buscar por identificador o formulario…" />
+                  <button class="btn btn-ghost btn-sm">Limpiar filtros</button>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP03"></table></div>
+                </div>
+                <div class="border-t border-base-300 px-6 py-3 text-xs" style="color:var(--muted)">
+                  La DAF no crea operativos: solo asigna la unidad vehicular sobre planificaciones ya registradas.
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-04 MATRIZ ==================== -->
+          <section class="pantalla" id="p04">
+            <div class="app-page-shell">
+              <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Dirección Nacional de Planificación</p>
+                  <h1 class="page-heading-title text-2xl font-bold mt-1">Matriz Consolidada del Día</h1>
+                  <p class="page-heading-subtitle text-sm mt-1">AMC-2026-JUL-31 · viernes 31 de julio de 2026 · Semana 31</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="badge badge-warning badge-sm">En transporte</span>
+                  <span class="badge badge-primary badge-sm">24 operativos</span>
+                  <span class="badge badge-warning badge-sm">7 alertas</span>
+                  <span class="badge badge-error badge-sm">Flota 18/15</span>
+                </div>
+              </div>
+
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Matriz consolidada</h2>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <select class="select select-sm" style="width:auto"><option>Los 9 formularios</option><option>1. Operativos de Control Fijos</option><option>6. Patrulla Reacción Nocturna</option></select>
+                    <button class="btn btn-primary btn-sm" onclick="abrirModal('modalExito')">
+                      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+                      Exportar PDF
+                    </button>
+                  </div>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full" style="font-size:.75rem;min-width:1200px" id="tablaP04"></table></div>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-base-300 px-6 py-3 text-xs" style="color:var(--muted)">
+                  <span class="font-bold uppercase tracking-[.08em]">Leyenda</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="celda-alerta inline-block" style="width:1.5rem;height:.75rem;border-radius:.2rem"></span> Asignación logística pendiente</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="celda-alerta celda-alerta-critica inline-block" style="width:1.5rem;height:.75rem;border-radius:.2rem"></span> Vehículo obligatorio sin conductor</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="bg-error/10 inline-block" style="width:1.5rem;height:.75rem;border-radius:.2rem"></span> Formulario sin información</span>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-05 ÓRDENES ==================== -->
+          <section class="pantalla" id="p05">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Dirección Nacional de Planificación</p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Órdenes de servicio</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Emisión individual · una hoja por funcionario, sin exponer el resto del cuadro</p>
+              </div>
+
+              <div class="alert alert-info" role="status">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <span>Cada orden expone <strong>únicamente</strong> horario, funcionario, conductor y placa. No incluye el punto de encuentro de otros operativos ni el resto de la jornada.</span>
+              </div>
+
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Operativos del cuadro cerrado</h2>
+                  <span class="badge badge-success badge-sm">Cuadro cerrado</span>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP05"></table></div>
+                </div>
+              </section>
+
+              <section class="app-modules-panel">
+                <div class="app-section-header"><h2 class="app-section-heading">Vista previa de la orden</h2></div>
+                <div class="px-6 py-5">
+                  <div class="mx-auto tarjeta-orden" style="max-width:36rem">
+                    <div class="flex items-center justify-between border-b-2 pb-3" style="border-color:var(--color-secondary)">
+                      <div>
+                        <p class="text-xs font-bold uppercase tracking-[.06em]" style="color:var(--color-secondary)">Orden de Servicio Individual — AMC</p>
+                        <p class="text-xs mt-0.5" style="color:var(--muted)">Sistema de Gestión Orden y Control</p>
+                      </div>
+                      <div class="text-right text-xs">
+                        <p class="cod">ICNECU-001-31-JUL-2026</p>
+                        <p style="color:var(--muted)">31 de julio de 2026</p>
+                      </div>
+                    </div>
+                    <div class="alert alert-info mt-4"><span>Este documento contiene únicamente su asignación. No incluye el resto de operativos de la jornada.</span></div>
+                    <div class="mt-4">
+                      <div class="os-dato"><p class="os-et">Horario</p><p class="os-vl">18H00 A 23H30</p></div>
+                      <div class="os-dato"><p class="os-et">Funcionario asignado</p><p class="os-vl">YUNDA JESSICA<span class="tel">Inspector General · 98 715 9349</span></p></div>
+                      <div class="os-dato"><p class="os-et">Conductor</p><p class="os-vl">VIVANCO JORGE<span class="tel">97 863 1797</span></p></div>
+                      <div class="os-dato"><p class="os-et">Placa del vehículo</p><p class="os-vl">PMA7892</p></div>
+                    </div>
+                    <div class="flex gap-8 mt-10">
+                      <div class="flex-1 text-center text-xs"><div class="border-t pt-1" style="border-color:var(--color-secondary)">Funcionario asignado</div></div>
+                      <div class="flex-1 text-center text-xs"><div class="border-t pt-1" style="border-color:var(--color-secondary)">Dirección · AMC</div></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-06 MIS ÓRDENES ==================== -->
+          <section class="pantalla" id="p06">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Personal en territorio</p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Mis órdenes de servicio</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Únicamente sus propias asignaciones</p>
+              </div>
+              <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" id="p06Tarjetas"></div>
+            </div>
+          </section>
+
+          <!-- ==================== P-07 ADMIN PERSONAL ==================== -->
+          <section class="pantalla" id="p07">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Administración</p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Personal y disponibilidad</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Maestro único del personal. El teléfono vive aquí y no se digita en el operativo</p>
+              </div>
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Maestro de personal</h2>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs" style="color:var(--muted)">22 registros</span>
+                    <button class="btn btn-primary btn-sm">+ Nuevo funcionario</button>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2 px-6 pt-4">
+                  <input class="input input-bordered input-sm" style="max-width:22rem;flex:1 1 12rem" placeholder="Buscar por nombre o cédula…" />
+                  <select class="select select-sm" style="width:auto"><option>Todas las áreas</option><option>General</option><option>Técnico</option><option>Instrucción</option><option>Operativos</option><option>CCF</option></select>
+                  <select class="select select-sm" style="width:auto"><option>Todo contrato</option><option>Nombramiento</option><option>Ocasional</option></select>
+                  <button class="btn btn-ghost btn-sm">Limpiar</button>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP07"></table></div>
+                </div>
+              </section>
+              <section class="app-modules-panel">
+                <div class="app-section-header"><h2 class="app-section-heading">Ausencias registradas</h2></div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP07b"></table></div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-08 ADMIN CATÁLOGOS ==================== -->
+          <section class="pantalla" id="p08">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Administración</p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Catálogos del cuadro</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Cada formulario despliega sus propios puntos, tipos de control e instituciones</p>
+              </div>
+              <section class="app-modules-panel">
+                <div class="app-section-header">
+                  <h2 class="app-section-heading">Los nueve formularios</h2>
+                  <button class="btn btn-primary btn-sm">+ Nuevo valor de catálogo</button>
+                </div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP08"></table></div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <!-- ==================== P-09 ADMIN VENTANAS ==================== -->
+          <section class="pantalla" id="p09">
+            <div class="app-page-shell">
+              <div>
+                <p class="page-heading-kicker text-sm font-semibold uppercase tracking-[0.18em]">Administración</p>
+                <h1 class="page-heading-title text-2xl font-bold mt-1">Ventanas de carga</h1>
+                <p class="page-heading-subtitle text-sm mt-1">Cierres en cascada. Parametrizables sin desplegar código</p>
+              </div>
+              <div class="alert alert-warning" role="status">
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L2.4 17.5A2 2 0 004.1 20.5h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+                <span>La hora de cierre de los departamentos está <strong>pendiente de validación</strong>: las fuentes indican 14H00 en una sesión y 15H00 en otra.</span>
+              </div>
+              <section class="app-modules-panel">
+                <div class="app-section-header"><h2 class="app-section-heading">Parámetros por rol</h2></div>
+                <div class="app-data-panel-body">
+                  <div class="overflow-x-auto"><table class="table table-sm w-full text-sm" id="tablaP09"></table></div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MODALES ==================== -->
+<div class="modal" id="modalConfirmacion" role="dialog" aria-modal="true" aria-labelledby="tituloConfirmacion">
+  <div class="w-full rounded-2xl bg-base-100 p-6 text-center" style="max-width:24rem;box-shadow:0 25px 50px rgba(0,0,0,.25)">
+    <div class="mx-auto mb-4 flex items-center justify-center rounded-full bg-warning/15" style="width:4rem;height:4rem">
+      <svg xmlns="http://www.w3.org/2000/svg" class="text-warning" style="width:2.25rem;height:2.25rem" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9L2.4 17.5A2 2 0 004.1 20.5h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+    </div>
+    <h3 class="text-lg font-bold" id="tituloConfirmacion">¿Retirar este operativo?</h3>
+    <p class="mt-1 text-sm" style="color:var(--muted)">Se quitará <strong>IG-002-31-JUL-2026</strong>, AMC Matriz, 09H00 A 18H00, del formulario <strong>8. Inspecciones Técnicas y Generales</strong>.</p>
+    <div class="mt-6 flex gap-3">
+      <button class="btn btn-outline flex-1" onclick="cerrarModal('modalConfirmacion')">Cancelar</button>
+      <button class="btn btn-primary flex-1" onclick="cerrarModal('modalConfirmacion');abrirModal('modalExito')">Sí, retirar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modalExito" role="dialog" aria-modal="true" aria-labelledby="tituloExito">
+  <div class="w-full rounded-2xl bg-base-100 p-6 text-center" style="max-width:24rem;box-shadow:0 25px 50px rgba(0,0,0,.25)">
+    <div class="mx-auto mb-4 flex items-center justify-center rounded-full" style="width:4rem;height:4rem;background:color-mix(in srgb,var(--color-success) 25%,transparent)">
+      <svg class="text-success" style="width:2.25rem;height:2.25rem" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+    </div>
+    <h3 class="text-lg font-bold" id="tituloExito">Operación registrada</h3>
+    <p class="mt-1 text-sm" style="color:var(--muted)">Prototipo visual: la acción no persiste datos.</p>
+    <div class="mt-6"><button class="btn btn-primary w-full" onclick="cerrarModal('modalExito')">Entendido</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modalDetalle" role="dialog" aria-modal="true" aria-labelledby="tituloDetalle">
+  <div class="w-full rounded-2xl bg-base-100" style="max-width:44rem;box-shadow:0 25px 50px rgba(0,0,0,.25)">
+    <div class="app-section-header">
+      <h3 class="app-section-heading" id="tituloDetalle">Detalle del operativo</h3>
+      <button class="btn btn-ghost btn-sm" onclick="cerrarModal('modalDetalle')">Cerrar</button>
+    </div>
+    <div class="px-6 py-5" id="cuerpoDetalle"></div>
+  </div>
+</div>
+
+<div class="modal" id="modalAlertas" role="dialog" aria-modal="true" aria-labelledby="tituloAlertas">
+  <div class="w-full rounded-2xl bg-base-100" style="max-width:28rem;box-shadow:0 25px 50px rgba(0,0,0,.25)">
+    <div class="app-section-header">
+      <h3 class="app-section-heading" id="tituloAlertas">Alertas del cuadro</h3>
+      <button class="btn btn-ghost btn-sm" onclick="cerrarModal('modalAlertas')">Cerrar</button>
+    </div>
+    <div class="px-6 py-5 flex flex-col gap-3">
+      <div class="alert alert-warning"><span><strong>4 operativos</strong> esperan conductor y placa de la DAF.</span></div>
+      <div class="alert alert-error"><span><strong>1 operativo</strong> en formulario con vehículo obligatorio sigue sin conductor.</span></div>
+      <div class="alert alert-error"><span>El formulario <strong>7. Operativo DMIT</strong> no registró información y su ventana venció.</span></div>
+      <div class="alert alert-warning"><span>Se solicitan <strong>18 vehículos</strong> y la DAF declaró <strong>15</strong> hábiles.</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   PROTOTIPO VISUAL · datos ficticios. No implementa lógica de negocio.
+   ========================================================================= */
+
+const PERFILES = {
+  DMIP_OPERATIVOS:   { etiqueta:"DMIP · Operativos",        kicker:"DMIP · Rama Operativos",              formularios:[1,2,3,4], pantallas:["p01","p02"] },
+  DMIP_INSPECCIONES: { etiqueta:"DMIP · Inspecciones",      kicker:"DMIP · Inspecciones Técnicas y Generales", formularios:[5,6,8], pantallas:["p01","p02"] },
+  DMIT_INSTRUCTOR:   { etiqueta:"DMIT · Instrucción",       kicker:"DMIT · Instrucción",                  formularios:[7,6,9],  pantallas:["p01","p02"] },
+  DAF:               { etiqueta:"DAF · Transportes",        kicker:"Dirección Administrativa Financiera", formularios:[],       pantallas:["p03"] },
+  DIRECTOR:          { etiqueta:"Dirección · AMC",          kicker:"Dirección Nacional de Planificación", formularios:[],       pantallas:["p04","p05"] },
+  FUNCIONARIO:       { etiqueta:"Funcionario de campo",     kicker:"Personal en territorio",              formularios:[],       pantallas:["p06"] },
+  ADMINISTRADOR:     { etiqueta:"Administrador",            kicker:"Administración",                      formularios:[],       pantallas:["p07","p08","p09"] }
+};
+
+/* Los nueve formularios con los colores del CUADRO_DE_COLORES.xlsx aprobado */
+const FORMULARIOS = [
+  { n:1, cod:"FIJOS",  nombre:"OPERATIVOS DE CONTROL FIJOS",               pref:"OCF",    fondo:"#A2C4C9", acento:"#2E7D8F", color:"Verde azulado",  dueno:"DMIP · Operativos",   vehiculo:"Propios medios", noct:false },
+  { n:2, cod:"PMO",    nombre:"CONTROL DE PUNTO DE MANDO OPERATIVO (PMO)", pref:"OCPMO",  fondo:"#FCE5CD", acento:"#E8912D", color:"Naranja claro",  dueno:"DMIP · Operativos",   vehiculo:"Condicional",    noct:true  },
+  { n:3, cod:"LIMPIA", nombre:"OPERATIVOS DE CONTROL LIMPIAPARABRISAS",    pref:"OCL",    fondo:"#B4C6E7", acento:"#2E5AAC", color:"Azul",           dueno:"DMIP · Operativos",   vehiculo:"Propios medios", noct:false },
+  { n:4, cod:"ECU",    nombre:"PATRULLA ECU DIURNA",                       pref:"OCECU",  fondo:"#D9D9D9", acento:"#6B7280", color:"Gris",           dueno:"DMIP · Operativos",   vehiculo:"Requerido",      noct:false },
+  { n:5, cod:"REACD",  nombre:"PATRULLA REACCIÓN DIURNA (UIG - UIT)",      pref:"IGECU",  fondo:"#FFCCCC", acento:"#D9436E", color:"Rosado",         dueno:"DMIP · Inspecciones", vehiculo:"Requerido",      noct:true  },
+  { n:6, cod:"REACN",  nombre:"PATRULLA REACCIÓN NOCTURNA",                pref:"ICNECU", fondo:"#F4CCCC", acento:"#B03A2E", color:"Rojo claro",     dueno:"DMIP · Insp. + cupo DMIT", vehiculo:"Requerido", noct:true },
+  { n:7, cod:"DMIT",   nombre:"OPERATIVO DMIT",                            pref:"OC",     fondo:"#FCE4D6", acento:"#E36C09", color:"Naranja fuerte", dueno:"DMIT · Instrucción",  vehiculo:"Requerido",      noct:true  },
+  { n:8, cod:"INSP",   nombre:"INSPECCIONES TÉCNICAS Y GENERALES",         pref:"IG",     fondo:"#CCCCFF", acento:"#5B4BC4", color:"Morado",         dueno:"DMIP · Inspecciones", vehiculo:"Obligatorio",    noct:false },
+  { n:9, cod:"CBQ",    nombre:"OPERATIVO DE CONTROL AMC-CBQ",              pref:"OCB",    fondo:"#D9EAD3", acento:"#4C8C3F", color:"Verde pastel",   dueno:"DMIT · Instrucción",  vehiculo:"No se habilita", noct:true  }
+];
+
+const ZONALES = ["Zonal Eugenio Espejo","Zonal La Delicia","Zonal Calderón","Zonal Eloy Alfaro","Zonal Quitumbe",
+  "Zonal La Mariscal","Zonal Manuela Sáenz","Zonal Valle de los Chillos","Zonal Tumbaco","Zonal Chocó Andino","DMQ"];
+const PUNTOS = { 1:["El Tejar","HCAM","Estación Río Coca","Rocafuerte y García Moreno","Parque Tumbaco","ADICIONALES"],
+  2:["PMO La Basílica","PMO Plaza Gabriela Mistral","PMO NNUU y Shyris","PMO Panecillo","PMO La Carolina","ADICIONALES"],
+  3:["Ingreso de la Estación El Recreo","Quicentro Sur","Plaza Argentina (Túnel Guayasamín)","ADICIONALES"],
+  4:["AMC Matriz","AMC Eloy Alfaro","AMC Valles Los Chillos","ADICIONALES"],
+  5:["AMC Matriz","ADICIONALES"], 6:["AMC Matriz","ADICIONALES"],
+  7:["AZ Calderón","Distrito de PPNN Eloy Alfaro","Comando CACMQ Quitumbe","UPC La Gasca","ADICIONALES"],
+  8:["AMC Matriz","AMC La Delicia","AMC Quitumbe","AMC Tumbaco","ADICIONALES"],
+  9:["Estación de bomberos Veintimilla y Reina Victoria","ADICIONALES"] };
+const TIPOS = { 1:["CONTROL ESPACIO PÚBLICO","CONTROL LICENCIAMIENTO","CONTROL LIBADORES","ADICIONALES"],
+  2:["CONTROL ESPACIO PÚBLICO","CONTROL LICENCIAMIENTO - LIBADORES","ADICIONALES"],
+  3:["CONTROL ESPACIO PÚBLICO (TODAS LAS FACULTADES)","ADICIONALES"],
+  4:["Alertas ECU 911","ADICIONALES"], 5:["Alertas ECU 911","ADICIONALES"], 6:["Alertas ECU 911","ADICIONALES"],
+  7:["INTERVENCIONES DE CONTROL","QUITO EN CONTROL","CONTROL DE FAUNA URBANA","ADICIONALES"],
+  8:["PROGRAMACIÓN DE CONTROL DE OFICIO","DENUNCIAS CIUDADANAS","CCF / ITCC","IVA","ADICIONALES"],
+  9:["Control de todas las competencias de AMC","ADICIONALES"] };
+const INSTITUCIONES = { 1:["AMC","Secretaría de Seguridad","CACMQ"], 2:["AMC","Secretaría de Seguridad","CACMQ"],
+  3:["AMC","CACMQ"], 4:["AMC","Secretaría de Seguridad","CACMQ","PPNN","EMGIRS"],
+  5:["AMC","Secretaría de Seguridad","CACMQ","PPNN","EMGIRS"], 6:["AMC","Secretaría de Seguridad","CACMQ","PPNN","EMGIRS"],
+  7:["AMC","CACMQ","PPNN","AMT","Comisaría","Cuerpo de Bomberos de Quito"],
+  8:["AMC","Secretaría de Seguridad","CACMQ"], 9:["AMC","CBQ","CACMQ"] };
+
+const PERSONAL = [
+  { n:"SEGOVIA EDISON",     cargo:"Insp. Notificador", tel:"98 514 4231", area:"Operativos",  contrato:"Ocasional",    estado:"Activo" },
+  { n:"TACO ROBERTO",       cargo:"Insp. Notificador", tel:"98 3539 518", area:"Operativos",  contrato:"Ocasional",    estado:"Activo" },
+  { n:"FOGACHO DAVID",      cargo:"Insp. Notificador", tel:"98 656 8736", area:"Operativos",  contrato:"Ocasional",    estado:"Activo" },
+  { n:"BAUTISTA JOAN",      cargo:"Insp. Notificador", tel:"96 271 7662", area:"Operativos",  contrato:"Ocasional",    estado:"Activo" },
+  { n:"YUNDA JESSICA",      cargo:"Insp. General",     tel:"98 715 9349", area:"General",     contrato:"Ocasional",    estado:"Activo" },
+  { n:"BENAVIDES FERNANDO", cargo:"Insp. General",     tel:"96 903 9492", area:"General",     contrato:"Ocasional",    estado:"Activo" },
+  { n:"VELASCO LUIS",       cargo:"Insp. General",     tel:"98 414 2630", area:"General",     contrato:"Nombramiento", estado:"Activo" },
+  { n:"ORTEGA PAOLA",       cargo:"Insp. General",     tel:"99 251 8486", area:"General",     contrato:"Ocasional",    estado:"Vacaciones" },
+  { n:"CAMPAÑA JUAN",       cargo:"Insp. Técnico",     tel:"99 539 0271", area:"Técnico",     contrato:"Ocasional",    estado:"Activo" },
+  { n:"QUISHPE ALEJANDRO",  cargo:"Insp. Técnico",     tel:"99 065 0837", area:"Técnico",     contrato:"Ocasional",    estado:"Activo" },
+  { n:"MOROCHO ÁNGEL",      cargo:"Insp. Técnico",     tel:"97 923 9963", area:"Técnico",     contrato:"Ocasional",    estado:"Reposo médico" },
+  { n:"NARVAEZ IVAN",       cargo:"Instrucción",       tel:"098 0653101", area:"Instrucción", contrato:"Ocasional",    estado:"Activo" },
+  { n:"CHALACAN DANIELA",   cargo:"Instrucción",       tel:"95 878 2033", area:"Instrucción", contrato:"Ocasional",    estado:"Activo" },
+  { n:"REDROVAN ESTEBAN",   cargo:"CCF / TCC",         tel:"99 507 4651", area:"CCF",         contrato:"Ocasional",    estado:"Activo" }
+];
+
+const CONDUCTORES = [
+  { n:"VIVANCO JORGE", tel:"97 863 1797", placa:"PMA7892" },
+  { n:"TAMAYO CARLOS", tel:"98 314 9472", placa:"PMA7897" },
+  { n:"CEVALLOS ALBERTO", tel:"98 313 8746", placa:"PMA7895" },
+  { n:"VARGAS PABLO", tel:"98 712 1300", placa:"PMA7896" },
+  { n:"REINOSO MARCO", tel:"93 987 1165", placa:"PMA7899" }
+];
+
+/* Operativos ficticios del cuadro del 31-JUL-2026 */
+const OPERATIVOS = [
+  { id:"OCF-001-31-JUL-2026", f:1, hor:"07H00 A 09H00", pers:[0], zon:["Zonal Manuela Sáenz"], pto:"El Tejar", tipo:"CONTROL ESPACIO PÚBLICO", inst:["AMC"], est:"PROPIOS_MEDIOS", obs:"Control sobre Rocafuerte entre Venezuela e Imbabura." },
+  { id:"OCF-002-31-JUL-2026", f:1, hor:"10H00 A 18H00", pers:[2], zon:["Zonal Eloy Alfaro"], pto:"HCAM", tipo:"CONTROL LICENCIAMIENTO", inst:["AMC","CACMQ"], est:"PROPIOS_MEDIOS", obs:"Circuito zonales Quitumbe y Eloy Alfaro." },
+  { id:"OCPMO-001-31-JUL-2026", f:2, hor:"18H00 A 23H00", pers:[1], zon:["Zonal Manuela Sáenz"], pto:"PMO La Basílica", tipo:"CONTROL ESPACIO PÚBLICO", inst:["AMC","CACMQ"], est:"ASIGNADO", cond:0, obs:"Traslado del personal al finalizar." },
+  { id:"OCPMO-002-31-JUL-2026", f:2, hor:"18H00 A 02H00", pers:[3], zon:["Zonal La Mariscal"], pto:"PMO Plaza Gabriela Mistral", tipo:"CONTROL LICENCIAMIENTO - LIBADORES", inst:["AMC","CACMQ"], est:"PENDIENTE", critico:true, obs:"" },
+  { id:"OCL-001-31-JUL-2026", f:3, hor:"10H00 A 15H00", pers:[3], zon:["Zonal Quitumbe"], pto:"Quicentro Sur", tipo:"CONTROL ESPACIO PÚBLICO (TODAS LAS FACULTADES)", inst:["AMC","CACMQ"], est:"PROPIOS_MEDIOS", obs:"Alrededores del centro de revisión vehicular." },
+  { id:"OCECU-001-31-JUL-2026", f:4, hor:"09H00 A 18H00", pers:[11,0], zon:["DMQ"], pto:"AMC Matriz", tipo:"Alertas ECU 911", inst:["AMC","Secretaría de Seguridad"], est:"ASIGNADO", cond:4, obs:"Cobertura de alertas del ECU 911." },
+  { id:"IGECU-001-31-JUL-2026", f:5, hor:"08H00 A 17H00", pers:[4,8], zon:["DMQ"], pto:"AMC Matriz", tipo:"Alertas ECU 911", inst:["AMC"], est:"ASIGNADO", cond:2, obs:"Acciones operativas y de control en el DMQ." },
+  { id:"ICNECU-001-31-JUL-2026", f:6, hor:"18H00 A 23H30", pers:[4,8,11], zon:["DMQ"], pto:"AMC Matriz", tipo:"Alertas ECU 911", inst:["AMC","PPNN","EMGIRS"], est:"PENDIENTE", critico:true, obs:"Salida desde Matriz." },
+  { id:"IG-001-31-JUL-2026", f:8, hor:"09H00 A 18H00", pers:[13], zon:["DMQ"], pto:"AMC Matriz", tipo:"CCF / ITCC", inst:["AMC"], est:"PENDIENTE", critico:true, obs:"" },
+  { id:"IG-002-31-JUL-2026", f:8, hor:"10H00 A 14H00", pers:[9], zon:["Zonal La Delicia"], pto:"AMC La Delicia", tipo:"DENUNCIAS CIUDADANAS", inst:["AMC"], est:"ASIGNADO", cond:2, obs:"Atención a denuncias." },
+  { id:"OCB-001-31-JUL-2026", f:9, hor:"10H00 A 16H30", pers:[12], zon:["DMQ"], pto:"Estación de bomberos Veintimilla y Reina Victoria", tipo:"Control de todas las competencias de AMC", inst:["AMC","CBQ"], est:"PROPIOS_MEDIOS", obs:"Operativo Época Seca." }
+];
+
+const NAV = [
+  { grupo:"Cuadro de Colores", icono:"tabla", abierto:true, items:[
+    { id:"p01", label:"Registro de operativo" },
+    { id:"p02", label:"Mis operativos" },
+    { id:"p03", label:"Asignación de transporte" },
+    { id:"p04", label:"Matriz Consolidada" },
+    { id:"p05", label:"Órdenes de servicio" },
+    { id:"p06", label:"Mis órdenes" } ]},
+  { grupo:"Administración", icono:"engranaje", abierto:true, items:[
+    { id:"p07", label:"Personal y disponibilidad" },
+    { id:"p08", label:"Catálogos del cuadro" },
+    { id:"p09", label:"Ventanas de carga" } ]}
+];
+const ICONOS = {
+  tabla:"M3 5h18v14H3V5zm0 5h18M9 5v14",
+  engranaje:"M12 15a3 3 0 100-6 3 3 0 000 6zm8-3a8 8 0 01-.1 1.2l2 1.6-2 3.4-2.4-1a8 8 0 01-2 1.2l-.4 2.6h-4l-.4-2.6a8 8 0 01-2-1.2l-2.4 1-2-3.4 2-1.6A8 8 0 014 12l-2-1.6 2-3.4 2.4 1a8 8 0 012-1.2L8.8 4h4l.4 2.8a8 8 0 012 1.2l2.4-1 2 3.4-2 1.6c.1.4.1.8.1 1z"
+};
+
+/* ================================ Utilidades ================================ */
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const formPorN = (n) => FORMULARIOS.find(f => f.n === n);
+let perfil = "DMIP_OPERATIVOS";
+let pantalla = "p01";
+
+/* ================================ Navegación ================================ */
+function pintarNav() {
+  const p = PERFILES[perfil];
+  $("nav").innerHTML = NAV.map(g => {
+    const ico = `<span class="app-sidebar-summary-icon"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="${ICONOS[g.icono]}"/></svg></span>`;
+    const items = g.items.map(it => {
+      const ok = p.pantallas.includes(it.id);
+      const activo = it.id === pantalla ? "is-active" : "";
+      return `<a class="app-sidebar-link app-sidebar-subitem-link ${ok ? activo : "bloqueado"}"
+        ${ok ? `onclick="irA('${it.id}')" tabindex="0"` : `title="Su perfil no tiene acceso a este módulo" aria-disabled="true"`}>
+        <span><svg viewBox="0 0 8 8" width="6" height="6"><circle cx="4" cy="4" r="3" fill="currentColor" opacity=".65"/></svg></span>
+        <span style="width:auto">${it.label}</span></a>`;
+    }).join("");
+    return `<details class="app-sidebar-details" ${g.abierto ? "open" : ""}>
+      <summary class="app-sidebar-summary">
+        <span class="app-sidebar-summary-main">${ico}<span>${g.grupo}</span></span>
+        <svg class="app-sidebar-chevron" fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      </summary>
+      <div class="app-sidebar-sublist">${items}</div></details>`;
+  }).join("");
+  $("pieSidebar").textContent = `${p.etiqueta} · prototipo de demostración`;
+}
+
+function irA(id) {
+  if (!PERFILES[perfil].pantallas.includes(id)) return;
+  pantalla = id;
+  document.querySelectorAll(".pantalla").forEach(s => s.classList.toggle("is-active", s.id === id));
+  pintarNav();
+  document.querySelector("main").scrollTo({ top:0, behavior:"smooth" });
+}
+
+function cambiarPerfil(nuevo) {
+  perfil = nuevo;
+  const p = PERFILES[perfil];
+  $("etiquetaPerfil").textContent = p.etiqueta;
+  $("p01Kicker").textContent = p.kicker;
+  $("p02Kicker").textContent = p.kicker;
+  const nums = p.formularios.slice().sort((a,b)=>a-b).join(", ");
+  $("p02Sub").textContent = nums ? `Formularios ${nums} · Cuadro del 31 de julio de 2026` : "Cuadro del 31 de julio de 2026";
+  $("menuPerfiles").classList.add("oculto");
+  llenarFormularios();
+  render();
+  irA(p.pantallas[0]);
+}
+
+function alternarPerfiles() { $("menuPerfiles").classList.toggle("oculto"); }
+function alternarTema() {
+  const h = document.documentElement;
+  h.dataset.theme = h.dataset.theme === "dark" ? "light" : "dark";
+}
+function alternarCajon() {
+  const s = $("shell");
+  s.style.gridTemplateColumns = s.style.gridTemplateColumns === "0rem minmax(0,1fr)" ? "16.375rem minmax(0,1fr)" : "0rem minmax(0,1fr)";
+}
+function abrirModal(id) { $(id).classList.add("is-open"); }
+function cerrarModal(id) { $(id).classList.remove("is-open"); }
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") document.querySelectorAll(".modal.is-open").forEach(m => m.classList.remove("is-open"));
+});
+document.querySelectorAll(".modal").forEach(m => m.addEventListener("click", e => { if (e.target === m) m.classList.remove("is-open"); }));
+
+/* ================================ P-01 ================================ */
+function llenarFormularios() {
+  const p = PERFILES[perfil];
+  const disponibles = p.formularios.length ? FORMULARIOS.filter(f => p.formularios.includes(f.n)) : FORMULARIOS;
+  $("f01Form").innerHTML = disponibles.map(f => `<option value="${f.n}">${f.n}. ${esc(f.nombre)}</option>`).join("");
+  const horas = [];
+  for (let h = 0; h < 24; h++) for (const m of ["00","30"]) horas.push(`${String(h).padStart(2,"0")}:${m}`);
+  $("f01Ini").innerHTML = horas.map(h => `<option ${h === "08:00" ? "selected" : ""}>${h}</option>`).join("");
+  $("f01Fin").innerHTML = horas.map(h => `<option ${h === "16:30" ? "selected" : ""}>${h}</option>`).join("");
+  cambiarFormularioDemo();
+}
+
+function cambiarFormularioDemo() {
+  const n = Number($("f01Form").value);
+  const f = formPorN(n);
+  if (!f) return;
+  $("p01Barra").style.background = f.fondo;
+  $("p01Barra").style.boxShadow = `inset 0 0 0 1px ${f.acento}`;
+  $("p01Id").textContent = `${f.pref}-004-31-JUL-2026`;
+  $("p01Pista").textContent = `Formulario ${f.n} · ${f.dueno} · vehículo: ${f.vehiculo.toLowerCase()}${f.noct ? " · condicionante nocturno 20H00–05H00" : ""}`;
+  $("p01Zonales").innerHTML = ZONALES.map((z,i) =>
+    `<label class="flex items-center gap-2 py-1 text-sm cursor-pointer"><input type="checkbox" class="checkbox" ${i === 6 ? "checked" : ""}><span>${esc(z)}</span></label>`).join("");
+  $("f01Punto").innerHTML = (PUNTOS[n] || []).map(x => `<option>${esc(x)}</option>`).join("");
+  $("f01Tipo").innerHTML = (TIPOS[n] || []).map(x => `<option>${esc(x)}</option>`).join("");
+  $("p01Inst").innerHTML = (INSTITUCIONES[n] || []).map((x,i) =>
+    `<label class="flex items-center gap-2 py-1 text-sm cursor-pointer"><input type="checkbox" class="checkbox" ${i === 0 ? "checked" : ""}><span>${esc(x)}</span></label>`).join("");
+  $("f01Pers").innerHTML = PERSONAL.filter(p => p.estado === "Activo").map(p => `<option>${esc(p.n)} · ${esc(p.cargo)}</option>`).join("");
+  $("p01Chips").innerHTML = `<span class="badge badge-primary badge-sm">${esc(PERSONAL[0].n)} <span class="tel" style="display:inline">${esc(PERSONAL[0].tel)}</span> ✕</span>`;
+}
+
+/* ================================ Render de tablas ================================ */
+function chipEstado(o) {
+  if (o.est === "ASIGNADO") return `<span class="badge badge-success badge-sm">Asignado</span>`;
+  if (o.est === "PROPIOS_MEDIOS") return `<span class="badge badge-ghost badge-sm">Propios medios</span>`;
+  return `<span class="badge badge-warning badge-sm">Pendiente</span>`;
+}
+function celdaCond(o, compacto) {
+  if (o.est === "ASIGNADO") { const c = CONDUCTORES[o.cond];
+    return `<td><strong>${esc(c.n)}</strong><span class="tel">${esc(c.tel)}</span></td>`; }
+  if (o.est === "PROPIOS_MEDIOS") return `<td style="color:var(--muted)">Propios medios</td>`;
+  return `<td class="celda-alerta ${o.critico ? "celda-alerta-critica" : ""}" title="${o.critico ? "Este formulario exige vehículo con conductor: el personal no tiene licencia profesional." : "Asignación logística pendiente. La DAF debe completar conductor y placa."}">⚠ Pendiente</td>`;
+}
+function celdaPlaca(o) {
+  if (o.est === "ASIGNADO") return `<td class="hora">${esc(CONDUCTORES[o.cond].placa)}</td>`;
+  if (o.est === "PROPIOS_MEDIOS") return `<td style="color:var(--muted)">No se activa</td>`;
+  return `<td class="celda-alerta ${o.critico ? "celda-alerta-critica" : ""}">⚠ Pendiente</td>`;
+}
+function nombresPersonal(o, cortar) {
+  const l = o.pers.map(i => PERSONAL[i]);
+  if (cortar && l.length > 1) return `${esc(l[0].n)} <span class="badge badge-ghost badge-xs">+${l.length-1}</span>`;
+  return l.map(p => `<div style="margin-bottom:.15rem"><strong>${esc(p.n)}</strong><span class="cargo">${esc(p.cargo)}</span><span class="tel">${esc(p.tel)}</span></div>`).join("");
+}
+
+function opsDelPerfil() {
+  const nums = PERFILES[perfil].formularios;
+  return nums.length ? OPERATIVOS.filter(o => nums.includes(o.f)) : OPERATIVOS;
+}
+
+function renderP01() {
+  const ops = opsDelPerfil().slice(0, 4);
+  const cab = ["ID OPERATIVO","FORMULARIO","HORARIO","PERSONAL","PUNTO","CONDUCTOR","PLACA","ACCIONES"];
+  $("tablaP01").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    (ops.length ? ops.map(o => { const f = formPorN(o.f); return `<tr class="hover:bg-info/10">
+      <td class="cod">${esc(o.id)}</td>
+      <td><span style="display:inline-block;width:.5rem;height:.5rem;border-radius:2px;background:${f.fondo};box-shadow:inset 0 0 0 1px ${f.acento};margin-right:.35rem"></span>${f.n}. ${esc(f.nombre)}</td>
+      <td class="hora">${esc(o.hor)}</td>
+      <td>${nombresPersonal(o, true)}</td>
+      <td>${esc(o.pto)}</td>
+      ${celdaCond(o)}
+      ${celdaPlaca(o)}
+      <td class="whitespace-nowrap">
+        <button class="btn btn-ghost btn-xs" onclick="verDetalle('${o.id}')" aria-label="Ver ${o.id}">Ver</button>
+        <button class="btn btn-ghost btn-xs" onclick="abrirModal('modalConfirmacion')" aria-label="Eliminar ${o.id}">Eliminar</button>
+      </td></tr>`; }).join("")
+    : `<tr><td colspan="8" class="p-4 text-center text-sm italic" style="color:var(--muted)">Aún no ha registrado operativos.</td></tr>`) + `</tbody>`;
+  $("p01Conteo").textContent = `${ops.length} registro${ops.length===1?"":"s"}`;
+}
+
+function renderP02() {
+  const ops = opsDelPerfil();
+  const cab = ["ID OPERATIVO","FORMULARIO","HORARIO","PERSONAL","PUNTO","TIPO DE CONTROL","ESTADO","ACCIONES"];
+  const filtros = cab.slice(0,6).map(()=>`<th><input class="input input-bordered input-xs w-full" style="font-weight:400;text-transform:none" placeholder="filtrar"></th>`).join("");
+  $("tablaP02").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)">
+      <tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr>
+      <tr style="font-size:11px">${filtros}<th></th><th></th></tr></thead><tbody>` +
+    ops.map(o => { const f = formPorN(o.f); return `<tr class="hover:bg-info/10">
+      <td class="cod">${esc(o.id)}</td>
+      <td><span style="display:inline-block;width:.5rem;height:.5rem;border-radius:2px;background:${f.fondo};box-shadow:inset 0 0 0 1px ${f.acento};margin-right:.35rem"></span>${f.n}. ${esc(f.nombre)}</td>
+      <td class="hora">${esc(o.hor)}</td>
+      <td>${nombresPersonal(o, true)}</td>
+      <td>${esc(o.pto)}</td>
+      <td style="max-width:180px" class="truncate" title="${esc(o.tipo)}">${esc(o.tipo)}</td>
+      <td>${chipEstado(o)}</td>
+      <td class="whitespace-nowrap">
+        <button class="btn btn-ghost btn-xs" onclick="verDetalle('${o.id}')">Editar</button>
+        <button class="btn btn-ghost btn-xs" onclick="abrirModal('modalConfirmacion')">Eliminar</button>
+      </td></tr>`; }).join("") + `</tbody>`;
+  $("p02Conteo").textContent = `${ops.length} registros`;
+}
+
+function renderP03() {
+  const ordenados = OPERATIVOS.slice().sort((a,b) => (a.est === "PENDIENTE" ? 0 : 1) - (b.est === "PENDIENTE" ? 0 : 1));
+  const cab = ["ID OPERATIVO","FORMULARIO","HORARIO","PERSONAL","PUNTO","CONDUCTOR / TELÉFONO","PLACA","ACCIÓN"];
+  $("tablaP03").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    ordenados.map(o => { const f = formPorN(o.f); return `<tr class="hover:bg-info/10">
+      <td class="cod">${esc(o.id)}</td>
+      <td><span style="display:inline-block;width:.5rem;height:.5rem;border-radius:2px;background:${f.fondo};box-shadow:inset 0 0 0 1px ${f.acento};margin-right:.35rem"></span>${f.n}. ${esc(f.nombre)}</td>
+      <td class="hora">${esc(o.hor)}</td>
+      <td>${o.pers.length} persona${o.pers.length===1?"":"s"}</td>
+      <td>${esc(o.pto)}</td>
+      ${celdaCond(o)}
+      ${celdaPlaca(o)}
+      <td><button class="btn btn-primary btn-xs" onclick="abrirPanelDAF('${o.id}')">${o.est === "PENDIENTE" ? "Asignar" : "Reasignar"}</button></td>
+    </tr>`; }).join("") + `</tbody>`;
+  const pend = OPERATIVOS.filter(o => o.est === "PENDIENTE").length;
+  $("p03Pend").textContent = `${pend} pendientes`;
+}
+
+function renderP04() {
+  const cab = ["ID OPERATIVO","HORARIO","PERSONAL / TELÉFONO","ZONAL","PUNTO DE ENCUENTRO","TIPO DE CONTROL","INSTITUCIONES","CONDUCTOR","PLACA","OBSERVACIONES","ACCIONES"];
+  let html = "";
+  FORMULARIOS.forEach(f => {
+    const filas = OPERATIVOS.filter(o => o.f === f.n);
+    html += `<tbody><tr class="banner-row"><td colspan="${cab.length}" style="background:${f.fondo};border-top:3px solid ${f.acento}">
+      <span style="display:inline-block;width:.55rem;height:.55rem;border-radius:2px;background:${f.acento};margin-right:.5rem"></span>${f.n}. ${esc(f.nombre)}
+      <span style="float:right;font-weight:600;text-transform:none;letter-spacing:.02em;opacity:.8">${esc(f.dueno)} · ${filas.length} operativo${filas.length===1?"":"s"} · ${f.color} ${f.fondo}</span>
+    </td></tr>`;
+    if (!filas.length) {
+      html += `<tr class="fila-evidencia"><td colspan="${cab.length}">La información de este formulario no fue ingresada. Responsable: ${esc(f.dueno)} · cierre 15H00.</td></tr></tbody>`;
+      return;
+    }
+    html += `<tr class="banner-head">${cab.map(c=>`<th scope="col" style="background:${f.fondo}CC">${c}</th>`).join("")}</tr>`;
+    filas.forEach(o => {
+      html += `<tr class="hover:bg-info/10">
+        <td class="cod">${esc(o.id)}</td>
+        <td class="hora">${esc(o.hor)}</td>
+        <td>${nombresPersonal(o)}</td>
+        <td>${o.zon.map(z=>`<div>${esc(z)}</div>`).join("")}</td>
+        <td>${esc(o.pto)}</td>
+        <td>${esc(o.tipo)}</td>
+        <td>${o.inst.map(i=>`<span class="badge badge-ghost badge-xs" style="margin:0 .15rem .15rem 0">${esc(i)}</span>`).join("")}</td>
+        ${celdaCond(o)}
+        ${celdaPlaca(o)}
+        <td style="max-width:150px" class="truncate" title="${esc(o.obs)}">${esc(o.obs || "—")}</td>
+        <td><button class="btn btn-ghost btn-xs" onclick="verDetalle('${o.id}')" title="Generar Orden de Servicio">Orden</button></td>
+      </tr>`;
+    });
+    html += `</tbody>`;
+  });
+  $("tablaP04").innerHTML = html;
+}
+
+function renderP05() {
+  const cab = ["ID OPERATIVO","FORMULARIO","HORARIO","FUNCIONARIOS","CONDUCTOR","ACCIÓN"];
+  $("tablaP05").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    OPERATIVOS.map(o => { const f = formPorN(o.f); const sinPers = o.pers.length === 0;
+      return `<tr class="hover:bg-info/10">
+      <td class="cod">${esc(o.id)}</td>
+      <td>${f.n}. ${esc(f.nombre)}</td>
+      <td class="hora">${esc(o.hor)}</td>
+      <td><span class="badge badge-primary badge-sm">${o.pers.length} hoja${o.pers.length===1?"":"s"}</span></td>
+      <td>${o.est === "ASIGNADO" ? esc(CONDUCTORES[o.cond].n) : (o.est === "PROPIOS_MEDIOS" ? "Propios medios" : "<span class='badge badge-warning badge-sm'>Pendiente</span>")}</td>
+      <td><button class="btn btn-primary btn-xs" ${sinPers ? "disabled title='Este operativo no tiene personal asignado'" : `onclick="abrirModal('modalExito')"`}>Generar Orden</button></td>
+    </tr>`; }).join("") + `</tbody>`;
+}
+
+function renderP06() {
+  const mias = OPERATIVOS.filter(o => o.pers.includes(4));
+  $("p06Tarjetas").innerHTML = mias.map(o => `
+    <div class="tarjeta-orden">
+      <p class="cod">${esc(o.id)}</p>
+      <p class="text-xs mt-1" style="color:var(--muted)">31 de julio de 2026</p>
+      <div class="mt-3">
+        <div class="os-dato"><p class="os-et">Horario</p><p class="os-vl">${esc(o.hor)}</p></div>
+        <div class="os-dato"><p class="os-et">Funcionario asignado</p><p class="os-vl">${esc(PERSONAL[4].n)}<span class="tel">${esc(PERSONAL[4].cargo)} · ${esc(PERSONAL[4].tel)}</span></p></div>
+        <div class="os-dato"><p class="os-et">Conductor</p><p class="os-vl">${o.est === "ASIGNADO" ? esc(CONDUCTORES[o.cond].n) : "Por asignar"}<span class="tel">${o.est === "ASIGNADO" ? esc(CONDUCTORES[o.cond].tel) : "—"}</span></p></div>
+        <div class="os-dato"><p class="os-et">Placa del vehículo</p><p class="os-vl">${o.est === "ASIGNADO" ? esc(CONDUCTORES[o.cond].placa) : "Por asignar"}</p></div>
+      </div>
+      <button class="btn btn-primary btn-sm w-full mt-4" onclick="abrirModal('modalExito')">Descargar PDF</button>
+    </div>`).join("") +
+    `<div class="md:col-span-2 xl:col-span-3 alert alert-info"><span>Este documento contiene únicamente su asignación. No incluye el resto de operativos de la jornada ni el personal asignado a otros puntos.</span></div>`;
+}
+
+function renderP07() {
+  const cab = ["CÉDULA","APELLIDOS Y NOMBRES","ÁREA","CONTRATO","TELÉFONO","ESTADO","ACCIONES"];
+  $("tablaP07").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    PERSONAL.map((p,i) => {
+      const inactivo = p.estado !== "Activo";
+      const chip = p.estado === "Activo" ? `<span class="badge badge-success badge-sm">Activo</span>`
+        : `<span class="badge badge-warning badge-sm">${esc(p.estado)}</span>`;
+      return `<tr class="hover:bg-info/10" style="${inactivo ? "opacity:.6" : ""}">
+        <td class="cod">17${String(40000000 + i * 137).padStart(8,"0")}</td>
+        <td><strong>${esc(p.n)}</strong><span class="cargo">${esc(p.cargo)}</span></td>
+        <td>${esc(p.area)}</td>
+        <td>${p.contrato === "Nombramiento" ? `<span class="badge badge-info badge-sm">Nombramiento</span>` : `<span class="badge badge-ghost badge-sm">Ocasional</span>`}</td>
+        <td class="hora">${esc(p.tel)}</td>
+        <td>${chip}</td>
+        <td class="whitespace-nowrap">
+          <button class="btn btn-ghost btn-xs">Editar</button>
+          <button class="btn btn-ghost btn-xs">Ausencia</button>
+          <button class="btn btn-ghost btn-xs" onclick="abrirModal('modalConfirmacion')">Baja</button>
+        </td></tr>`; }).join("") + `</tbody>`;
+
+  const aus = [
+    { f:"ORTEGA PAOLA", m:"Vacaciones", d:"28-JUL-2026", h:"08-AGO-2026" },
+    { f:"MOROCHO ÁNGEL", m:"Reposo médico", d:"29-JUL-2026", h:"05-AGO-2026" }
+  ];
+  const cab2 = ["FUNCIONARIO","MOTIVO","DESDE","HASTA","ACCIONES"];
+  $("tablaP07b").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab2.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    aus.map(a => `<tr class="hover:bg-info/10">
+      <td><strong>${esc(a.f)}</strong></td>
+      <td><span class="badge badge-warning badge-sm">${esc(a.m)}</span></td>
+      <td class="hora">${esc(a.d)}</td><td class="hora">${esc(a.h)}</td>
+      <td><button class="btn btn-ghost btn-xs">Editar</button><button class="btn btn-ghost btn-xs">Eliminar</button></td>
+    </tr>`).join("") + `</tbody>`;
+}
+
+function renderP08() {
+  const cab = ["#","FORMULARIO","COLOR","DEPARTAMENTO DUEÑO","VEHÍCULO","COND. NOCTURNO","PUNTOS","TIPOS","INSTITUC.","ACCIONES"];
+  $("tablaP08").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    FORMULARIOS.map(f => `<tr class="hover:bg-info/10">
+      <td class="cod">${f.n}</td>
+      <td><strong>${esc(f.nombre)}</strong><span class="cargo">prefijo ${esc(f.pref)}</span></td>
+      <td><span style="display:inline-block;width:2rem;height:.9rem;border-radius:.2rem;background:${f.fondo};box-shadow:inset 0 0 0 1px ${f.acento};vertical-align:middle"></span>
+          <span class="tel" style="display:inline;margin-left:.35rem">${f.fondo}</span></td>
+      <td>${esc(f.dueno)}</td>
+      <td>${esc(f.vehiculo)}</td>
+      <td>${f.noct ? `<span class="badge badge-warning badge-sm">20H00–05H00</span>` : `<span class="badge badge-ghost badge-sm">No aplica</span>`}</td>
+      <td class="hora">${(PUNTOS[f.n]||[]).length - 1}</td>
+      <td class="hora">${(TIPOS[f.n]||[]).length - 1}</td>
+      <td class="hora">${(INSTITUCIONES[f.n]||[]).length}</td>
+      <td><button class="btn btn-ghost btn-xs">Catálogos</button></td>
+    </tr>`).join("") + `</tbody>`;
+}
+
+function renderP09() {
+  const ventanas = [
+    { rol:"DMIP · Operativos",   tipo:"Diario",   ap:"—",              ci:"15H00", est:"Abierta" },
+    { rol:"DMIP · Inspecciones", tipo:"Diario",   ap:"—",              ci:"15H00", est:"Abierta" },
+    { rol:"DMIT · Instrucción",  tipo:"Diario",   ap:"—",              ci:"15H00", est:"Abierta" },
+    { rol:"Líder Zonal",         tipo:"Semanal",  ap:"Viernes 00H00",  ci:"Martes 10H00", est:"Cerrada" },
+    { rol:"DAF · Transportes",   tipo:"Intervalo",ap:"15H00",          ci:"16H30", est:"Cerrada" },
+    { rol:"Dirección",           tipo:"Intervalo",ap:"16H30",          ci:"—",     est:"Cerrada" }
+  ];
+  const cab = ["ROL","TIPO DE VENTANA","APERTURA","CIERRE","ZONA HORARIA","ESTADO ACTUAL","ACCIONES"];
+  $("tablaP09").innerHTML = `<thead class="text-xs uppercase tracking-wider" style="color:var(--muted)"><tr>${cab.map(c=>`<th scope="col">${c}</th>`).join("")}</tr></thead><tbody>` +
+    ventanas.map(v => `<tr class="hover:bg-info/10">
+      <td><strong>${esc(v.rol)}</strong></td>
+      <td>${esc(v.tipo)}</td>
+      <td class="hora">${esc(v.ap)}</td>
+      <td class="hora">${esc(v.ci)}</td>
+      <td style="color:var(--muted)">America/Guayaquil</td>
+      <td>${v.est === "Abierta" ? `<span class="badge badge-success badge-sm">Abierta</span>` : `<span class="badge badge-error badge-sm">Cerrada</span>`}</td>
+      <td><button class="btn btn-ghost btn-xs">Editar</button></td>
+    </tr>`).join("") + `</tbody>`;
+}
+
+/* ================================ Panel DAF ================================ */
+function abrirPanelDAF(id) {
+  const o = OPERATIVOS.find(x => x.id === id);
+  const f = formPorN(o.f);
+  $("dafId").textContent = o.id;
+  $("dafForm").value = `${f.n}. ${f.nombre}`;
+  $("dafHorario").value = o.hor;
+  $("dafZonal").value = o.zon.join(" · ");
+  $("dafPunto").value = o.pto;
+  $("dafPersonal").value = o.pers.map(i => `${PERSONAL[i].n} (${PERSONAL[i].tel})`).join(" · ");
+  $("dafTipo").value = o.tipo;
+  $("dafInst").value = o.inst.join(" · ");
+  $("dafCond").innerHTML = `<option value="">Seleccione conductor…</option>` +
+    CONDUCTORES.map((c,i) => `<option value="${i}">${esc(c.n)} · ${esc(c.tel)}</option>`).join("");
+  $("dafPlaca").value = "";
+  $("panelDAF").style.display = "";
+  $("panelDAF").scrollIntoView({ behavior:"smooth", block:"center" });
+}
+function cerrarPanelDAF() { $("panelDAF").style.display = "none"; }
+function derivarPlaca() {
+  const i = $("dafCond").value;
+  $("dafPlaca").value = i === "" ? "" : CONDUCTORES[Number(i)].placa;
+}
+
+/* ================================ Modal de detalle ================================ */
+function verDetalle(id) {
+  const o = OPERATIVOS.find(x => x.id === id);
+  const f = formPorN(o.f);
+  $("cuerpoDetalle").innerHTML = `
+    <div class="flex items-center gap-3 mb-4">
+      <span style="display:inline-block;width:1.5rem;height:1.5rem;border-radius:.3rem;background:${f.fondo};box-shadow:inset 0 0 0 1px ${f.acento}"></span>
+      <div><p class="cod">${esc(o.id)}</p><p class="text-xs" style="color:var(--muted)">${f.n}. ${esc(f.nombre)}</p></div>
+      <span class="ml-auto">${chipEstado(o)}</span>
+    </div>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div><p class="os-et">Horario</p><p class="text-sm font-semibold">${esc(o.hor)}</p></div>
+      <div><p class="os-et">Zonal</p><p class="text-sm font-semibold">${esc(o.zon.join(" · "))}</p></div>
+      <div><p class="os-et">Punto de encuentro</p><p class="text-sm font-semibold">${esc(o.pto)}</p></div>
+      <div><p class="os-et">Tipo de control</p><p class="text-sm font-semibold">${esc(o.tipo)}</p></div>
+      <div class="sm:col-span-2"><p class="os-et">Instituciones</p><p class="text-sm">${o.inst.map(i=>`<span class="badge badge-ghost badge-xs" style="margin-right:.2rem">${esc(i)}</span>`).join("")}</p></div>
+      <div class="sm:col-span-2"><p class="os-et">Personal asignado</p>${nombresPersonal(o)}</div>
+      <div class="sm:col-span-2"><p class="os-et">Observaciones</p><p class="text-sm">${esc(o.obs || "—")}</p></div>
+    </div>`;
+  abrirModal("modalDetalle");
+}
+
+/* ================================ Arranque ================================ */
+function render() { renderP01(); renderP02(); renderP03(); renderP04(); renderP05(); renderP06(); renderP07(); renderP08(); renderP09(); }
+
+$("menuPerfiles").innerHTML =
+  `<li class="px-3 pb-1 pt-2 text-[.7rem] uppercase tracking-[0.18em]" style="color:var(--muted);list-style:none">Cambiar de perfil (prueba)</li>` +
+  Object.entries(PERFILES).map(([k,v]) =>
+    `<li style="list-style:none"><button type="button" class="w-full text-left rounded-xl px-3 py-2 text-sm hover:bg-info/10" onclick="cambiarPerfil('${k}')">${esc(v.etiqueta)}</button></li>`).join("");
+
+cambiarPerfil("DMIP_OPERATIVOS");
+</script>
+</body>
+</html>

@@ -18,6 +18,18 @@ import type { RolDepartamental } from "../config/env";
 
 export type TipoContrato = "NOMBRAMIENTO" | "OCASIONAL";
 
+/**
+ * Motivo de la baja lógica (2026-09-30). Códigos fijos que reconoce el servidor; «OTRO» exige un
+ * detalle escrito. El nombre legible lo pone `NOMBRE_MOTIVO_BAJA` (regla 6).
+ */
+export type MotivoBaja = "FIN_CONTRATO" | "RENUNCIA" | "TRASLADO" | "OTRO";
+
+/** Cuerpo de `DELETE /administracion/personal/:id`: el motivo y, solo con «OTRO», su detalle. */
+export interface BajaFuncionario {
+  motivo: MotivoBaja;
+  detalle?: string;
+}
+
 export type EstadoDisponibilidad =
   | "DISPONIBLE"
   | "VACACIONES"
@@ -33,12 +45,28 @@ export interface Funcionario {
   apellidos: string;
   nombres: string;
   telefono: string | null;
+  /**
+   * Correo institucional. Añadido el 2026-09-01. Opcional, como el teléfono.
+   *
+   * NO ESTÁ EN `PersonaElegible`, y es deliberado: quien arma el cuadro elige personas,
+   * no las contacta. Mismo criterio que el teléfono, RN-34.
+   */
+  correo: string | null;
   cargo: string | null;
   area: AreaPersonal;
   tipoContrato: TipoContrato;
   direccion: RolDepartamental;
+  /** Zona y denominación de Instrucción (nulos para el resto; opcionales en el tipo). */
+  zonalId?: number | null;
+  denominacion?: DenominacionInstruccion | null;
   activo: boolean;
 }
+
+/** Denominación del personal de Instrucción en la cobertura mensual por turnos. */
+export type DenominacionInstruccion =
+  | "LIDER_ZONAL"
+  | "INSTRUCTOR_METROPOLITANO"
+  | "AUXILIAR_FLAGRANCIA";
 
 /**
  * Persona ofrecida en el desplegable de asignación. Respuesta de `GET /personal/elegible`.
@@ -78,7 +106,37 @@ export interface PersonaElegible {
   elegible: boolean;
   /** Por qué no puede, redactado por el servidor. Nulo si puede. */
   motivo: string | null;
+  /**
+   * Zona que la persona gestiona (`func_zonal_id`). Al asignarla, el registro la propone como
+   * zonal del operativo (2026-09-24). Nula/ausente si no tiene: entonces no se propone nada.
+   */
+  zonalId?: number | null;
+  /**
+   * DOS SEÑALES ADVISORY DISTINTAS (2026-09-29). NO cambian `elegible` ni bloquean; opcionales
+   * (solo llegan si el servidor las calculó). Un elegible con `nivelFatiga: "ROJO"` sigue asignable.
+   *
+   *   1) FATIGA (seguridad, FRMS / ISO 45001): `indiceCarga` + `nivelFatiga`, por umbrales
+   *      ABSOLUTOS. Mide si la persona se acerca a un límite de fatiga; no depende del grupo.
+   *   2) EQUIDAD (reparto): `cuotaJusta` (media del grupo), `desviacionCarga` (carga − cuota) y
+   *      `nivelEquidad` (DEBAJO/EQUILIBRADO/ENCIMA). Mide si carga más o menos que su parte justa.
+   *
+   * `sugerido` marca a los elegibles por DEBAJO de su cuota, para repartir de forma equitativa.
+   */
+  indiceCarga?: number;
+  nivelFatiga?: NivelFatiga;
+  /** Cuántos operativos tiene asignados la persona en el período de equidad (semana). */
+  operativosAsignados?: number;
+  cuotaJusta?: number;
+  desviacionCarga?: number;
+  nivelEquidad?: NivelEquidad;
+  sugerido?: boolean;
 }
+
+/** Nivel del semáforo de fatiga. El texto legible lo pone `NIVEL_FATIGA` (regla 6). */
+export type NivelFatiga = "VERDE" | "AMBAR" | "ROJO";
+
+/** Nivel de equidad del reparto. El texto legible lo pone `NIVEL_EQUIDAD` (regla 6). */
+export type NivelEquidad = "DEBAJO" | "EQUILIBRADO" | "ENCIMA";
 
 /** `APELLIDOS NOMBRES`, como se muestra en todo el sistema. */
 export const nombreDePersona = (persona: PersonaElegible): string =>
@@ -107,10 +165,20 @@ export interface CrearFuncionario {
   apellidos: string;
   nombres: string;
   telefono?: string;
+  correo?: string;
   cargo?: string;
   area: AreaPersonal;
   tipoContrato: TipoContrato;
-  direccion: RolDepartamental;
+  /**
+   * Zonal de trabajo. Se envía para el personal DMIP (OPERATIVOS/GENERAL/TECNICO), donde el
+   * servidor la exige; para Instrucción no viaja (la fija la matriz de cobertura). 2026-09-21.
+   */
+  zonalId?: number | null;
+  /*
+    SIN `direccion`, DESDE EL 2026-09-01. La deduce el servidor del área y el contrato ya
+    no la admite. Sigue viajando **de vuelta** en `Funcionario`, porque el maestro la
+    muestra y de ella depende quién ve cada ficha (PER-09).
+  */
 }
 
 /** Cuerpo de `PUT /administracion/personal/:id`. Se envía lo que cambia. */

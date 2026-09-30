@@ -8,30 +8,30 @@
  * Fecha: 2026-08-06
  *
  * ═══════════════════════════════════════════════════════════════════════════════
- * LA DAF NO PUEDE LISTAR LA FLOTA, Y ESO CONDICIONA ESTA PANTALLA.
+ * PV-33 SE CERRÓ EL 2026-08-31, Y AQUÍ QUEDA LA CICATRIZ.
  *
- * `PATCH /transporte/operativos/:id` exige `vehiculoId`, pero el único endpoint que
- * enumera vehículos —`GET /administracion/vehiculos`— es del `ADMINISTRADOR`. Lo único que
- * este perfil llega a conocer es el **vehículo habitual de cada conductor**, que viaja en
- * `GET /transporte/conductores`.
+ * Hasta esa fecha la DAF no podía listar la flota: el único endpoint que enumeraba
+ * vehículos era del `ADMINISTRADOR`, y este perfil solo llegaba a conocer el **vehículo
+ * habitual de cada conductor**, que viajaba en `GET /transporte/conductores`. Una función
+ * de este archivo, `vehiculosDeLosConductores`, componía la lista con eso.
  *
- * `vehiculosDeLosConductores` compone la lista con eso, sin repetir. Es lo que se puede
- * ofrecer sin inventar nada, y cubre el caso 3 del plan; pero **un vehículo que no sea
- * habitual de nadie no se puede asignar desde aquí**. Está registrado como PV-33: es una
- * pieza que falta del contrato, no una limitación de la interfaz.
+ * La consecuencia era que **un vehículo que no fuera habitual de nadie no se podía
+ * asignar**, y además no se veía: la placa sencillamente no existía en la pantalla.
+ *
+ * Hoy la lista la da `GET /transporte/vehiculos?fecha=` y llega entera, con las placas no
+ * utilizables marcadas y con su motivo. Aquella función **se retiró en lugar de dejarse
+ * «por si acaso»**: mientras siguiera exportada, alguien podía volver a componer el
+ * desplegable con ella y reabrir el defecto sin enterarse.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import type { FiltrosFlota } from "../interfaces/Flota";
 import type {
   Conductor,
-  ConductorDisponible,
   OperativoPendiente,
   Vehiculo,
 } from "../interfaces/Transporte";
 import { normalizar } from "./texto.util";
-
-export type VehiculoOfrecido = { id: number; placa: string };
 
 /**
  * LA BANDEJA VACÍA NO SIGNIFICA QUE NO HAYA OPERATIVOS.
@@ -50,23 +50,6 @@ export const SIN_PENDIENTES =
   "No hay asignaciones de transporte pendientes para hoy. La bandeja solo recoge los " +
   "operativos cuyo formulario habilita vehículo; los demás operan por propios medios y " +
   "no aparecen aquí aunque estén registrados.";
-
-/** Los vehículos habituales de los conductores disponibles, sin repetir y por placa. */
-export const vehiculosDeLosConductores = (
-  conductores: ConductorDisponible[],
-): VehiculoOfrecido[] => {
-  const porId = new Map<number, VehiculoOfrecido>();
-
-  for (const conductor of conductores) {
-    if (conductor.vehiculoHabitual) {
-      porId.set(conductor.vehiculoHabitual.id, conductor.vehiculoHabitual);
-    }
-  }
-
-  return [...porId.values()].sort((uno, otro) =>
-    uno.placa.localeCompare(otro.placa),
-  );
-};
 
 /**
  * Busca en lo que la fila muestra.

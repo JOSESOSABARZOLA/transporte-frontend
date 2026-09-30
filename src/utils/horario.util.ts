@@ -38,6 +38,18 @@ export const esHoraValida = (hora: string): boolean => PATRON_HORA.test(hora);
 export const comoHoraInstitucional = (hora: string): string =>
   hora.replace(":", "H");
 
+/**
+ * `08:00` → `08:00 AM`, `13:00` → `13:00 PM`, `22:30` → `22:30 PM`, `00:00` → `00:00 AM`
+ * (2026-09-09). MANTIENE la hora de 24 h y solo le añade el meridiano —AM antes del mediodía,
+ * PM del mediodía en adelante—, a petición del negocio: las tardes se leen 13, 14… 23, no
+ * 01… 11. Solo para MOSTRAR en los selectores; el valor que se envía sigue siendo `HH:MM`
+ * (RN-07), así que no cambia el dato, solo cómo se lee.
+ */
+export const comoHoraConMeridiano = (hora: string): string => {
+  const horas = Number(hora.split(":")[0]);
+  return `${hora} ${horas < 12 ? "AM" : "PM"}`;
+};
+
 /** `18:00` y `23:30` → `18H00 A 23H30`. */
 export const comoHorario = (horaInicio: string, horaFin: string): string =>
   `${comoHoraInstitucional(horaInicio)} A ${comoHoraInstitucional(horaFin)}`;
@@ -63,6 +75,36 @@ export const duracionEnHoras = (horaInicio: string, horaFin: string): number => 
   const minutos = inicio < fin ? fin - inicio : MINUTOS_POR_DIA - inicio + fin;
 
   return minutos / MINUTOS_POR_HORA;
+};
+
+/**
+ * `7.5` → `7 h 30` · `8` → `8 h` · `0.5` → `0 h 30`.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * EL DECIMAL NO ES DE ESTA FAMILIA. Añadida el 2026-08-26.
+ *
+ * `duracionEnHoras` devuelve un número —y hace bien: es lo que se calcula—, pero la
+ * pantalla lo pintaba tal cual y con `08:00 → 15:30` decía **«7.5 h»**. El sistema
+ * escribe horarios como `08H00 A 15H30` en la matriz, en la orden de servicio y en la
+ * tabla del cuadro; «7.5» es la única cifra de todo el módulo que se lee en decimal.
+ *
+ * VA AQUÍ Y NO EN EL COMPONENTE porque es la forma de decir una duración, no una
+ * decisión de una pantalla: el día que la orden de servicio quiera imprimirla, la toma
+ * de este archivo en lugar de reinventar el redondeo.
+ *
+ * RN-07 solo admite horas en punto y medias, así que los minutos son siempre 0 o 30.
+ * Se redondea de todos modos: si algún día la granularidad cambia, esto sigue diciendo
+ * la verdad en lugar de arrastrar un decimal a la pantalla.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export const comoDuracion = (horas: number): string => {
+  const totalMinutos = Math.round(horas * MINUTOS_POR_HORA);
+  const enteras = Math.floor(totalMinutos / MINUTOS_POR_HORA);
+  const minutos = totalMinutos % MINUTOS_POR_HORA;
+
+  return minutos === 0
+    ? `${enteras} h`
+    : `${enteras} h ${String(minutos).padStart(2, "0")}`;
 };
 
 /**

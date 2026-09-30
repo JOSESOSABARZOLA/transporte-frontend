@@ -29,6 +29,7 @@ import type { Formulario, PuntoEncuentro } from "../../interfaces/Formulario.ts"
 
 const punto = (parcial: Partial<PuntoEncuentro> = {}): PuntoEncuentro => ({
   id: 1,
+  formularioId: 1,
   nombre: "AMC Matriz",
   zonalId: 3,
   zonalNombre: "Eugenio Espejo",
@@ -104,6 +105,74 @@ describe("caso 2 · la baja se llama desactivar, porque es lo que hace", () => {
     expect(desactivar).toHaveBeenCalledWith(
       expect.objectContaining({ id: 1, nombre: "AMC Matriz" }),
     );
+  });
+});
+
+describe("eliminar (baja física) · solo cuando la pantalla lo conecta", () => {
+  it("con onEliminar ofrece «Eliminar» y entrega la fila para confirmarla", async () => {
+    const eliminar = vi.fn();
+
+    render(
+      <TablaCatalogo<PuntoEncuentro>
+        {...propiedadesTabla}
+        filas={[punto()]}
+        onEliminar={eliminar}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    expect(eliminar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, nombre: "AMC Matriz" }),
+    );
+  });
+});
+
+describe("PV-36 · desactivar y activar son la misma acción reversible", () => {
+  /**
+   * La fila desactivada NO ofrece «Desactivar»: ofrece «Activar», y lo dice también en
+   * palabras con el distintivo «inactivo» (regla 6, no solo con la atenuación).
+   */
+  it("una fila desactivada ofrece «Activar», no «Desactivar»", () => {
+    render(
+      <TablaCatalogo<PuntoEncuentro>
+        {...propiedadesTabla}
+        filas={[punto({ activo: false })]}
+        onActivar={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Activar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Desactivar" })).toBeNull();
+    expect(screen.getByText("inactivo")).toBeInTheDocument();
+  });
+
+  it("activar entrega la fila, para reactivarla por su identificador", async () => {
+    const activar = vi.fn();
+
+    render(
+      <TablaCatalogo<PuntoEncuentro>
+        {...propiedadesTabla}
+        filas={[punto({ activo: false })]}
+        onActivar={activar}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Activar" }));
+    expect(activar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, nombre: "AMC Matriz" }),
+    );
+  });
+
+  it("el contador separa vigentes de inactivos cuando los hay", () => {
+    render(
+      <TablaCatalogo<PuntoEncuentro>
+        {...propiedadesTabla}
+        filas={[punto({ id: 1 }), punto({ id: 2, activo: false })]}
+        onActivar={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("1 vigentes · 1 inactivas")).toBeInTheDocument();
   });
 });
 
@@ -308,12 +377,12 @@ describe("los esquemas de los tres catálogos", () => {
   });
 
   it("el nombre único dentro de la zonal NO está en el esquema", () => {
-    // `uq_punto_nombre_zonal` es compuesto y el navegador no tiene todos los puntos de
-    // la zonal —solo los de este formulario—. Además, dos administradores a la vez lo
-    // esquivarían. Lo decide el servidor, y su mensaje se muestra tal cual.
+    // `uq_punto_form_zona_nombre` es compuesto y el navegador no tiene todos los puntos
+    // del formulario y la zonal. Además, dos administradores a la vez lo esquivarían. Lo
+    // decide el servidor, y su mensaje se muestra tal cual.
     const campos = Object.keys(esquemaPunto.fields);
 
     expect(campos).toEqual(["nombre", "zonalId"]);
-    expect(campos).not.toContain("formularioIds");
+    expect(campos).not.toContain("formularioId");
   });
 });

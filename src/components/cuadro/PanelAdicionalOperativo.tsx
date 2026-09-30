@@ -67,7 +67,7 @@
  * columnas a 1440 px (FASE5 §4.1) y dentro de un modal habría que estrecharlo a una.
  */
 
-import { useCallback, useEffect, useRef, useState, type FC } from "react";
+import { useCallback, useEffect, useRef, type FC } from "react";
 import type { FormikHelpers } from "formik";
 
 import FormularioOperativo from "./FormularioOperativo.tsx";
@@ -87,8 +87,7 @@ type PanelAdicionalOperativoProps = {
   catalogos: CatalogosFormulario | null;
   puntos: CatalogosFormulario["puntos"];
   cargandoPuntos: boolean;
-  onZonalElegida: (zonalId: number | null) => void;
-  onHorarioElegido: (horaInicio: string, horaFin: string) => void;
+  onZonalesElegidas: (zonalesIds: number[]) => void;
 
   candidatos: PersonaElegible[];
   cargandoPersonal: boolean;
@@ -96,6 +95,15 @@ type PanelAdicionalOperativoProps = {
   personalAgregado: PersonaAgregada[];
   onAgregarPersona: (persona: PersonaElegible) => void;
   onRetirarPersona: (funcionarioId: number) => void;
+  /**
+   * Horario propio de cada persona (2026-09-08, RN-66). El adicional ya no tiene horario
+   * único: como el registro, cada persona lleva el suyo y el servidor deriva la ventana.
+   */
+  onCambiarHorarioPersona: (
+    funcionarioId: number,
+    horaInicio: string,
+    horaFin: string,
+  ) => void;
   avisoPersonal: string | null;
 
   /**
@@ -121,13 +129,13 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
   catalogos,
   puntos,
   cargandoPuntos,
-  onZonalElegida,
-  onHorarioElegido,
+  onZonalesElegidas,
   candidatos,
   cargandoPersonal,
   personalAgregado,
   onAgregarPersona,
   onRetirarPersona,
+  onCambiarHorarioPersona,
   avisoPersonal,
   bloqueado,
   ventanaCerrada,
@@ -135,11 +143,6 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
   onGuardar,
   onCancelar,
 }) => {
-  /** El horario elegido en el formulario. Se necesita para saber cuándo heredar. */
-  const [horario, setHorario] = useState({ inicio: "", fin: "" });
-
-  const horarioCompleto = Boolean(horario.inicio) && Boolean(horario.fin);
-
   const yaAgregados = new Set(
     personalAgregado.map((persona) => persona.funcionarioId),
   );
@@ -150,39 +153,37 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
   /**
    * A quién del equipo del padre no se pudo heredar, **derivado y no guardado**.
    *
-   * Es exactamente «quien falta por heredar y además no puede salir a esta hora», así que
-   * tenerlo en estado obligaría a recalcularlo cada vez que cambia el horario y a
-   * acordarse de limpiarlo. Derivarlo lo mantiene cierto por construcción.
-   *
-   * A quien se quitó a mano no se le nombra: sigue faltando, pero **sí podía**, y llamarlo
-   * «no heredado» acusaría al sistema de algo que hizo la persona.
+   * Desde RN-66 (2026-09-08) el adicional no tiene horario único: los elegibles se piden por
+   * área y ausencia, y el cruce por hora lo valida el servidor por persona al registrar. Así
+   * que «no heredado» es aquí «falta por heredar y ya no figura entre los elegibles del
+   * formulario» —baja del maestro, cambio de área—. A quien se quitó a mano no se le nombra:
+   * sigue faltando, pero **sí podía**, y llamarlo «no heredado» acusaría al sistema de algo
+   * que hizo la persona.
    */
-  const noHeredados: NoHeredado[] =
-    horarioCompleto && !cargandoPersonal
-      ? porHeredar.flatMap((persona) => {
-          const candidato = candidatos.find(
-            (fila) => fila.id === persona.funcionarioId,
-          );
+  const noHeredados: NoHeredado[] = !cargandoPersonal
+    ? porHeredar.flatMap((persona) => {
+        const candidato = candidatos.find(
+          (fila) => fila.id === persona.funcionarioId,
+        );
 
-          if (candidato?.elegible) return [];
+        if (candidato?.elegible) return [];
 
-          return [
-            {
-              nombre: persona.nombre,
-              motivo:
-                candidato?.motivo ??
-                "Ya no figura entre el personal elegible de este formulario.",
-            },
-          ];
-        })
-      : [];
+        return [
+          {
+            nombre: persona.nombre,
+            motivo:
+              candidato?.motivo ??
+              "Ya no figura entre el personal elegible de este formulario.",
+          },
+        ];
+      })
+    : [];
 
   /**
-   * Agrega del equipo del padre a quien **puede salir en este horario**, y nombra a quien
-   * no.
-   *
-   * Se resuelve contra `candidatos`, que el servidor calculó con el horario de este
-   * adicional: heredar no salta ninguna comprobación, solo evita volver a teclearla.
+   * Agrega del equipo del padre a quien sigue elegible (área y ausencia), y nombra a quien
+   * no. Heredar no salta ninguna comprobación: el horario de cada persona se captura abajo y
+   * el servidor valida el cruce al registrar. Cada heredado entra **sin horario** —el
+   * adicional es otra salida a otra hora— y hay que fijárselo.
    *
    * Quien ya no figure en la lista se trata como rechazado, no como ausente: puede haberse
    * dado de baja del maestro o haber cambiado de área, y callarlo dejaría un equipo
@@ -200,7 +201,7 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         (fila) => fila.id === persona.funcionarioId,
       );
 
-      // A quien no puede salir NO se le agrega. `noHeredados` lo nombra, derivado de
+      // A quien ya no es elegible NO se le agrega. `noHeredados` lo nombra, derivado de
       // este mismo criterio: los dos miran `elegible`, así que no pueden discrepar.
       if (candidato?.elegible) onAgregarPersona(candidato);
     }
@@ -208,40 +209,29 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
-   * LA HERENCIA AUTOMÁTICA, en cuanto hay horario y el servidor ha respondido quién puede.
+   * LA HERENCIA AUTOMÁTICA, en cuanto el servidor responde quién sigue elegible.
    *
-   * SE HEREDA UNA SOLA VEZ POR HORARIO, y el `ref` es lo que lo garantiza. Sin él, quitar
-   * a una persona a mano volvería a agregarla en el siguiente pintado: la pantalla
-   * pelearía contra quien la usa.
-   *
-   * Cambiar el horario **rearma** la herencia, y es lo correcto: con otro horario cambia
-   * quién puede salir, y lo que antes se rechazó ahora quizá se admita. Quien haya
-   * quitado a alguien a propósito y cambie el horario después lo verá volver; es el precio
-   * de que la lista siempre corresponda al horario vigente, y se prefiere a lo contrario,
-   * que sería un equipo que ya no cuadra con la hora sin decirlo.
+   * SE HEREDA UNA SOLA VEZ, y el `ref` es lo que lo garantiza. Sin él, quitar a una persona
+   * a mano volvería a agregarla en el siguiente pintado: la pantalla pelearía contra quien
+   * la usa. Ya no depende del horario —el adicional no tiene uno único (RN-66)—: se dispara
+   * cuando llega la lista de elegibles. El botón «Volver a heredar» es el reintento manual
+   * tras haber quitado a alguien por error.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  const horarioHeredado = useRef<string | null>(null);
-  const clave = `${horario.inicio}-${horario.fin}`;
+  const yaHeredado = useRef(false);
 
   useEffect(() => {
-    if (!horarioCompleto || cargandoPersonal) return;
-    if (horarioHeredado.current === clave) return;
+    if (cargandoPersonal || candidatos.length === 0) return;
+    if (yaHeredado.current) return;
 
-    horarioHeredado.current = clave;
+    yaHeredado.current = true;
     heredarPersonal();
-  }, [clave, horarioCompleto, cargandoPersonal, heredarPersonal]);
-
-  /** Guarda el horario para la herencia **y** lo pasa a quien pide los elegibles. */
-  const alElegirHorario = (inicio: string, fin: string) => {
-    setHorario({ inicio, fin });
-    onHorarioElegido(inicio, fin);
-  };
+  }, [cargandoPersonal, candidatos.length, heredarPersonal]);
 
   return (
-  <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-md border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+  <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
     <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="app-section-heading text-sm font-semibold uppercase tracking-[0.18em] text-primary/95">
+      <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
         Operativo adicional de {origen.identificador}
       </h2>
       {/*
@@ -251,13 +241,17 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         blanco sobre blanco.
       */}
       <span
-        className="badge badge-sm"
+        className="badge badge-sm min-w-0 max-w-full"
+        title={`${origen.formulario.numero}. ${origen.formulario.nombre}`}
         style={{
           backgroundColor: origen.formulario.colorFondo,
           color: colorDeTextoSobre(origen.formulario.colorFondo),
         }}
       >
-        {origen.formulario.numero}. {origen.formulario.nombre}
+        {/* `min-w-0` + `truncate`: ver la nota gemela en `PanelEdicionOperativo`. */}
+        <span className="min-w-0 truncate">
+          {origen.formulario.numero}. {origen.formulario.nombre}
+        </span>
       </span>
     </div>
 
@@ -287,22 +281,23 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
           <span className="text-sm">
             {origen.identificador} ya tiene conductor y placa asignados por la
             DAF. <strong>Se heredarán</strong> si ese conductor puede conducir en
-            el horario que indique; si no, el adicional quedará pendiente de la
+            el horario del adicional; si no, el adicional quedará pendiente de la
             DAF y se lo diremos al guardar.
           </span>
         </div>
       )}
 
       {/*
-        EL EQUIPO DEL ORIGINAL · 2026-08-21.
+        EL EQUIPO DEL ORIGINAL · 2026-08-21, adaptado a RN-66 (2026-09-08).
 
-        Se hereda **solo**, en cuanto hay horario. Lo que este bloque hace es decir de
-        dónde salió la gente que aparece abajo y qué pasó con quien no pudo venir: sin
-        esto, alguien que quitó a una persona vería reaparecer un equipo del que no
-        recuerda el origen.
+        Se hereda **solo**, en cuanto llega la lista de elegibles. Lo que este bloque hace es
+        decir de dónde salió la gente que aparece abajo y qué pasó con quien no pudo venir:
+        sin esto, alguien que quitó a una persona vería reaparecer un equipo del que no
+        recuerda el origen. Cada heredado entra SIN horario —hay que fijárselo abajo, porque
+        el adicional es otra salida a otra hora—.
 
-        El botón queda como REINTENTO, no como el camino normal: sirve tras cambiar el
-        horario o tras haber quitado a alguien por error.
+        El botón queda como REINTENTO, no como el camino normal: sirve tras haber quitado a
+        alguien por error.
       */}
       {origen.personal.length > 0 && !bloqueado && (
         <div className="flex flex-col gap-2 rounded-md border border-base-300 bg-base-200/40 px-4 py-3">
@@ -314,18 +309,12 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
                 {origen.personal.length === 1 ? "persona" : "personas"}
               </strong>
               : {origen.personal.map((persona) => persona.nombre).join(", ")}.
-              {horarioCompleto ? (
-                porHeredar.length === 0 ? (
-                  <> Heredadas.</>
-                ) : (
-                  <> Faltan {porHeredar.length} por heredar.</>
-                )
+              {cargandoPersonal ? (
+                <> Cargando elegibles…</>
+              ) : porHeredar.length === 0 ? (
+                <> Heredadas.</>
               ) : (
-                <>
-                  {" "}
-                  <strong>Indique primero el horario</strong> y se heredarán
-                  solas.
-                </>
+                <> Faltan {porHeredar.length} por heredar.</>
               )}
             </span>
             <button
@@ -333,17 +322,12 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
               className="btn btn-outline btn-xs"
               onClick={heredarPersonal}
               disabled={
-                guardando ||
-                cargandoPersonal ||
-                !horarioCompleto ||
-                porHeredar.length === 0
+                guardando || cargandoPersonal || porHeredar.length === 0
               }
               title={
-                !horarioCompleto
-                  ? "Indique el horario del adicional."
-                  : porHeredar.length === 0
-                    ? "Ya están todas agregadas."
-                    : "Vuelve a intentarlo con el horario indicado arriba."
+                porHeredar.length === 0
+                  ? "Ya están todas agregadas."
+                  : "Vuelve a heredar a quien falte."
               }
             >
               Volver a heredar
@@ -351,9 +335,10 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
           </div>
 
           <span className="text-xs text-base-content/70">
-            Se comprueba a cada persona con el horario de este adicional: quien no
-            pueda salir no se agrega, y se le nombra. Puede quitar a quien no vaya
-            y sumar a quien haga falta en el selector de abajo.
+            Se hereda a quien sigue elegible (área y disponibilidad). A cada persona
+            se le fija su horario abajo, y el cruce lo valida el servidor al
+            registrar. Puede quitar a quien no vaya y sumar a quien haga falta en el
+            selector de abajo.
           </span>
 
           {/*
@@ -409,13 +394,13 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         catalogos={catalogos}
         puntos={puntos}
         cargandoPuntos={cargandoPuntos}
-        onZonalElegida={onZonalElegida}
-        onHorarioElegido={alElegirHorario}
+        onZonalesElegidas={onZonalesElegidas}
         candidatos={candidatos}
         cargandoPersonal={cargandoPersonal}
         personalAgregado={personalAgregado}
         onAgregarPersona={onAgregarPersona}
         onRetirarPersona={onRetirarPersona}
+        onCambiarHorarioPersona={onCambiarHorarioPersona}
         avisoPersonal={avisoPersonal}
         /*
           Del padre, menos dos cosas:
@@ -428,7 +413,7 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
           ...comoValoresDeFormulario(origen),
           horaInicio: "",
           horaFin: "",
-          observaciones: "",
+          observaciones: [],
         }}
         textoAccion="Registrar adicional"
         onCancelar={onCancelar}

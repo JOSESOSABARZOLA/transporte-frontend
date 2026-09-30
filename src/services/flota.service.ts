@@ -31,13 +31,19 @@
 import httpClient from "../api/httpClient";
 import type {
   ActualizarConductor,
+  ActualizarUbicacion,
   ActualizarVehiculo,
   BajaDeFlota,
   ConductorCreado,
   CrearConductor,
+  CrearUbicacion,
   CrearVehiculo,
 } from "../interfaces/Flota";
-import type { Conductor, Vehiculo } from "../interfaces/Transporte";
+import type {
+  Conductor,
+  UbicacionFlota,
+  Vehiculo,
+} from "../interfaces/Transporte";
 
 // ─────────────────────────── Conductores ───────────────────────────
 
@@ -141,8 +147,45 @@ const desactivarVehiculo = async (
   return data;
 };
 
+// ─────────── Ubicaciones de reposo de la flota · RN-DAF-03 ───────────
+
+const listarUbicaciones = async (
+  incluirInactivas = false,
+): Promise<UbicacionFlota[]> => {
+  const { data } = await httpClient.get<UbicacionFlota[]>(
+    "/administracion/ubicaciones-flota",
+    incluirInactivas ? { params: { incluirInactivas: "true" } } : undefined,
+  );
+  return data;
+};
+
+const crearUbicacion = async (
+  ubicacion: CrearUbicacion,
+): Promise<UbicacionFlota> => {
+  const { data } = await httpClient.post<UbicacionFlota>(
+    "/administracion/ubicaciones-flota",
+    ubicacion,
+  );
+  return data;
+};
+
+/** La baja es LOGICA: una zonal usada en un destino ya declarado no se puede borrar. */
+const actualizarUbicacion = async (
+  id: number,
+  cambios: ActualizarUbicacion,
+): Promise<UbicacionFlota> => {
+  const { data } = await httpClient.patch<UbicacionFlota>(
+    `/administracion/ubicaciones-flota/${id}`,
+    cambios,
+  );
+  return data;
+};
+
 export const FlotaService = {
   listarConductores,
+  listarUbicaciones,
+  crearUbicacion,
+  actualizarUbicacion,
   crearConductor,
   actualizarConductor,
   desactivarConductor,

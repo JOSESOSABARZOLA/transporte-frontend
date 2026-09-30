@@ -19,9 +19,15 @@
 import type { FC } from "react";
 
 import type { RolAuth } from "../../interfaces/RolAuth.ts";
-import { NOMBRE_ROL } from "../../utils/parametro.util.ts";
+import type { RolDepartamental } from "../../config/env.ts";
 
 type TablaRolesAuthProps = {
+  /**
+   * Nombre legible de un rol. **Llega como propiedad y no se consulta aquí**: esta tabla
+   * es presentacional, y quien habla con el servidor es la página. Sale del catálogo de
+   * , no de un mapa escrito en el navegador.
+   */
+  nombreDe: (rol: RolDepartamental) => string;
   roles: RolAuth[];
   cargando: boolean;
   procesando: boolean;
@@ -35,9 +41,10 @@ const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
   procesando,
   onEditar,
   onDesactivar,
+  nombreDe,
 }) => (
   <div className="overflow-x-auto">
-    <table className="table table-sm">
+    <table className="table table-sm table-zebra">
       <thead>
         <tr className="text-xs uppercase tracking-wider text-base-content/70">
           <th scope="col">Id en Auth</th>
@@ -63,14 +70,14 @@ const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
           roles.map((rol) => (
             <tr
               key={rol.idAuth}
-              className={rol.activo ? "hover:bg-info/10" : "opacity-60"}
+              className={rol.activo ? "hover:bg-primary/5" : "opacity-60"}
             >
               <td className="px-3 py-2 align-top font-mono text-sm">
                 {rol.idAuth}
               </td>
               <td className="px-3 py-2 align-top">{rol.nombreAuth}</td>
               <td className="px-3 py-2 align-top font-medium">
-                {NOMBRE_ROL[rol.rol]}
+                {nombreDe(rol.rol)}
               </td>
 
               <td className="px-3 py-2 align-top">

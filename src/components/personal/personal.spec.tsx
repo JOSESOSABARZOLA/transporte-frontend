@@ -17,12 +17,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import ModalDirectorioAuth from "./ModalDirectorioAuth.tsx";
-import ModalFuncionario from "./ModalFuncionario.tsx";
 import TablaPersonal from "./TablaPersonal.tsx";
 import {
   partirNombre,
-  type FilaDirectorio,
 } from "../../interfaces/DirectorioAuth.ts";
 import { esquemaAusencia } from "../../config/validationSchemas.ts";
 import type { Disponibilidad, Funcionario } from "../../interfaces/Personal.ts";
@@ -41,6 +38,7 @@ const funcionario = (parcial: Partial<Funcionario> = {}): Funcionario => ({
   apellidos: "YUNDA",
   nombres: "JESSICA",
   telefono: "0987150000",
+  correo: "jessica.yunda@quito.gob.ec",
   cargo: "Agente de control metropolitano",
   area: "GENERAL",
   tipoContrato: "OCASIONAL",
@@ -62,9 +60,12 @@ const ausencia = (parcial: Partial<Disponibilidad> = {}): Disponibilidad => ({
 const propiedades = {
   hoy: HOY,
   seleccionadoId: null,
+  zonales: [{ id: 1, codigo: "CAL", nombre: "Zonal Calderón" }],
   onSeleccionar: vi.fn(),
   onEditar: vi.fn(),
   onDarDeBaja: vi.fn(),
+  // El banco por omisión administra: es lo que comprobaban las pruebas de M-27.
+  puedeAdministrar: true,
   mensajeVacio: "Sin registros",
 };
 
@@ -127,8 +128,8 @@ describe("caso 3 · la ausencia vigente se lee, no solo se ve", () => {
   });
 });
 
-describe("caso 4 · el funcionario inactivo se atenúa Y se rotula", () => {
-  it("la fila lleva `opacity-60` y además el distintivo «Inactivo»", () => {
+describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacidad", () => {
+  it("la fila NO se atenúa; el estado lo dice el distintivo «Inactivo» (con fondo)", () => {
     render(
       <TablaPersonal
         {...propiedades}
@@ -137,27 +138,51 @@ describe("caso 4 · el funcionario inactivo se atenúa Y se rotula", () => {
       />,
     );
 
-    const fila = screen.getAllByRole("row")[1];
+    const fila = screen.getAllByRole("row")[2];
 
-    expect(fila.className).toContain("opacity-60");
+    // Ya no se atenúa la fila (era una señal solo visual); el estado va en el chip.
+    expect(fila.className).not.toContain("opacity-60");
     expect(within(fila).getByText("Inactivo")).toBeInTheDocument();
   });
 
-  it("no se puede volver a dar de baja a quien ya lo está, y se dice por qué", () => {
+  /**
+   * ANTES ESTE BOTÓN SE DESHABILITABA Y LA FICHA INACTIVA QUEDABA ATASCADA. Desde el
+   * reingreso, la fila desactivada ofrece «Reactivar» en su lugar, no «Dar de baja».
+   */
+  it("la ficha inactiva ofrece «Reactivar», no «Dar de baja» (en el menú «⋯»)", async () => {
     render(
       <TablaPersonal
         {...propiedades}
         personal={[funcionario({ activo: false })]}
         ausencias={{ 1: [] }}
+        onReactivar={vi.fn()}
       />,
     );
 
-    const boton = screen.getByRole("button", { name: "Dar de baja" });
+    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
 
-    expect(boton).toBeDisabled();
-    expect(boton).toHaveAttribute(
-      "title",
-      "Esta ficha ya está fuera del maestro.",
+    expect(
+      screen.getByRole("button", { name: "Reactivar" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dar de baja" })).toBeNull();
+  });
+
+  it("reactivar entrega la ficha, para readmitirla por su identificador", async () => {
+    const reactivar = vi.fn();
+
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ activo: false })]}
+        ausencias={{ 1: [] }}
+        onReactivar={reactivar}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Reactivar" }));
+    expect(reactivar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, activo: false }),
     );
   });
 
@@ -174,7 +199,7 @@ describe("caso 4 · el funcionario inactivo se atenúa Y se rotula", () => {
     expect(screen.getByText("0987150000")).toBeInTheDocument();
   });
 
-  it("cada fila ofrece editar, ausencias y baja", async () => {
+  it("cada fila ofrece editar (visible), y ausencias y baja en el menú «⋯»", async () => {
     const editar = vi.fn();
 
     render(
@@ -186,8 +211,18 @@ describe("caso 4 · el funcionario inactivo se atenúa Y se rotula", () => {
       />,
     );
 
+    // «Editar» está visible en la fila.
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
     expect(editar).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+
+    // Ausencias y Dar de baja viven en el menú «⋯».
+    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
+    expect(
+      screen.getByRole("button", { name: "Ausencias" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Dar de baja" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -340,198 +375,6 @@ describe("el esquema de la ausencia", () => {
  * sin que nada falle.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-describe("el directorio de Auth como primer paso del alta", () => {
-  const fila = (parcial: Partial<FilaDirectorio> = {}): FilaDirectorio => ({
-    authId: 501,
-    cedula: "1712345678",
-    nombre: "PEREZ LOPEZ JUAN CARLOS",
-    usuario: "jcperez",
-    correo: "jcperez@amc.gob.ec",
-    dependencia: "DMIP",
-    roles: ["(Cuadro de Colores) Administrador"],
-    inspector: null,
-    ficha: null,
-    ...parcial,
-  });
-
-  const CON_FICHA = {
-    id: 7,
-    apellidos: "PEREZ LOPEZ",
-    nombres: "JUAN CARLOS",
-    area: "GENERAL",
-    tipoContrato: "NOMBRAMIENTO",
-    activo: true,
-  };
-
-  const delDirectorio = {
-    abierto: true,
-    disponible: true,
-    motivo: null,
-    cargando: false,
-    procesando: false,
-    onElegir: vi.fn(),
-    onRegistrarAMano: vi.fn(),
-    onActualizar: vi.fn(),
-    onCerrar: vi.fn(),
-  };
-
-  /** La ventana nace filtrando a quien no tiene ficha: hay que quitarlo para ver al resto. */
-  const verATodos = async () =>
-    userEvent.click(screen.getByLabelText("Solo quienes no tienen ficha"));
-
-  it("«Sin ficha» se escribe con palabras, y la fila ofrece crearla", async () => {
-    const elegir = vi.fn();
-
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[fila()]}
-        onElegir={elegir}
-      />,
-    );
-
-    expect(
-      screen.getByText("Sin ficha: no puede ser convocado"),
-    ).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Crear ficha" }));
-
-    expect(elegir).toHaveBeenCalledWith(
-      expect.objectContaining({ cedula: "1712345678" }),
-    );
-  });
-
-  it("quien ya tiene ficha no ofrece crear otra", async () => {
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[fila({ ficha: CON_FICHA })]}
-      />,
-    );
-
-    await verATodos();
-
-    expect(screen.getByText("Con ficha")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Crear ficha" })).toBeNull();
-  });
-
-  it("una ficha dada de baja no se confunde con una vigente, y se dice", async () => {
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[fila({ ficha: { ...CON_FICHA, activo: false } })]}
-      />,
-    );
-
-    await verATodos();
-
-    expect(screen.getByText("Ficha dada de baja")).toBeInTheDocument();
-    expect(screen.queryByText("Con ficha")).toBeNull();
-  });
-
-  it("sin cédula en Auth no se puede crear la ficha, y se explica por qué", () => {
-    // La cédula es la llave con la que se enlazan cuenta y ficha: sin ella el alta se
-    // haría a ciegas y quedarían dos personas donde hay una.
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[fila({ cedula: "" })]}
-      />,
-    );
-
-    const boton = screen.getByRole("button", { name: "Crear ficha" });
-
-    expect(boton).toBeDisabled();
-    expect(boton.getAttribute("title")).toContain("es la llave");
-    expect(screen.getByText("Sin cédula en Auth")).toBeInTheDocument();
-  });
-
-  it("el tipo de inspector no se muestra como una sigla suelta", () => {
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[
-          fila({
-            inspector: { tipo: "IT", zonal: "Zonal Norte", codigo: "IT-014" },
-          }),
-        ]}
-      />,
-    );
-
-    expect(screen.getByText(/Inspector Técnico/)).toBeInTheDocument();
-    expect(screen.queryByText("IT")).toBeNull();
-  });
-
-  it("nace filtrando a quien no tiene ficha: es a lo que se viene", () => {
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[
-          fila(),
-          fila({ authId: 502, nombre: "TORRES ANA", ficha: CON_FICHA }),
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("PEREZ LOPEZ JUAN CARLOS")).toBeInTheDocument();
-    expect(screen.queryByText("TORRES ANA")).toBeNull();
-  });
-
-  /**
-   * ES LA REGLA DE `CLAUDE.md` §7 HECHA BOTÓN. Si esta prueba cae, el alta pasó a
-   * depender de que Auth conteste, y con ella el maestro entero.
-   */
-  it("con Auth caído lo dice, y la salida manual sigue estando", async () => {
-    const aMano = vi.fn();
-
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[]}
-        disponible={false}
-        motivo="Auth central no respondió. Vuelva a intentarlo en unos minutos."
-        onRegistrarAMano={aMano}
-      />,
-    );
-
-    // El texto es del servidor y se muestra tal cual (regla 7).
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Auth central no respondió",
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Registrar a mano" }),
-    );
-
-    expect(aMano).toHaveBeenCalled();
-  });
-
-  it("la salida manual también está cuando el directorio sí responde", () => {
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        personas={[fila()]}
-      />,
-    );
-
-    expect(
-      screen.getByRole("button", { name: "Registrar a mano" }),
-    ).toBeEnabled();
-  });
-
-  it("cerrada no se monta", () => {
-    render(
-      <ModalDirectorioAuth
-        {...delDirectorio}
-        abierto={false}
-        personas={[fila()]}
-      />,
-    );
-
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-});
-
 describe("partirNombre · Auth guarda el nombre en un solo campo", () => {
   it("las dos primeras palabras son los apellidos", () => {
     expect(partirNombre("PEREZ LOPEZ JUAN CARLOS")).toEqual({
@@ -557,96 +400,129 @@ describe("partirNombre · Auth guarda el nombre en un solo campo", () => {
   });
 });
 
-describe("el alta que nace del directorio", () => {
-  const delModal = {
-    abierto: true,
-    funcionario: null,
-    guardando: false,
-    aviso: null,
-    onGuardar: vi.fn(),
-    onCancelar: vi.fn(),
-  };
 
-  const PRECARGA = {
-    cedula: "1712345678",
-    apellidos: "PEREZ LOPEZ",
-    nombres: "JUAN CARLOS",
-  };
-
-  it("llega precargado con cédula, apellidos y nombres, y son editables", async () => {
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * DOS PERFILES EN LA MISMA TABLA. 2026-08-27.
+ *
+ * P-07 dejó de ser exclusiva del administrador: los tres roles departamentales entran
+ * desde la bandeja del Cuadro a consultar y a anotar ausencias de su gente.
+ *
+ * LO QUE NO PUEDEN HACER NO SE PINTA, y no se pinta apagado. Un botón deshabilitado
+ * insinúa que en otro momento serviría, y a ese perfil no le servirá nunca: el servidor
+ * cierra el alta, la edición y la baja con su propio `@Roles` de método.
+ *
+ * Y conviene no confundirse: **esto no autoriza nada**. Es presentación. Quien decide es
+ * el servidor, y tiene sus propias pruebas.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("la tabla del maestro distingue quién administra", () => {
+  it("quien administra ve editar (visible) y ausencias/dar de baja en el menú «⋯»", async () => {
     render(
-      <ModalFuncionario
-        {...delModal}
-        precarga={PRECARGA}
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        ausencias={{ 1: [] }}
+        puedeAdministrar
       />,
     );
 
-    const cedula = screen.getByDisplayValue("1712345678");
-    const apellidos = screen.getByDisplayValue("PEREZ LOPEZ");
+    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
 
-    expect(screen.getByDisplayValue("JUAN CARLOS")).toBeInTheDocument();
-    expect(cedula).toBeEnabled();
-    expect(apellidos).toBeEnabled();
-
-    await userEvent.clear(apellidos);
-    await userEvent.type(apellidos, "DE LA TORRE");
-
-    expect(screen.getByDisplayValue("DE LA TORRE")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
+    expect(
+      screen.getByRole("button", { name: "Dar de baja" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ausencias" }),
+    ).toBeInTheDocument();
   });
 
   /**
-   * SE ANUNCIA CON `role="status"`, NO CON `role="alert"`, y la diferencia importa.
-   *
-   * `alert` es asertivo: interrumpe lo que el lector de pantalla esté diciendo. Está para
-   * los errores, no para un texto descriptivo que aparece solo con abrir el modal. Esta
-   * prueba nació afirmando `alert` —copiando el aviso de error que tiene al lado— y con
-   * ello dejaba fijado el defecto. Ver la regla de accesibilidad de `pantallas-cuadro`.
+   * ES LA QUE DISCRIMINA. La anterior pasaría con una tabla que ignorase la propiedad;
+   * esta exige que las dos escrituras del maestro desaparezcan y que la de ausencias
+   * **se quede**, que es justo lo que ese perfil sí puede hacer.
    */
-  it("se avisa de que el nombre viene partido y de qué falta por poner", () => {
+  it("quien solo consulta no ve editar ni dar de baja, pero sí ausencias (en el menú)", async () => {
     render(
-      <ModalFuncionario
-        {...delModal}
-        precarga={PRECARGA}
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        ausencias={{ 1: [] }}
+        puedeAdministrar={false}
       />,
     );
 
-    const aviso = screen.getByRole("status");
+    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
 
-    expect(aviso.textContent).toContain("Revise cómo quedaron partidos");
-    expect(aviso.textContent).toContain("no los conoce");
-    // Y no grita: sin error del servidor no hay nada que interrumpa.
-    expect(screen.queryByRole("alert")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
+    expect(screen.queryByRole("button", { name: "Dar de baja" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Ausencias" }),
+    ).toBeInTheDocument();
   });
 
-  it("el área y el contrato NO vienen de Auth: Auth no los sabe", () => {
-    // Salen en su valor neutro, el mismo de un alta desde cero. RN-26 depende del
-    // contrato, y proponerlo desde un dato que no existe sería inventarlo.
+  it("y no los deja apagados: no están en el documento", () => {
+    // Se afirma sobre la ausencia y no sobre `toBeDisabled`, porque son dos diseños
+    // distintos y el elegido fue ocultar.
     const { container } = render(
-      <ModalFuncionario
-        {...delModal}
-        precarga={PRECARGA}
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        ausencias={{ 1: [] }}
+        puedeAdministrar={false}
       />,
     );
 
-    const area = container.querySelector<HTMLSelectElement>('[name="area"]');
-    const contrato = container.querySelector<HTMLSelectElement>(
-      '[name="tipoContrato"]',
+    expect(container.querySelectorAll("button[disabled]")).toHaveLength(0);
+  });
+});
+
+describe("la tabla muestra la zona que gestiona la persona", () => {
+  it("pinta el NOMBRE de la zonal de la ficha, no su id", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ zonalId: 1, area: "OPERATIVOS" })]}
+        ausencias={{ 1: [] }}
+      />,
     );
 
-    expect(area?.value).toBe("GENERAL");
-    expect(contrato?.value).toBe("NOMBRAMIENTO");
-    expect(Object.keys(PRECARGA)).toEqual(["cedula", "apellidos", "nombres"]);
+    expect(
+      screen.getByRole("columnheader", { name: "Zonal" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Zonal Calderón")).toBeInTheDocument();
   });
 
-  it("sin precarga el formulario sigue en blanco y no aparece el aviso", () => {
+  it("sin zonal (no es DMIP), la columna existe y la persona no muestra ninguna", () => {
     render(
-      <ModalFuncionario
-        {...delModal}
-        precarga={null}
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ zonalId: null })]}
+        ausencias={{ 1: [] }}
       />,
     );
 
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByDisplayValue("PEREZ LOPEZ")).toBeNull();
+    expect(
+      screen.getByRole("columnheader", { name: "Zonal" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Zonal Calderón")).toBeNull();
+  });
+});
+
+describe("la fila recién guardada se resalta", () => {
+  it("la ficha de `resaltadoId` lleva el resalte, distinto de la selección", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        ausencias={{ 1: [] }}
+        resaltadoId={1}
+      />,
+    );
+
+    // Con 2 filas de encabezado, la fila de datos es la tercera.
+    const fila = screen.getAllByRole("row")[2];
+    expect(fila.className).toContain("bg-success/10");
   });
 });

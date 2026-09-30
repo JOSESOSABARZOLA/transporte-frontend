@@ -35,7 +35,7 @@ const ModalExito = ({ abierto, mensaje, titulo = "¡Listo!", textoBoton = "Acept
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h3 className="text-lg font-bold text-base-content">{titulo}</h3>
+        <h3 className="text-lg font-semibold text-base-content">{titulo}</h3>
         <p className="mt-1 text-sm text-base-content/70">{mensaje}</p>
         {/*
           SIN `text-white`, retirado el 2026-08-26. `--color-success` es `#6ed0bd` —un

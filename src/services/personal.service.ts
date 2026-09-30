@@ -17,6 +17,7 @@
 import httpClient from "../api/httpClient";
 import type {
   ActualizarFuncionario,
+  BajaFuncionario,
   CrearFuncionario,
   Disponibilidad,
   Funcionario,
@@ -24,6 +25,8 @@ import type {
   RegistrarAusencia,
 } from "../interfaces/Personal";
 import type { RespuestaDirectorio } from "../interfaces/DirectorioAuth";
+import type { AreaPersonal } from "../interfaces/Formulario.ts";
+import type { RolDepartamental } from "../config/env.ts";
 
 export interface ConsultaElegibles {
   formulario: string;
@@ -49,15 +52,65 @@ const consultarElegibles = async (
 };
 
 /**
- * `GET /administracion/personal`. Solo el ADMINISTRADOR.
+ * `GET /administracion/personal`. El Administrador y los tres roles departamentales.
  *
- * `incluirInactivos` es del servidor porque cambia **qué filas existen**, no cómo se ven:
- * P-07 pide siempre las inactivas para mostrarlas atenuadas, que es el caso 4 del plan.
+ * **NO SE LE MANDA `direccion`, Y ES DELIBERADO.** Desde PER-09 el servidor acota el
+ * maestro a la dirección de quien pregunta, derivada de su sesión. Enviarla desde aquí no
+ * añadiría nada —el servidor descarta el parámetro a los roles departamentales— y daría
+ * a entender que la restricción vive en el navegador, que es justo lo que se corrigió: un
+ * filtro de cliente no restringe, porque la respuesta de red ya trae lo que oculta.
+ *
+ * `incluirInactivos` sí es del servidor porque cambia **qué filas existen**, no cómo se
+ * ven: P-07 pide siempre las inactivas para mostrarlas atenuadas, que es el caso 4 del plan.
  */
 const listar = async (incluirInactivos = false): Promise<Funcionario[]> => {
   const { data } = await httpClient.get<Funcionario[]>(
     "/administracion/personal",
     { params: incluirInactivos ? { incluirInactivos: "true" } : undefined },
+  );
+  return data;
+};
+
+/**
+ * `GET /administracion/personal/direcciones`. Las que quien pregunta puede gestionar.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * NO SE DEDUCE EN EL NAVEGADOR, Y ESA ES LA DECISION. 2026-09-01.
+ *
+ * P-07 lo deducia con `rolCodes.includes(direccion)`, que acierta para un rol
+ * departamental —el rol **es** la direccion— y devuelve **vacio** para un administrador,
+ * que no es ninguna: administra unas cuantas. El reparto vive en `t_rol_direccion`.
+ *
+ * Copiarlo aqui crearia una segunda fuente que se separaria de la primera el dia que se
+ * reorganice un departamento, y la pantalla ofreceria direcciones que el servidor
+ * rechaza con 403 al guardar. Es el mismo error que el filtro de cliente que PER-09
+ * corrigio: lo que decide tiene que estar donde se decide.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+const direccionesQueGestiona = async (): Promise<RolDepartamental[]> => {
+  const { data } = await httpClient.get<RolDepartamental[]>(
+    "/administracion/personal/direcciones",
+  );
+  return data;
+};
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * LAS ÁREAS QUE ESTA PERSONA PUEDE DAR DE ALTA. 2026-09-01, tarde.
+ *
+ * Es lo que acota el desplegable «Área» del formulario de ficha. El negocio repartió el
+ * maestro así: el administrador de la DMIP crea Unidad de Operativos, Inspector General e
+ * Inspector Técnico; Personal de Instrucción es solo del DMIT.
+ *
+ * SE PREGUNTA, NO SE DEDUCE, por el mismo motivo que las direcciones: la correspondencia
+ * área → dirección y el reparto viven los dos en el servidor. Deducirlo aquí ofrecería
+ * áreas que el servidor rechaza con 403 al guardar, y ése es el defecto que este módulo
+ * lleva evitando desde que la administración se repartió.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+const areasQueGestiona = async (): Promise<AreaPersonal[]> => {
+  const { data } = await httpClient.get<AreaPersonal[]>(
+    "/administracion/personal/areas",
   );
   return data;
 };
@@ -96,18 +149,32 @@ const actualizar = async (
 };
 
 /**
- * `DELETE /administracion/personal/:id`. La baja es **lógica**.
- *
- * La respuesta trae cuántos operativos históricos conserva la persona, para que el
+ * `DELETE /administracion/personal/:id`. La baja es **lógica** y desde 2026-09-30 exige un MOTIVO
+ * (código + detalle solo con «OTRO»), que viaja en el CUERPO del `DELETE` (`data`, como admite
+ * axios). La respuesta trae cuántos operativos históricos conserva la persona, para que el
  * administrador vea que no está borrando nada.
  */
 const desactivar = async (
   id: number,
+  baja: BajaFuncionario,
 ): Promise<{ mensaje: string; operativosHistoricos: number }> => {
   const { data } = await httpClient.delete<{
     mensaje: string;
     operativosHistoricos: number;
-  }>(`/administracion/personal/${id}`);
+  }>(`/administracion/personal/${id}`, { data: baja });
+  return data;
+};
+
+/**
+ * `POST /administracion/personal/:id/reactivar`. Reingreso: la ficha vuelve al maestro.
+ *
+ * Es la vuelta de la baja. No borra ni pide confirmación —es reversible—; el servidor
+ * comprueba que quien reactiva alcanza la dirección de la ficha, igual que en la baja.
+ */
+const reactivar = async (id: number): Promise<Funcionario> => {
+  const { data } = await httpClient.post<Funcionario>(
+    `/administracion/personal/${id}/reactivar`,
+  );
   return data;
 };
 
@@ -174,10 +241,13 @@ export const PersonalService = {
   consultarElegibles,
   consultarDirectorio,
   listar,
+  direccionesQueGestiona,
+  areasQueGestiona,
   obtener,
   crear,
   actualizar,
   desactivar,
+  reactivar,
   listarAusencias,
   registrarAusencia,
   retirarAusencia,
