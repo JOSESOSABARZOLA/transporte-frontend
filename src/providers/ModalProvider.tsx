@@ -8,7 +8,7 @@
  * Fecha: 2026-08-04
  */
 
-import { useState, useCallback, type FC, type ReactNode } from "react";
+import { useState, useCallback, useMemo, type FC, type ReactNode } from "react";
 import type {
   ModalType,
   ModalCallbacks,
@@ -72,16 +72,14 @@ export const ModalProvider: FC<{ children: ReactNode }> = ({ children }) => {
     [modal.callbacks],
   );
 
+  // Valor memorizado (2026-10-05): sin esto, cada render entregaba un objeto nuevo a los consumidores.
+  const valor = useMemo(
+    () => ({ modal, openModal, closeModal, triggerSuccess, triggerError }),
+    [modal, openModal, closeModal, triggerSuccess, triggerError],
+  );
+
   return (
-    <ModalContext.Provider
-      value={{
-        modal,
-        openModal,
-        closeModal,
-        triggerSuccess,
-        triggerError,
-      }}
-    >
+    <ModalContext.Provider value={valor}>
       {children}
     </ModalContext.Provider>
   );

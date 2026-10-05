@@ -46,12 +46,13 @@ export interface Funcionario {
   nombres: string;
   telefono: string | null;
   /**
-   * Correo institucional. Añadido el 2026-09-01. Opcional, como el teléfono.
+   * Correo institucional (2026-09-01) y personal (2026-10-01). Opcionales, como el teléfono.
    *
-   * NO ESTÁ EN `PersonaElegible`, y es deliberado: quien arma el cuadro elige personas,
+   * NO ESTÁN EN `PersonaElegible`, y es deliberado: quien arma el cuadro elige personas,
    * no las contacta. Mismo criterio que el teléfono, RN-34.
    */
-  correo: string | null;
+  correoInstitucional: string | null;
+  correoPersonal: string | null;
   cargo: string | null;
   area: AreaPersonal;
   tipoContrato: TipoContrato;
@@ -165,7 +166,8 @@ export interface CrearFuncionario {
   apellidos: string;
   nombres: string;
   telefono?: string;
-  correo?: string;
+  correoInstitucional?: string;
+  correoPersonal?: string;
   cargo?: string;
   area: AreaPersonal;
   tipoContrato: TipoContrato;

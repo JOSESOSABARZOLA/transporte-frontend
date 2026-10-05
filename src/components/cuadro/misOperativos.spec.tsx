@@ -13,7 +13,7 @@
  * del vacío por falta de datos son reglas, y esas sí se afirman aquí.
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   afterEach,
@@ -27,6 +27,7 @@ import {
 import MisOperativosPage from "../../pages/MisOperativosPage.tsx";
 import TablaOperativos from "./TablaOperativos.tsx";
 import { OperativoService } from "../../services/operativo.service.ts";
+import { PersonalService } from "../../services/personal.service.ts";
 
 vi.mock("../../services/operativo.service.ts", () => ({
   OperativoService: {
@@ -35,6 +36,10 @@ vi.mock("../../services/operativo.service.ts", () => ({
     retirar: vi.fn(),
     crearAdicional: vi.fn(),
     obtener: vi.fn(),
+    asignarPersonal: vi.fn(),
+    retirarPersonal: vi.fn(),
+    actualizarTurnoPersonal: vi.fn(),
+    editar: vi.fn(),
   },
 }));
 vi.mock("../../services/personal.service.ts", () => ({
@@ -468,5 +473,130 @@ describe("P-02 abre en la jornada que se está armando", () => {
         expect.objectContaining({ fecha: "2027-01-01" }),
       ),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BUG #9 · LA FILA REFLEJA EL PERSONAL TRAS ASIGNAR · 2026-09-30
+
+   Una mutación de personal (`asignarPersonal`/`retirarPersonal`) devuelve el operativo
+   COMPLETO —con su personal al día—, mientras que el endpoint de LISTA puede devolverlo sin
+   ese detalle. La fila seguía diciendo «todavía no tiene personal asignado» aun con gente
+   asignada, porque se repintaba con la versión delgada de la lista. `empalmarEnLaLista`
+   reemplaza en la lista, por su `id`, ese operativo por el completo que trae la mutación.
+
+   Se afirma sobre la DECISIÓN —la fila deja de mentir tras asignar—, no sobre el maquetado.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+describe("BUG #9 · la fila de la tabla refleja el personal tras asignar", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("al asignar en el cajón, la fila deja de decir «sin personal» y muestra al asignado", async () => {
+    // La LISTA trae el operativo sin personal y con la alerta ALV-01, como el endpoint de lista.
+    // `creadoPorRol` coincide con el rol del usuario de prueba: así la fila es PROPIA y ofrece
+    // «Editar» (accesoAlOperativo), no «Agregar Personal».
+    // Con una institución, para que los GENERALES pasen la validación al «Guardar cambios»
+    // (`institucionesIds` exige al menos una).
+    const instituciones = [{ id: 7, sigla: "AMC", nombre: "AMC" }];
+    const sinPersonal = operativo({
+      creadoPorRol: "DMIP_OPERATIVOS",
+      personal: [],
+      instituciones,
+      alertas: [
+        {
+          codigo: "ALV-01",
+          campo: "personal",
+          mensaje: "Este operativo todavía no tiene personal asignado.",
+          critica: false,
+        },
+      ],
+    });
+    // La MUTACIÓN devuelve el operativo COMPLETO: con su personal y ya sin la alerta.
+    const conPersonal = operativo({
+      creadoPorRol: "DMIP_OPERATIVOS",
+      instituciones,
+      personal: [
+        {
+          funcionarioId: 7,
+          nombre: "REDROVAN JUAN",
+          area: "OPERATIVOS",
+          telefono: null,
+          esResponsable: false,
+          asignadoPorRol: "DMIP_OPERATIVOS",
+          horaInicio: "09:00",
+          horaFin: "18:00",
+        },
+      ],
+      alertas: [],
+    });
+
+    const meta = { total: 1, pagina: 1, tamanio: 200, totalPaginas: 1 };
+    // La LISTA arranca sin personal; tras guardar, la recarga la trae con el asignado.
+    vi.mocked(OperativoService.consultar)
+      .mockResolvedValueOnce({ datos: [sinPersonal], meta })
+      .mockResolvedValue({ datos: [conPersonal], meta });
+    vi.mocked(OperativoService.asignarPersonal).mockResolvedValue(conPersonal);
+    vi.mocked(OperativoService.actualizarTurnoPersonal).mockResolvedValue(
+      conPersonal,
+    );
+    vi.mocked(OperativoService.editar).mockResolvedValue(conPersonal);
+    vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([
+      {
+        id: 7,
+        apellidos: "REDROVAN",
+        nombres: "JUAN",
+        area: "OPERATIVOS",
+        cargo: null,
+        elegible: true,
+        motivo: null,
+      },
+    ]);
+
+    render(<MisOperativosPage />);
+
+    // La fila arranca diciendo que no tiene a nadie.
+    const editar = await screen.findByRole("button", { name: "Editar" });
+    const tabla = () => screen.getByRole("table");
+    expect(
+      within(tabla()).getByText(
+        "Este operativo todavía no tiene personal asignado.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(tabla()).queryByText(/REDROVAN JUAN/)).toBeNull();
+
+    // Se abre el cajón de edición y se asigna al candidato.
+    await userEvent.click(editar);
+    const candidato = await screen.findByRole("button", { name: "+ Asignar" });
+    await userEvent.click(candidato);
+
+    // DIFERIDO (2026-10-01): «+ Asignar» NO llama al servidor ni toca la fila de la tabla todavía.
+    // El cambio se acumula en el borrador y se aplica al pulsar «Guardar cambios».
+    expect(OperativoService.asignarPersonal).not.toHaveBeenCalled();
+    expect(within(tabla()).queryByText(/REDROVAN JUAN/)).toBeNull();
+    expect(
+      within(tabla()).getByText(
+        "Este operativo todavía no tiene personal asignado.",
+      ),
+    ).toBeInTheDocument();
+
+    // Al «Guardar cambios» se aplica la asignación y la fila deja de mentir.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar cambios" }),
+    );
+
+    await waitFor(() =>
+      expect(OperativoService.asignarPersonal).toHaveBeenCalledWith(1, {
+        funcionarioId: 7,
+      }),
+    );
+    await waitFor(() =>
+      expect(within(tabla()).getByText(/REDROVAN JUAN/)).toBeInTheDocument(),
+    );
+    expect(
+      within(tabla()).queryByText(
+        "Este operativo todavía no tiene personal asignado.",
+      ),
+    ).toBeNull();
   });
 });

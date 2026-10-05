@@ -219,7 +219,9 @@ describe("el alta empieza en el directorio de Auth", () => {
     // Abrir la ventana no cuesta otra ida a Auth. «Actualizar» es lo que vuelve a pedir.
     expect(consultarDirectorio).toHaveBeenCalledTimes(1);
 
-    await userEvent.click(screen.getByRole("button", { name: "Actualizar" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Actualizar el directorio" }),
+    );
     await waitFor(() => expect(consultarDirectorio).toHaveBeenCalledTimes(2));
   });
 });

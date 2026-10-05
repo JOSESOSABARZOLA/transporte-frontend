@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RolDepartamental } from "./env.ts";
 import { shellNavigationItems, type NavigationItem } from "./navigation.ts";
-import { pantallas } from "./routes.tsx";
+import { pantallas, ROLES_REQUERIDOS } from "./routes.tsx";
 import { permisosDeRoles } from "../pruebas/permisos.ts";
 
 /** El super-administrador general: abre todo lo de administración, nada más. */
@@ -117,5 +117,29 @@ describe("ruta y menú declaran los mismos permisos", () => {
   it.each(CASOS)("$ruta", ({ ruta, permisos }) => {
     expect(permisosDeRuta(ruta).sort()).toEqual([...permisos].sort());
     expect(permisosDeMenu(ruta).sort()).toEqual([...permisos].sort());
+  });
+});
+
+describe("roles exigidos además del permiso (excepción a la regla 4)", () => {
+  /** El `requiredRoles` que el menú declara para una ruta. */
+  const rolesDeMenu = (ruta: string): string[] => {
+    let encontrado: string[] = [];
+    const recorrer = (entradas: NavigationItem[]): void => {
+      for (const entrada of entradas) {
+        if (entrada.path === ruta) encontrado = [...(entrada.requiredRoles ?? [])];
+        if (entrada.children) recorrer(entrada.children);
+      }
+    };
+    recorrer(shellNavigationItems);
+    return encontrado;
+  };
+
+  it("ruta y menú exigen los MISMOS roles (Órdenes de servicio → DIRECTOR)", () => {
+    for (const pantalla of pantallas) {
+      expect(rolesDeMenu(pantalla.path)).toEqual([
+        ...(ROLES_REQUERIDOS[pantalla.path] ?? []),
+      ]);
+    }
+    expect(ROLES_REQUERIDOS["cuadro/ordenes"]).toEqual(["DIRECTOR"]);
   });
 });

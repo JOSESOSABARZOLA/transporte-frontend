@@ -45,11 +45,25 @@ const CapturadorNotas: FC<{
   /** Notas ya escritas (bitácora). Solo lectura; solo en corrección. */
   notasExistentes?: ObservacionOperativo[];
   deshabilitado?: boolean;
+  /**
+   * EN EL CAJÓN DE EDICIÓN (2026-10-01): cada nota nueva se marca «nueva, sin guardar» para
+   * distinguirla de la bitácora de arriba, que ya está guardada. P-01 no lo pasa: en el alta
+   * todo es nuevo y no hay contraste con un historial, así que el rótulo sobraría.
+   */
+  distinguirNuevas?: boolean;
+  /**
+   * EN EL CAJÓN: la etiqueta «Observaciones» la pone la cabecera de la sección
+   * (`app-section-heading`), así que aquí se oculta para no repetirla. El input conserva su nombre
+   * accesible por `aria-label`.
+   */
+  ocultarEtiqueta?: boolean;
 }> = ({
   notasNuevas,
   onCambio,
   notasExistentes = [],
   deshabilitado = false,
+  distinguirNuevas = false,
+  ocultarEtiqueta = false,
 }) => {
   const [borrador, setBorrador] = useState("");
 
@@ -66,12 +80,14 @@ const CapturadorNotas: FC<{
 
   return (
     <div className="form-control w-full">
-      <label
-        className="label"
-        htmlFor="observacion-nueva"
-      >
-        <span className="label-text font-medium">Observaciones</span>
-      </label>
+      {!ocultarEtiqueta && (
+        <label
+          className="label"
+          htmlFor="observacion-nueva"
+        >
+          <span className="label-text font-medium">Observaciones</span>
+        </label>
+      )}
 
       {/* Las ya escritas: bitácora en solo lectura, con quién y cuándo. */}
       {notasExistentes.length > 0 && (
@@ -99,6 +115,11 @@ const CapturadorNotas: FC<{
               className="flex items-center gap-2 rounded-md border border-base-300 px-3 py-1"
             >
               <span className="min-w-0 flex-1 text-sm">{texto}</span>
+              {distinguirNuevas && (
+                <span className="badge badge-warning badge-sm shrink-0">
+                  nueva, sin guardar
+                </span>
+              )}
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -116,6 +137,7 @@ const CapturadorNotas: FC<{
       <div className="flex items-center gap-2">
         <input
           id="observacion-nueva"
+          aria-label="Observaciones"
           className="input input-bordered w-full min-w-0"
           placeholder="Escriba una nota y pulse Agregar"
           value={borrador}

@@ -23,7 +23,7 @@
  * por `GET /operativos` habría traído lo mismo con un contrato más y sin el estado.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormikHelpers } from "formik";
 
 import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
@@ -31,7 +31,7 @@ import ModalExito from "../components/common/ModalExito.tsx";
 import PanelAdicionalOperativo from "../components/cuadro/PanelAdicionalOperativo.tsx";
 import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
 import VistaPreviaOrden from "../components/ordenes/VistaPreviaOrden.tsx";
-import ModalPlantillaOrden from "../components/ordenes/ModalPlantillaOrden.tsx";
+import EditorPlantillaOrden from "../components/ordenes/EditorPlantillaOrden.tsx";
 import { useCatalogosFormulario } from "../hooks/useCatalogosFormulario.ts";
 import type { Operativo } from "../interfaces/Operativo.ts";
 import {
@@ -55,6 +55,9 @@ import { conDiaYMesEnMayuscula } from "../utils/texto.util.ts";
 import {
   motivoParaNoEmitir,
   operativosDeLaMatriz,
+  contarEstados,
+  partesResumenCabecera,
+  resumenEstado,
   type OperativoEmisible,
 } from "../utils/ordenes.util.ts";
 
@@ -78,6 +81,8 @@ const OrdenesServicioPage = () => {
    * vía, con su propia fecha.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
+  // Para devolver el foco a «Editar plantilla» al salir del editor a pantalla completa (E15).
+  const editarPlantillaRef = useRef<HTMLButtonElement>(null);
   const [fecha, setFecha] = useState(() => fechaDeJornadaPorDefecto());
 
   const [matriz, setMatriz] = useState<Matriz | null>(null);
@@ -92,6 +97,29 @@ const OrdenesServicioPage = () => {
   const [confirmando, setConfirmando] = useState(false);
   const [confirmandoTodas, setConfirmandoTodas] = useState(false);
   const [plantillaAbierta, setPlantillaAbierta] = useState(false);
+  /**
+   * Sube al VOLVER del editor de plantilla (bug H35, 2026-10-05): guardar la plantilla puede pasar
+   * borradores a Vigente en el servidor, y la lista en memoria seguía mostrando los faltantes viejos.
+   * Re-pide las órdenes de la jornada y, con él, el estado de la plantilla propia.
+   */
+  const [recargaOrdenes, setRecargaOrdenes] = useState(0);
+  /**
+   * ¿A la plantilla PROPIA le faltan datos generales? (punto 5). `null` mientras no se sabe o si
+   * falló la consulta: el aviso es una ayuda, no bloquea la página.
+   */
+  const [plantillaIncompleta, setPlantillaIncompleta] = useState<boolean | null>(
+    null,
+  );
+
+  /**
+   * ESTADO DE EMISIÓN POR OPERATIVO (2026-10-01). La matriz no dice cuántas hojas de cada
+   * operativo están emitidas, así que para pintar el chip «Emitidas N/N» / «Pendiente» por fila
+   * y contar los pendientes se consulta `GET /operativos/:id/ordenes-servicio` de cada uno con el
+   * MISMO endpoint que el panel (no hay uno masivo). Se refresca al emitir/reemitir.
+   */
+  const [ordenesPorOperativo, setOrdenesPorOperativo] = useState<
+    Record<number, OrdenServicio[]>
+  >({});
 
   // Los operativos cuya orden NO se generó al emitir en bloque: se muestran para revisarlos y
   // reenviarlos uno a uno. `reintentandoId` es el que se está reenviando en este momento.
@@ -192,17 +220,117 @@ const OrdenesServicioPage = () => {
     [operativos, cuadroCerrado],
   );
 
-  /** Por qué NO se puede emitir en bloque, o `null` si sí. Va en el `title` del botón (regla 6). */
-  const motivoNoEmitirTodas = (() => {
-    if (operativos.length === 0) return "No hay operativos en la jornada.";
-    if (!cuadroCerrado) {
-      return "El cuadro del día todavía no está cerrado. Las órdenes se emiten después del cierre.";
+  // Al cambiar la jornada se pide el estado de órdenes de CADA operativo (una por una, con el
+  // endpoint de siempre), para los chips de la tabla y el conteo de pendientes.
+  useEffect(() => {
+    if (operativos.length === 0) {
+      setOrdenesPorOperativo({});
+      return;
     }
-    if (emisibles.length === 0) {
-      return "Ningún operativo tiene personal asignado: no hay a quién entregar la orden.";
-    }
-    return null;
-  })();
+
+    let vigente = true;
+    void Promise.all(
+      operativos.map((operativo) =>
+        DocumentoService.consultarOrdenesDeOperativo(operativo.id)
+          .then((ordenes) => [operativo.id, ordenes] as const)
+          .catch(() => [operativo.id, [] as OrdenServicio[]] as const),
+      ),
+    ).then((pares) => {
+      if (vigente) setOrdenesPorOperativo(Object.fromEntries(pares));
+    });
+
+    return () => {
+      vigente = false;
+    };
+    // `recargaOrdenes` re-pide la lista al volver del editor de plantilla (H35).
+  }, [operativos, recargaOrdenes]);
+
+  // La plantilla PROPIA del Director en sesión (la crea el servidor desde la base si no existe): si le
+  // faltan datos generales, la página lo avisa con un acceso directo al editor. Un fallo aquí no
+  // bloquea nada: simplemente no se muestra el aviso.
+  useEffect(() => {
+    let vigente = true;
+    DocumentoService.obtenerPlantilla()
+      .then((plantilla) => {
+        if (!vigente) return;
+        const dg = plantilla.datosGenerales;
+        setPlantillaIncompleta(
+          [
+            dg.direccionResponsable,
+            dg.numeroMemorando,
+            dg.fechaMemorando,
+            dg.designado,
+            dg.firmante,
+            dg.firmanteCargo,
+            dg.firmanteDependencia,
+          ].some((valor) => (valor ?? "").trim() === ""),
+        );
+      })
+      .catch(() => {
+        if (vigente) setPlantillaIncompleta(null);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [recargaOrdenes]);
+
+  /** Las hojas VIGENTES ya emitidas de un operativo (una reemisión deja las viejas no vigentes). */
+  const vigentesDe = useCallback(
+    (operativoId: number) =>
+      (ordenesPorOperativo[operativoId] ?? []).filter((orden) => orden.vigente),
+    [ordenesPorOperativo],
+  );
+
+  /** ¿Están emitidas TODAS las hojas del operativo? (la emisión es todo-o-nada por operativo). */
+  const estaEmitido = useCallback(
+    (operativo: OperativoEmisible) =>
+      operativo.personal.length > 0 &&
+      vigentesDe(operativo.id).length >= operativo.personal.length,
+    [vigentesDe],
+  );
+
+  // Pendientes = emisibles SIN ninguna hoja vigente. Es lo que abarca «Emitir pendientes».
+  const pendientes = useMemo(
+    () => emisibles.filter((operativo) => vigentesDe(operativo.id).length === 0),
+    [emisibles, vigentesDe],
+  );
+
+  // «X de Y con TODAS sus órdenes vigentes» (A2): X = operativos cuyas hojas están TODAS vigentes y
+  // sin borradores (completas). Un operativo con alguna hoja en borrador NO cuenta como completo.
+  const conOrdenes = useMemo(
+    () =>
+      operativos.filter((operativo) => {
+        const vg = vigentesDe(operativo.id);
+        // Estado único (A2): una hoja es borrador por su `estado`, no por contar sus faltantes.
+        const borradores = vg.filter((o) => o.estado === "BORRADOR").length;
+        return (
+          operativo.personal.length > 0 &&
+          vg.length >= operativo.personal.length &&
+          borradores === 0
+        );
+      }).length,
+    [operativos, vigentesDe],
+  );
+
+  // Resumen de la jornada por ESTADO (punto 10): sin los que estén en 0 (nunca «0 vigente»).
+  const partesCabecera = useMemo(
+    () =>
+      partesResumenCabecera(
+        contarEstados(ordenesPorOperativo, pendientes.length),
+      ),
+    [ordenesPorOperativo, pendientes.length],
+  );
+
+  /**
+   * Si el operativo abierto tiene órdenes VIGENTES de OTRO Director, reemitir no es de quien mira
+   * (punto 8): el motivo, con el nombre del dueño, o `null` si se puede.
+   */
+  const reemisionAjena = useMemo(() => {
+    const ajena = emitidas.find((orden) => orden.vigente && !orden.esPropia);
+    return ajena
+      ? `Estas órdenes las generó ${ajena.directorNombre ?? "otro Director"}: solo él puede reemitirlas.`
+      : null;
+  }, [emitidas]);
 
   // ─────────────────── El adicional de la Dirección ───────────────────
 
@@ -361,9 +489,10 @@ const OrdenesServicioPage = () => {
     setCargandoEmitidas(true);
 
     try {
-      setEmitidas(
-        await DocumentoService.consultarOrdenesDeOperativo(operativoId),
-      );
+      const ordenes =
+        await DocumentoService.consultarOrdenesDeOperativo(operativoId);
+      setEmitidas(ordenes);
+      setOrdenesPorOperativo((previo) => ({ ...previo, [operativoId]: ordenes }));
     } catch {
       // Que no haya emisiones previas no es un fallo del que haya que informar: la vista
       // previa simplemente queda vacía hasta que se emita.
@@ -391,11 +520,25 @@ const OrdenesServicioPage = () => {
     try {
       const nuevas = await DocumentoService.emitirOrdenes(seleccionado.id);
       setEmitidas(nuevas);
+      setOrdenesPorOperativo((previo) => ({
+        ...previo,
+        [seleccionado.id]: nuevas,
+      }));
       setConfirmando(false);
+      // B4: cuántas hojas quedaron en BORRADOR por datos faltantes (no consumen número).
+      const borradores = nuevas.filter(
+        (orden) => orden.faltantes.length > 0,
+      ).length;
       setExito(
         `Se emitieron ${nuevas.length} ${
           nuevas.length === 1 ? "orden" : "órdenes"
-        } para ${seleccionado.identificador}, una por funcionario.`,
+        } para ${seleccionado.identificador}, una por funcionario.${
+          borradores > 0
+            ? ` ${borradores} ${
+                borradores === 1 ? "quedó" : "quedaron"
+              } en borrador por datos faltantes.`
+            : ""
+        }`,
       );
     } catch (fallo: unknown) {
       const error = presentarError(fallo);
@@ -414,7 +557,7 @@ const OrdenesServicioPage = () => {
    * operativo y los demás se emiten igual (una emisión defectuosa no aborta el resto). Abarca
    * solo los EMISIBLES —la misma vara que cada fila—; los demás ya salen apagados con su motivo.
    */
-  const emitirTodas = useCallback(async () => {
+  const emitirPendientes = useCallback(async () => {
     setConfirmandoTodas(false);
     setEmitiendo(true);
     setAviso(null);
@@ -422,13 +565,19 @@ const OrdenesServicioPage = () => {
 
     let operativosOk = 0;
     let ordenesTotales = 0;
+    let borradoresTotales = 0;
     const noGeneradas: OperativoEmisible[] = [];
+    const nuevasPorOperativo: Record<number, OrdenServicio[]> = {};
 
-    for (const operativo of emisibles) {
+    for (const operativo of pendientes) {
       try {
         const nuevas = await DocumentoService.emitirOrdenes(operativo.id);
         operativosOk += 1;
         ordenesTotales += nuevas.length;
+        borradoresTotales += nuevas.filter(
+          (orden) => orden.faltantes.length > 0,
+        ).length;
+        nuevasPorOperativo[operativo.id] = nuevas;
       } catch {
         // No se aborta el resto: la que falla se aparta para revisarla y reenviarla.
         noGeneradas.push(operativo);
@@ -437,9 +586,13 @@ const OrdenesServicioPage = () => {
 
     setEmitiendo(false);
     setFallidas(noGeneradas);
+    // Refresca el estado de las filas emitidas sin re-pedir toda la jornada.
+    setOrdenesPorOperativo((previo) => ({ ...previo, ...nuevasPorOperativo }));
 
     // Si hay un operativo abierto en la vista previa, se refresca lo suyo para verlo emitido.
-    if (seleccionado) void cargarEmitidas(seleccionado.id);
+    if (seleccionado && nuevasPorOperativo[seleccionado.id]) {
+      setEmitidas(nuevasPorOperativo[seleccionado.id]);
+    }
 
     if (noGeneradas.length === 0) {
       setExito(
@@ -447,16 +600,22 @@ const OrdenesServicioPage = () => {
           ordenesTotales === 1 ? "orden" : "órdenes"
         } de ${operativosOk} ${
           operativosOk === 1 ? "operativo" : "operativos"
-        } de la jornada, una por funcionario.`,
+        } pendientes, una por funcionario.${
+          borradoresTotales > 0
+            ? ` ${borradoresTotales} ${
+                borradoresTotales === 1 ? "hoja quedó" : "hojas quedaron"
+              } en borrador por datos faltantes.`
+            : ""
+        }`,
       );
     } else {
       // El detalle —cuáles y con su botón de reenviar— vive en el panel «Órdenes no generadas».
       setAviso({
-        texto: `Se emitieron ${operativosOk} de ${emisibles.length} operativos. Las ${noGeneradas.length} no generadas aparecen abajo para revisarlas y reenviarlas.`,
+        texto: `Se emitieron ${operativosOk} de ${pendientes.length} operativos. Las ${noGeneradas.length} no generadas aparecen abajo para revisarlas y reenviarlas.`,
         clase: claseDeAviso("generico"),
       });
     }
-  }, [emisibles, seleccionado, cargarEmitidas]);
+  }, [pendientes, seleccionado]);
 
   /** Reenvía SOLO la orden de un operativo que falló; si sale, desaparece de la lista. */
   const reintentar = useCallback(
@@ -469,6 +628,10 @@ const OrdenesServicioPage = () => {
         setFallidas((actuales) =>
           actuales.filter((otro) => otro.id !== operativo.id),
         );
+        setOrdenesPorOperativo((previo) => ({
+          ...previo,
+          [operativo.id]: nuevas,
+        }));
         // Si es el que está abierto en la vista previa, se refleja lo recién emitido.
         if (seleccionado?.id === operativo.id) setEmitidas(nuevas);
         setExito(
@@ -490,15 +653,68 @@ const OrdenesServicioPage = () => {
   const cabecera = matriz?.cabecera;
   const estado = cabecera ? nombreEstadoCuadro[cabecera.estado] : null;
 
+  // EDITAR PLANTILLA: vista a pantalla completa DENTRO del layout (ya no un modal). Reemplaza la
+  // página mientras se edita; «← Órdenes de servicio» vuelve (con confirmación si hay cambios).
+  if (plantillaAbierta) {
+    return (
+      <section className="app-page-shell">
+        <EditorPlantillaOrden
+          onVolver={() => {
+            setPlantillaAbierta(false);
+            // H35: guardar la plantilla pudo promover borradores en el servidor; se re-piden las
+            // órdenes de la jornada y las del operativo abierto para no mostrar faltantes viejos.
+            setRecargaOrdenes((valor) => valor + 1);
+            if (seleccionado) void cargarEmitidas(seleccionado.id);
+            // Devuelve el foco al disparador una vez remontada la página (E15).
+            requestAnimationFrame(() => editarPlantillaRef.current?.focus());
+          }}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="app-page-shell">
       <header className="flex flex-col gap-2">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Dirección
-        </p>
-        <h1 className="page-heading-title">
-          Órdenes de servicio
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex flex-col gap-2">
+            <p className="page-heading-kicker font-semibold uppercase">
+              Dirección
+            </p>
+            <h1 className="page-heading-title">Órdenes de servicio</h1>
+          </div>
+          {/*
+            «Editar plantilla» abre la plantilla DEL DIRECTOR EN SESIÓN (2026-10-05): cada Director
+            tiene la suya y sus órdenes se generan con ella. Vive en el encabezado de la página.
+          */}
+          <button
+            ref={editarPlantillaRef}
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => setPlantillaAbierta(true)}
+          >
+            Editar plantilla
+          </button>
+        </div>
+
+        {/* Punto 5: la plantilla propia tiene datos generales vacíos → no se puede emitir en firme. */}
+        {plantillaIncompleta === true && (
+          <div
+            className="alert alert-warning flex flex-wrap items-center justify-between gap-2"
+            role="status"
+          >
+            <span className="text-sm">
+              Completa los datos de tu plantilla para emitir órdenes.
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setPlantillaAbierta(true)}
+            >
+              Editar plantilla
+            </button>
+          </div>
+        )}
 
         {cabecera && (
           <div className="flex flex-wrap items-center gap-2">
@@ -641,36 +857,58 @@ const OrdenesServicioPage = () => {
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Operativos de la jornada
-          </h2>
+          <div className="flex flex-col gap-1">
+            <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
+              Operativos de la jornada
+            </h2>
+            {operativos.length > 0 && (
+              <span className="text-xs text-base-content/80">
+                {conOrdenes} de {operativos.length} con todas sus órdenes
+                vigentes
+              </span>
+            )}
+            {partesCabecera.length > 0 && (
+              <div
+                className="flex flex-wrap gap-1"
+                aria-label="Resumen de la jornada por estado"
+              >
+                {partesCabecera.map((parte) => (
+                  <span
+                    key={parte.clave}
+                    className={`badge badge-sm whitespace-nowrap ${parte.clase}`}
+                  >
+                    {parte.texto}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/*
-            EMITIR TODAS DE UNA VEZ. Abarca solo los operativos EMISIBLES; si no hay ninguno,
-            queda deshabilitado con el motivo en el `title` (regla 6), igual que cada fila.
+            EMITIR PENDIENTES. Abarca solo los operativos emisibles SIN órdenes vigentes; se OCULTA
+            cuando no queda ninguno (N=0). Emite de uno en uno (no hay endpoint masivo).
           */}
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={motivoNoEmitirTodas !== null || emitiendo}
-            title={
-              motivoNoEmitirTodas ??
-              `Emitir las órdenes de los ${emisibles.length} operativos de la jornada.`
-            }
-            onClick={() => setConfirmandoTodas(true)}
-          >
-            {emitiendo ? (
-              <>
-                <span
-                  className="loading loading-spinner loading-sm"
-                  aria-hidden="true"
-                />
-                Emitiendo…
-              </>
-            ) : (
-              `Emitir todas${emisibles.length > 0 ? ` (${emisibles.length})` : ""}`
-            )}
-          </button>
+          {pendientes.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={emitiendo}
+              title={`Emitir las órdenes de los ${pendientes.length} operativos pendientes.`}
+              onClick={() => setConfirmandoTodas(true)}
+            >
+              {emitiendo ? (
+                <>
+                  <span
+                    className="loading loading-spinner loading-sm"
+                    aria-hidden="true"
+                  />
+                  Emitiendo…
+                </>
+              ) : (
+                `Emitir pendientes (${pendientes.length})`
+              )}
+            </button>
+          )}
         </div>
 
         <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
@@ -682,6 +920,7 @@ const OrdenesServicioPage = () => {
                   <th scope="col">Formulario</th>
                   <th scope="col">Horario</th>
                   <th scope="col">Personal</th>
+                  <th scope="col">Órdenes</th>
                   <th scope="col">Acción</th>
                 </tr>
               </thead>
@@ -689,7 +928,7 @@ const OrdenesServicioPage = () => {
                 {operativos.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-3 py-6 text-center text-sm text-base-content/70"
                     >
                       {cargando
@@ -700,28 +939,54 @@ const OrdenesServicioPage = () => {
                 ) : (
                   operativos.map((operativo) => {
                     const motivo = motivoParaNoEmitir(operativo, cuadroCerrado);
+                    const emitido = estaEmitido(operativo);
+                    const hojas = operativo.personal.length;
+                    // ESTADO ÚNICO por operativo: la MISMA función que pinta el chip del panel
+                    // (nunca «0 vigente» ni «0 borrador»; las reemplazadas no cuentan).
+                    const resumen = resumenEstado(vigentesDe(operativo.id), hojas);
+                    const abierta = operativo.id === seleccionado?.id;
 
                     return (
                       <tr
                         key={operativo.id}
+                        // La fila abierta se resalta: fondo azul claro + borde izquierdo (regla 6).
                         className={
-                          operativo.id === seleccionado?.id
-                            ? "bg-primary/5"
+                          abierta
+                            ? "border-l-4 border-primary bg-primary/5"
                             : "hover:bg-primary/5"
                         }
                       >
                         <td className="px-3 py-1 align-top">
-                          <span className="font-medium">
-                            {operativo.identificador}
-                          </span>
-                          {/* Con palabras, no con el prefijo: el documento tiene dos
-                              versiones desde que la Dirección puede añadir sobre lo
-                              cerrado, y hay que ver qué se sumó (regla 6). */}
-                          {operativo.origen && (
-                            <span className="badge badge-outline badge-xs mt-1 block w-fit">
-                              Adicional de {operativo.origen}
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="font-medium">
+                              {operativo.identificador}
                             </span>
-                          )}
+                            {/* «Adicional» es un chip junto al identificador (regla 6). */}
+                            {operativo.origen && (
+                              <span className="badge badge-outline badge-xs whitespace-nowrap">
+                                Adicional de {operativo.origen}
+                              </span>
+                            )}
+                          </div>
+                          {/*
+                            LA URGENCIA · 2026-08-20. Disponer un adicional sobre este operativo:
+                            va junto al identificador (no en la columna Acción, que es solo para
+                            revisar/emitir/ver). Se ofrece aunque el cuadro esté cerrado (RN-58, es
+                            la Dirección); NO sobre un adicional ni en formularios que no los admiten
+                            (RN-61, dato del servidor).
+                          */}
+                          {!operativo.esAdicional &&
+                            operativo.admiteAdicionales && (
+                              <button
+                                type="button"
+                                className="badge badge-outline badge-xs mt-1 whitespace-nowrap"
+                                onClick={() => void abrirAdicional(operativo.id)}
+                                disabled={emitiendo || abriendoAdicional}
+                                title="Disponer un operativo adicional por urgencia sobre éste."
+                              >
+                                Adicional
+                              </button>
+                            )}
                         </td>
                         <td className="px-3 py-1 align-top">
                           {operativo.formulario}
@@ -730,59 +995,45 @@ const OrdenesServicioPage = () => {
                           {operativo.horario}
                         </td>
                         <td className="px-3 py-1 align-top">
-                          {operativo.personal.length > 0
-                            ? `${operativo.personal.length} · ${operativo.personal.join(", ")}`
+                          {hojas > 0
+                            ? operativo.personal.join(", ")
                             : "Sin personal"}
                         </td>
                         <td className="px-3 py-1 align-top">
-                          <div className="flex flex-wrap gap-1">
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-xs"
-                              onClick={() => elegir(operativo)}
-                              /* Caso 4: deshabilitado, con la explicación en el `title`. */
-                              disabled={motivo !== null || emitiendo}
-                              title={motivo ?? undefined}
-                            >
-                              Revisar y emitir
-                            </button>
-
-                            {/*
-                              LA URGENCIA · 2026-08-20.
-
-                              Se ofrece **aunque el cuadro esté cerrado**: es el momento
-                              para el que existe. RN-58 exige autorización de la Dirección
-                              y ella es quien está en esta pantalla.
-
-                              SOBRE UN ADICIONAL NO SE OFRECE: no se encadenan. El botón
-                              desaparece en lugar de aparecer apagado, porque «apagado»
-                              insinúa que en otras circunstancias se podría.
-
-                              Y DESDE EL 2026-08-24, TAMPOCO EN LOS FORMULARIOS QUE NO LOS
-                              ADMITEN. Un formulario admite adicionales si tiene un prefijo
-                              marcado para ellos (RN-61): el **2 · PMO** con `OCAPMO`, y desde
-                              el 2026-09-08 el **8 · INSPECCIONES** con `IGA`/`ITA`. El
-                              servidor ya lo rechazaba en los demás —«el formulario X no
-                              admite operativos adicionales»—, pero la pantalla ofrecía el
-                              botón en los nueve y fallaba al pulsarlo. Ofrecer lo que va a
-                              fallar enseña a desconfiar de lo que se lee.
-
-                              El dato llega del servidor, no se deduce aquí: cambiar qué
-                              formularios los admiten es un `UPDATE`, no un despliegue.
-                            */}
-                            {!operativo.esAdicional &&
-                              operativo.admiteAdicionales && (
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs"
-                                onClick={() => void abrirAdicional(operativo.id)}
-                                disabled={emitiendo || abriendoAdicional}
-                                title="Disponer un operativo adicional por urgencia sobre éste."
-                              >
-                                Adicional
-                              </button>
-                            )}
-                          </div>
+                          <span
+                            className={`badge badge-sm whitespace-nowrap ${resumen.clase}`}
+                          >
+                            {resumen.texto}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1 align-top">
+                          {/*
+                            UN SOLO BOTÓN: «Mostrando» (fila abierta, cierra al pulsar), «Ver
+                            órdenes» (ya emitida) o «Revisar y emitir» (pendiente, deshabilitado con
+                            su motivo en el `title`, regla 6).
+                          */}
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm whitespace-nowrap"
+                            onClick={() =>
+                              abierta ? setSeleccionado(null) : elegir(operativo)
+                            }
+                            disabled={
+                              emitiendo ||
+                              (!abierta && !emitido && motivo !== null)
+                            }
+                            title={
+                              !abierta && !emitido
+                                ? (motivo ?? undefined)
+                                : undefined
+                            }
+                          >
+                            {abierta
+                              ? "Mostrando"
+                              : emitido
+                                ? "Ver órdenes"
+                                : "Revisar y emitir"}
+                          </button>
                         </td>
                       </tr>
                     );
@@ -854,57 +1105,71 @@ const OrdenesServicioPage = () => {
       {seleccionado && (
         <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
           <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-              Órdenes de {seleccionado.identificador}
-            </h2>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="btn btn-sm app-modules-panel-action"
-                onClick={() => setPlantillaAbierta(true)}
-              >
-                Editar plantilla
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm app-modules-panel-action"
-                onClick={() => setSeleccionado(null)}
-                disabled={emitiendo}
-              >
-                Cerrar
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm app-modules-panel-action"
-                onClick={() => setConfirmando(true)}
-                disabled={emitiendo || !cuadroCerrado}
-              >
-                {emitidas.length > 0 ? "Reemitir órdenes" : "Emitir órdenes"}
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
+                Órdenes de {seleccionado.identificador}
+              </h2>
+              {/*
+                RESUMEN DE ESTADO (A2): la MISMA función `resumenEstado` que pinta la columna de la
+                tabla, así el chip del panel y la fila nunca se contradicen. `total` es cuántas hojas
+                debería tener el operativo (una por persona). Una reemisión deja la anterior
+                «Reemplazada» y esa ya no cuenta aquí.
+              */}
+              {(() => {
+                const resumen = resumenEstado(
+                  emitidas,
+                  seleccionado.personal.length,
+                );
+                return (
+                  <span
+                    className={`badge badge-sm whitespace-nowrap ${resumen.clase}`}
+                  >
+                    {resumen.texto}
+                  </span>
+                );
+              })()}
             </div>
+            {/* El panel se cierra con la fila «Mostrando» o al abrir otra: ya no hay botón «Cerrar». */}
+            <button
+              type="button"
+              className="btn btn-sm app-modules-panel-action"
+              onClick={() => setConfirmando(true)}
+              disabled={emitiendo || !cuadroCerrado || reemisionAjena !== null}
+              // Regla 6: apagado CON su motivo. Solo el Director que generó las órdenes las reemite.
+              title={reemisionAjena ?? undefined}
+            >
+              {emitidas.length > 0
+                ? "Reemitir órdenes"
+                : `Emitir órdenes (${seleccionado.personal.length})`}
+            </button>
           </div>
 
           <div className="app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6">
-            {cargandoEmitidas ? (
+            {/*
+              «Consultando…» SOLO en la primera carga (aún sin emitidas). En un REFRESCO in-situ
+              —tras completar datos/configuración/perfil desde el visor— se mantiene montado
+              `VistaPreviaOrden` con los datos actuales, para que el cajón del visor NO se cierre.
+            */}
+            {cargandoEmitidas && emitidas.length === 0 ? (
               <span className="badge badge-ghost badge-sm">
                 Consultando lo emitido…
               </span>
             ) : emitidas.length > 0 ? (
-              <VistaPreviaOrden ordenes={emitidas} />
+              <VistaPreviaOrden
+                ordenes={emitidas}
+                onRecargar={() => void cargarEmitidas(seleccionado.id)}
+                onEditarPlantilla={() => setPlantillaAbierta(true)}
+              />
             ) : (
               <p className="text-sm text-base-content/70">
-                Todavía no se han emitido órdenes para este operativo. Se
-                emitirá una por cada una de las {seleccionado.personal.length}{" "}
-                personas asignadas, y cada hoja contendrá únicamente horario,
-                funcionario, conductor y placa.
+                Aún no se emiten las órdenes de este operativo. Se emitirá una
+                por cada una de las {seleccionado.personal.length} personas
+                asignadas, y cada hoja contendrá únicamente horario, funcionario,
+                conductor y placa.
               </p>
             )}
           </div>
         </div>
-      )}
-
-      {plantillaAbierta && (
-        <ModalPlantillaOrden onCerrar={() => setPlantillaAbierta(false)} />
       )}
 
       <ModalConfirmacion
@@ -916,11 +1181,9 @@ const OrdenesServicioPage = () => {
         }
         mensaje={
           seleccionado
-            ? `Se emitirá una orden por cada una de las ${seleccionado.personal.length} personas de ${seleccionado.identificador}.${
-                emitidas.length > 0
-                  ? " Las órdenes anteriores quedarán marcadas como sustituidas; no se borran."
-                  : ""
-              }`
+            ? emitidas.length > 0
+              ? "Se genera una versión nueva con la plantilla y los datos actuales. La anterior queda como «Reemplazada»."
+              : `Se emitirá una orden por cada una de las ${seleccionado.personal.length} personas de ${seleccionado.identificador}.`
             : ""
         }
         textoSi={emitidas.length > 0 ? "Sí, reemitir" : "Sí, emitir"}
@@ -932,14 +1195,14 @@ const OrdenesServicioPage = () => {
 
       <ModalConfirmacion
         abierto={confirmandoTodas}
-        titulo="¿Emitir todas las órdenes de la jornada?"
-        mensaje={`Se emitirán las órdenes de ${emisibles.length} ${
-          emisibles.length === 1 ? "operativo" : "operativos"
-        } de la jornada, una por cada funcionario asignado. Si alguno ya tenía órdenes, las anteriores quedarán marcadas como sustituidas; no se borran.`}
-        textoSi="Sí, emitir todas"
+        titulo="¿Emitir las órdenes pendientes?"
+        mensaje={`Se emitirán las órdenes de ${pendientes.length} ${
+          pendientes.length === 1 ? "operativo" : "operativos"
+        } pendientes, una por cada funcionario asignado.`}
+        textoSi="Sí, emitir pendientes"
         textoNo="Cancelar"
         procesando={emitiendo}
-        onConfirmar={() => void emitirTodas()}
+        onConfirmar={() => void emitirPendientes()}
         onCancelar={() => setConfirmandoTodas(false)}
       />
 

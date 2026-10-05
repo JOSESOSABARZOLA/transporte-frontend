@@ -166,7 +166,14 @@ export const esquemaFuncionario = Yup.object({
     discrepando, y la que rechazara primero sería la del navegador — la que nadie recuerda
     que existe. Es el mismo criterio con el que el teléfono tampoco valida su formato aquí.
   */
-  correo: Yup.string().max(160, "El correo no supera los 160 caracteres."),
+  correoInstitucional: Yup.string().max(
+    160,
+    "El correo institucional no supera los 160 caracteres.",
+  ),
+  correoPersonal: Yup.string().max(
+    160,
+    "El correo personal no supera los 160 caracteres.",
+  ),
 
   cargo: Yup.string().max(90, "El cargo no supera los 90 caracteres."),
 

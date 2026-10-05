@@ -42,13 +42,18 @@
 import { Navigate } from "react-router-dom";
 
 import { useUser } from "../../hooks/useUser.ts";
-import { pantallas } from "../../config/routes.tsx";
+import { pantallas, ROLES_REQUERIDOS } from "../../config/routes.tsx";
+import { tieneRol } from "../../hooks/usePermiso.ts";
 
 const InicioSegunRol = () => {
   const { user } = useUser();
 
-  const primera = pantallas.find((pantalla) =>
-    pantalla.permisos.some((permiso) => user?.permisos.includes(permiso)),
+  // Permiso Y, si la ruta lo exige, rol (Órdenes de servicio: DIRECTOR). Sin lo segundo, quien
+  // tuviera el permiso sin el rol rebotaría entre esta ruta y /home.
+  const primera = pantallas.find(
+    (pantalla) =>
+      pantalla.permisos.some((permiso) => user?.permisos.includes(permiso)) &&
+      tieneRol(user?.rolCodes ?? [], ROLES_REQUERIDOS[pantalla.path]),
   );
 
   if (primera) {

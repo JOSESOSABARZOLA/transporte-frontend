@@ -11,7 +11,8 @@
  * ETAPA 3 · LOS DOS PASOS VIVEN AQUÍ. Ya no hay «puente» al modal en el alta: el paso 2 (la ficha)
  * se completa dentro del cajón. El BORRADOR vive en el estado de este componente y se pasa como
  * `initialValues` de Formik: al «← Atrás» / «Cambiar» no se pierde lo escrito, y al elegir OTRA
- * persona se reemplaza SOLO la identidad (cédula/apellidos/nombres/correo) conservando el resto.
+ * persona se reemplaza SOLO la identidad (cédula/apellidos/nombres/correo institucional)
+ * conservando el resto (incluido el correo personal, que Auth no conoce).
  *
  * ETAPA 4 · TAMBIÉN LA EDICIÓN. Con `edicion`, el cajón abre directo en la ficha (sin stepper ni
  * paso 1), con la cédula en solo lectura y el pie reducido a Cancelar / Guardar cambios. Alta y
@@ -76,7 +77,8 @@ const FICHA_VACIA: ValoresFichaAlta = {
   apellidos: "",
   nombres: "",
   telefono: "",
-  correo: "",
+  correoInstitucional: "",
+  correoPersonal: "",
   cargo: "",
   area: "",
   tipoContrato: "",
@@ -120,7 +122,13 @@ const DrawerFlujoAlta: FC<DrawerFlujoAltaProps> = ({
     previa: ValoresFichaAlta,
   ): ValoresFichaAlta => {
     const { apellidos, nombres } = partirNombre(fila.nombre);
-    return { ...previa, cedula: fila.cedula, apellidos, nombres, correo: fila.correo };
+    return {
+      ...previa,
+      cedula: fila.cedula,
+      apellidos,
+      nombres,
+      correoInstitucional: fila.correo,
+    };
   };
 
   const reiniciar = () => {
@@ -142,7 +150,11 @@ const DrawerFlujoAlta: FC<DrawerFlujoAltaProps> = ({
     const fila = filas.find((f) => f.authId === elegidaId);
     if (!fila) return;
     setModo("auth");
-    setResumen({ nombre: fila.nombre, cedula: fila.cedula, correo: fila.correo });
+    setResumen({
+      nombre: fila.nombre,
+      cedula: fila.cedula,
+      correoInstitucional: fila.correo,
+    });
     setValoresFicha((previa) => conIdentidadDe(fila, previa));
     setAvisoDrawer(null);
     setExitoDrawer(null);
@@ -240,7 +252,7 @@ const DrawerFlujoAlta: FC<DrawerFlujoAltaProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="self-start text-sm text-primary underline"
           onClick={registroManual}
         >
           ¿No aparece? Registro manual
@@ -330,7 +342,7 @@ const DrawerFlujoAlta: FC<DrawerFlujoAltaProps> = ({
     >
       <Form
         id={ID_FORM}
-        className="flex flex-col gap-3"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
       >
         <EnfocarPrimerError />
         {avisoDrawer && (
@@ -360,13 +372,13 @@ const DrawerFlujoAlta: FC<DrawerFlujoAltaProps> = ({
         edicion
           ? "Editar ficha"
           : paso === 1
-            ? "Buscar persona"
+            ? "Buscar en Auth central"
             : "Completar ficha"
       }
       onCerrar={cerrar}
       pie={pie}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         {!edicion && (
           <Stepper
             pasos={PASOS}

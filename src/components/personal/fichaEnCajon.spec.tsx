@@ -178,7 +178,8 @@ const VALORES_EDICION = {
   apellidos: "PEREZ",
   nombres: "JUAN",
   telefono: "0987654321",
-  correo: "jperez@amc.gob.ec",
+  correoInstitucional: "jperez@amc.gob.ec",
+  correoPersonal: "",
   cargo: "Inspector",
   area: "OPERATIVOS" as AreaPersonal,
   tipoContrato: "NOMBRAMIENTO" as TipoContrato,
@@ -241,6 +242,34 @@ describe("La ficha en el cajón · EDICIÓN (req. F)", () => {
     await waitFor(() => expect(onGuardar).toHaveBeenCalled());
     expect(onGuardar).toHaveBeenCalledWith(
       expect.objectContaining({ apellidos: "PEREZ", nombres: "JUAN" }),
+      { crearOtro: false },
+    );
+  });
+
+  it("muestra los dos correos —institucional y personal— y los envía al guardar", async () => {
+    const onGuardar = vi
+      .fn()
+      .mockResolvedValue({ ok: true, nombre: "PEREZ JUAN" });
+    montarEdicion(onGuardar);
+
+    // Son dos campos distintos; el institucional llega precargado y el personal vacío.
+    const institucional = screen.getByLabelText(/Correo institucional/);
+    const personal = screen.getByLabelText(/Correo personal/);
+    expect(institucional).toHaveValue("jperez@amc.gob.ec");
+    expect(personal).toHaveValue("");
+
+    // Se captura el correo personal; al guardar viajan los dos por separado.
+    await userEvent.type(personal, "juan.perez@gmail.com");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar cambios" }),
+    );
+
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled());
+    expect(onGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correoInstitucional: "jperez@amc.gob.ec",
+        correoPersonal: "juan.perez@gmail.com",
+      }),
       { crearOtro: false },
     );
   });

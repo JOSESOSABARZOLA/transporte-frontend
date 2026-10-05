@@ -218,12 +218,21 @@ const TablaPersonal: FC<TablaPersonalProps> = ({
                   {funcionario.telefono ?? "—"}
                 </td>
                 {/*
-                  LA RAYA DICE «NO HAY», IGUAL QUE EN EL TELÉFONO. Una celda vacía se
-                  confunde con una columna que no cargó; el guion afirma que se miró y no
-                  hay dato, que es información distinta (regla 6).
+                  DOS CORREOS: institucional y personal, cada uno rotulado en palabras (regla 6).
+                  LA RAYA DICE «NO HAY», IGUAL QUE EN EL TELÉFONO. Una celda vacía se confunde con
+                  una columna que no cargó; el guion afirma que se miró y no hay dato.
                 */}
                 <td className="px-3 py-1 align-top">
-                  {funcionario.correo ?? "—"}
+                  <div className="flex flex-col gap-0.5">
+                    <span>
+                      <span className="text-xs text-base-content/60">Inst.: </span>
+                      {funcionario.correoInstitucional ?? "—"}
+                    </span>
+                    <span>
+                      <span className="text-xs text-base-content/60">Pers.: </span>
+                      {funcionario.correoPersonal ?? "—"}
+                    </span>
+                  </div>
                 </td>
 
                 <td className="px-3 py-1 align-top">

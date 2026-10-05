@@ -16,6 +16,7 @@ import {
   type NavigationItem,
 } from "../../config/navigation";
 import { useUser } from "../../hooks/useUser";
+import { tieneRol } from "../../hooks/usePermiso";
 
 const resolveNavigationPath = (path: string, parentPath = "") => {
   const resolvedPath = path || parentPath;
@@ -83,11 +84,14 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
    * Ver docs/FASE5-diseno-interfaz.md §3.2.
    */
   const puedeEntrar = (item: NavigationItem) =>
-    !item.requiredPermissions ||
-    (user != null &&
-      item.requiredPermissions.some((permiso) =>
-        user.permisos.includes(permiso),
-      ));
+    (!item.requiredPermissions ||
+      (user != null &&
+        item.requiredPermissions.some((permiso) =>
+          user.permisos.includes(permiso),
+        ))) &&
+    // Rol exigido además del permiso (Órdenes de servicio → DIRECTOR, igual que la ruta).
+    (!item.requiredRoles ||
+      (user != null && tieneRol(user.rolCodes, item.requiredRoles)));
 
   /**
    * Un grupo es útil cuando ALGO de dentro es alcanzable.

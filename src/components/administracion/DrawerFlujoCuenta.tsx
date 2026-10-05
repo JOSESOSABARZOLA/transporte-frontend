@@ -169,7 +169,7 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="self-start text-sm text-primary underline"
           onClick={registroManual}
         >
           ¿No aparece? Registro manual
@@ -247,13 +247,13 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
         !esAlta
           ? `Editar cuenta${usuarioEdicion ? ` de ${usuarioEdicion.nombre}` : ""}`
           : paso === 1
-            ? "Buscar persona"
+            ? "Buscar en Auth central"
             : "Completar cuenta"
       }
       onCerrar={guardando ? undefined : onCerrar}
       pie={pie}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         {esAlta && (
           <Stepper
             pasos={PASOS}
@@ -275,7 +275,7 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
             onRegistroManual={registroManual}
           />
         ) : (
-          <div className="flex flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
             <p className="text-xs text-base-content/70">
               Quién entra al Cuadro de Colores y con qué rol. Auth central acredita la
               identidad; esta cuenta decide el perfil dentro del módulo.

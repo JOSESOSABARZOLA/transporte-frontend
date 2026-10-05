@@ -25,6 +25,7 @@
 
 import {
   useCallback,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -140,10 +141,15 @@ export const UserProvider: FC<{ children: ReactNode }> = ({ children }) => {
     window.location.replace(env.logoutAuthUrl);
   }, []);
 
+  // El valor del contexto se MEMORIZA (2026-10-05): un objeto nuevo en cada render obligaba a
+  // re-renderizar a todos los consumidores (entre ellos el editor de plantilla) sin que nada cambiara.
+  const valor = useMemo(
+    () => ({ user, establecerSesion, estado, cerrarSesion }),
+    [user, establecerSesion, estado, cerrarSesion],
+  );
+
   return (
-    <UserContext.Provider
-      value={{ user, establecerSesion, estado, cerrarSesion }}
-    >
+    <UserContext.Provider value={valor}>
       {children}
     </UserContext.Provider>
   );

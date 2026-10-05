@@ -20,6 +20,20 @@ export const tienePermiso = (
 ): boolean => requeridos.some((permiso) => permisos.includes(permiso));
 
 /** Hook: ¿el usuario actual tiene alguno de estos permisos? */
+/**
+ * ¿Tiene ALGUNO de los roles exigidos? Sin roles exigidos, sí (la mayoría de las pantallas solo
+ * piden permiso). EXCEPCIÓN DELIBERADA A LA REGLA 4 (2026-10-05): Órdenes de servicio exige,
+ * además del permiso, el ROL DIRECTOR —el documento lo firma el Director, igual que en el servidor
+ * (F21)—, para que conceder el permiso a otro rol no le abra un módulo que el servidor le niega.
+ */
+export const tieneRol = (
+  rolCodes: readonly string[],
+  requeridos: readonly string[] | undefined,
+): boolean =>
+  !requeridos ||
+  requeridos.length === 0 ||
+  requeridos.some((rol) => rolCodes.includes(rol));
+
 export const usePermiso = (...requeridos: string[]): boolean => {
   const { user } = useUser();
   return user ? tienePermiso(user.permisos, requeridos) : false;

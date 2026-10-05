@@ -766,15 +766,14 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
     );
 
     const ventana = screen.getByRole("dialog", { name: /Reparto de carga/ });
-    // Las dos señales de equidad, en palabras (regla 6), y la desviación con signo.
+    // Las dos tarjetas de resumen (equidad en palabras, regla 6).
     expect(within(ventana).getByText("Sobre su parte")).toBeInTheDocument();
     expect(within(ventana).getByText("Bajo su parte")).toBeInTheDocument();
-    expect(within(ventana).getByText("+17")).toBeInTheDocument();
-    // La columna de operativos asignados de la semana, con su encabezado.
-    expect(within(ventana).getByText("Operativos")).toBeInTheDocument();
+    // El estado por persona va SIEMPRE en texto bajo la barra: desviación con signo + operativos.
     expect(
-      within(ventana).getByRole("cell", { name: "4" }),
+      within(ventana).getByText(/\+17 sobre su parte/),
     ).toBeInTheDocument();
+    expect(within(ventana).getByText(/4 operativos/)).toBeInTheDocument();
   });
 
   it("la búsqueda compara sobre el nombre compuesto, sin romperse", async () => {
@@ -2424,9 +2423,8 @@ describe("la zonal de la persona se propone al asignarla en el alta", () => {
       zonalId: 5,
     });
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /REDROVÁN LUIS/ }),
-    );
+    // Alta en una columna (2026-10-01): el candidato se agrega con su botón «+ Agregar».
+    await userEvent.click(screen.getByRole("button", { name: "+ Agregar" }));
 
     await vi.waitFor(() =>
       expect(onZonalesElegidas).toHaveBeenCalledWith([5]),
@@ -2445,7 +2443,7 @@ describe("la zonal de la persona se propone al asignarla en el alta", () => {
       zonalId: null,
     });
 
-    await userEvent.click(screen.getByRole("button", { name: /SIN ZONA/ }));
+    await userEvent.click(screen.getByRole("button", { name: "+ Agregar" }));
 
     expect(onZonalesElegidas).not.toHaveBeenCalled();
   });
@@ -2464,10 +2462,40 @@ describe("la zonal de la persona se propone al asignarla en el alta", () => {
       zonalId: 99,
     });
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /FUERA CATALOGO/ }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "+ Agregar" }));
 
     expect(onZonalesElegidas).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ALTA EN UNA COLUMNA (2026-10-01, §7). El bloque de personal del alta adopta el estilo de una
+   * columna de P-02 —candidatos con «+ Agregar», contador único, nota de borrador—, pero conserva
+   * el horario por persona con los dos campos de hora inline (regla 14, probado en los casos de
+   * herencia/edición de turno de arriba). Se retiran «Asignar visibles» y «↵ asigna el primer
+   * elegible».
+   */
+  it("el alta usa la lista de una columna: «+ Agregar», contador único y nota de borrador", () => {
+    montarAlta({
+      id: 1,
+      apellidos: "REDROVÁN",
+      nombres: "LUIS",
+      area: "GENERAL",
+      cargo: null,
+      elegible: true,
+      motivo: null,
+      indiceCarga: 5,
+    });
+
+    expect(
+      screen.getByRole("button", { name: "+ Agregar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Borrador: el personal se registra/),
+    ).toBeInTheDocument();
+    // Ya no está la bandeja en dos columnas de la vieja alta.
+    expect(
+      screen.queryByRole("button", { name: /Asignar visibles/ }),
+    ).toBeNull();
+    expect(screen.queryByText(/asigna el primer elegible/)).toBeNull();
   });
 });

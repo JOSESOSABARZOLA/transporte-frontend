@@ -19,7 +19,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { Matriz } from "../interfaces/Documento";
+import type { Matriz, OrdenServicio } from "../interfaces/Documento";
 
 /** Lo que P-05 necesita de un operativo para decidir si emite. */
 export interface OperativoEmisible {
@@ -98,4 +98,119 @@ export const motivoParaNoEmitir = (
   }
 
   return null;
+};
+
+/** Resumen de estado de un operativo: la clase de distintivo y su texto. */
+export interface ResumenEstadoOrdenes {
+  clase: string;
+  texto: string;
+}
+
+/**
+ * Resumen ÚNICO del estado de las órdenes de UN operativo. La columna «Órdenes» de la tabla y el
+ * chip del panel comparten esta función, para que nunca se contradigan ni repitan el defecto de
+ * mostrar «0 vigente · 1 borrador».
+ *
+ * Solo cuenta la **versión actual de cada hoja**: las reemplazadas (`vigente === false`) se
+ * descartan. `total` es cuántas hojas debería tener el operativo (una por persona). Sobre las
+ * hojas vigentes —vig = en firme, bor = en borrador—:
+ *
+ *   · vig = 0 y bor = 0  → «Pendiente · N hoja(s)» (gris): aún no se emite.
+ *   · bor = 0            → «Vigentes vig/total» (verde): todas en firme.
+ *   · vig = 0            → «Borrador bor/total» (naranja): todas a medias.
+ *   · vig > 0 y bor > 0  → «vig vigente(s) · bor borrador(es)» (naranja): mixto, con plural correcto.
+ *
+ * Nunca aparece «0 vigente» ni «0 borrador»: ese cero siempre cae en una de las ramas anteriores.
+ * Un operativo sin personal (`total === 0`) no tiene a quién entregar la orden: «Sin personal».
+ */
+export const resumenEstado = (
+  hojas: OrdenServicio[],
+  total: number,
+): ResumenEstadoOrdenes => {
+  if (total === 0) {
+    return { clase: "badge-ghost", texto: "Sin personal" };
+  }
+
+  const vigentes = hojas.filter((hoja) => hoja.vigente);
+  const bor = vigentes.filter((hoja) => hoja.estado === "BORRADOR").length;
+  const vig = vigentes.length - bor;
+
+  if (vig === 0 && bor === 0) {
+    return {
+      clase: "badge-ghost",
+      texto: `Pendiente · ${total} ${total === 1 ? "hoja" : "hojas"}`,
+    };
+  }
+  if (bor === 0) {
+    return { clase: "badge-success", texto: `Vigentes ${vig}/${total}` };
+  }
+  if (vig === 0) {
+    return { clase: "badge-warning", texto: `Borrador ${bor}/${total}` };
+  }
+  return {
+    clase: "badge-warning",
+    texto: `${vig} ${vig === 1 ? "vigente" : "vigentes"} · ${bor} ${
+      bor === 1 ? "borrador" : "borradores"
+    }`,
+  };
+};
+
+/** Conteo de la jornada por estado (cabecera de P-05). */
+export interface ConteoEstados {
+  pendiente: number;
+  borrador: number;
+  vigente: number;
+  reemplazada: number;
+}
+
+/**
+ * Cuenta los estados de la jornada (2026-10-05): PENDIENTE = operativo emisible sin órdenes;
+ * BORRADOR/VIGENTE = la versión ACTUAL de cada hoja; REEMPLAZADA = versiones anteriores. Usa el
+ * `estado` único que da el servidor, la misma fuente que la tabla, el panel y el visor.
+ */
+export const contarEstados = (
+  ordenesPorOperativo: Record<number, OrdenServicio[]>,
+  pendientes: number,
+): ConteoEstados => {
+  const conteo: ConteoEstados = {
+    pendiente: pendientes,
+    borrador: 0,
+    vigente: 0,
+    reemplazada: 0,
+  };
+  for (const ordenes of Object.values(ordenesPorOperativo)) {
+    for (const orden of ordenes) {
+      if (orden.estado === "REEMPLAZADA") conteo.reemplazada += 1;
+      else if (orden.estado === "BORRADOR") conteo.borrador += 1;
+      else conteo.vigente += 1;
+    }
+  }
+  return conteo;
+};
+
+/**
+ * Las partes del resumen de cabecera, OMITIENDO los estados en 0 (nunca «0 vigente») y con plural
+ * correcto. Cada parte lleva la clase de distintivo de su estado.
+ */
+export const partesResumenCabecera = (
+  conteo: ConteoEstados,
+): { clave: keyof ConteoEstados; texto: string; clase: string }[] => {
+  const definicion: {
+    clave: keyof ConteoEstados;
+    singular: string;
+    plural: string;
+    clase: string;
+  }[] = [
+    { clave: "pendiente", singular: "pendiente", plural: "pendientes", clase: "badge-ghost" },
+    { clave: "borrador", singular: "borrador", plural: "borradores", clase: "badge-warning" },
+    { clave: "vigente", singular: "vigente", plural: "vigentes", clase: "badge-success" },
+    { clave: "reemplazada", singular: "reemplazada", plural: "reemplazadas", clase: "badge-ghost" },
+  ];
+  return definicion
+    .filter(({ clave }) => conteo[clave] > 0)
+    .map(({ clave, singular, plural, clase }) => ({
+      clave,
+      clase,
+      texto: `${conteo[clave]} ${conteo[clave] === 1 ? singular : plural}`,
+    }));
 };

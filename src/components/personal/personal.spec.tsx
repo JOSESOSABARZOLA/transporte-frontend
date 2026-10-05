@@ -38,7 +38,8 @@ const funcionario = (parcial: Partial<Funcionario> = {}): Funcionario => ({
   apellidos: "YUNDA",
   nombres: "JESSICA",
   telefono: "0987150000",
-  correo: "jessica.yunda@quito.gob.ec",
+  correoInstitucional: "jessica.yunda@quito.gob.ec",
+  correoPersonal: null,
   cargo: "Agente de control metropolitano",
   area: "GENERAL",
   tipoContrato: "OCASIONAL",
@@ -197,6 +198,24 @@ describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacid
 
     expect(screen.getByText("1712345678")).toBeInTheDocument();
     expect(screen.getByText("0987150000")).toBeInTheDocument();
+  });
+
+  it("muestra los dos correos de la ficha, rotulados institucional y personal", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ correoPersonal: "jess.personal@gmail.com" })]}
+        ausencias={{ 1: [] }}
+      />,
+    );
+
+    // Los dos correos aparecen, cada uno con su rótulo en palabras (regla 6).
+    expect(
+      screen.getByText("jessica.yunda@quito.gob.ec"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("jess.personal@gmail.com")).toBeInTheDocument();
+    expect(screen.getByText(/Inst\.:/)).toBeInTheDocument();
+    expect(screen.getByText(/Pers\.:/)).toBeInTheDocument();
   });
 
   it("cada fila ofrece editar (visible), y ausencias y baja en el menú «⋯»", async () => {

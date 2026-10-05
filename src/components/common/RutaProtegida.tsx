@@ -26,16 +26,25 @@ import { Navigate } from "react-router-dom";
 
 import Loading from "./Loading";
 import { useUser } from "../../hooks/useUser";
-import { tienePermiso } from "../../hooks/usePermiso";
+import { tienePermiso, tieneRol } from "../../hooks/usePermiso";
 import { urlDelPortal } from "../../services/sesion.service";
 
 type RutaProtegidaProps = {
   /** Permisos que abren la ruta. Basta tener UNO (semántica OR). */
   permisosPermitidos: string[];
+  /**
+   * Roles exigidos ADEMÁS del permiso (basta uno). Opcional: casi ninguna pantalla lo usa; hoy solo
+   * Órdenes de servicio (DIRECTOR), excepción deliberada a la regla 4 documentada en `usePermiso`.
+   */
+  rolesRequeridos?: readonly string[];
   children: ReactNode;
 };
 
-const RutaProtegida = ({ permisosPermitidos, children }: RutaProtegidaProps) => {
+const RutaProtegida = ({
+  permisosPermitidos,
+  rolesRequeridos,
+  children,
+}: RutaProtegidaProps) => {
   const { user, estado } = useUser();
 
   if (estado === "resolviendo") {
@@ -51,7 +60,10 @@ const RutaProtegida = ({ permisosPermitidos, children }: RutaProtegidaProps) => 
 
   // POR PERMISO (RBAC), no por rol: basta con tener UNO de los que abren la ruta. Así un
   // rol nuevo con el permiso otorgado entra sin tocar el frontend. El servidor reautoriza.
-  if (!tienePermiso(user.permisos, permisosPermitidos)) {
+  if (
+    !tienePermiso(user.permisos, permisosPermitidos) ||
+    !tieneRol(user.rolCodes, rolesRequeridos)
+  ) {
     return <Navigate to="/home" replace />;
   }
 

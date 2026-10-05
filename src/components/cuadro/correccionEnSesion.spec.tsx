@@ -172,9 +172,47 @@ vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
   },
 }));
 
+/*
+  EL DOBLE DEL PANEL DEL CAJÓN hace de FormularioOperativo embebido: publica un `<form>` con el
+  `idForm` que el pie del cajón envía con «Guardar cambios», un botón que dispara la asignación
+  (diferida) y muestra el aviso/confirmación de personal. Así estas pruebas conducen el cableado de
+  la PÁGINA (abrir el cajón, diferir el personal, aplicar al guardar) sin el formulario real.
+*/
 vi.mock("../../components/cuadro/PanelEdicionOperativo.tsx", () => ({
-  default: ({ operativo }: { operativo: { identificador: string } }) => (
-    <p>panel de aporte para {operativo.identificador}</p>
+  default: ({
+    operativo,
+    idForm,
+    onGuardar,
+    onAgregarPersona,
+    avisoPersonal,
+    confirmacionPersonal,
+  }: {
+    operativo: { identificador: string };
+    idForm?: string;
+    onGuardar: (valores: unknown, ayudas: unknown) => void;
+    onAgregarPersona: (persona: { id: number }) => void;
+    avisoPersonal?: string | null;
+    confirmacionPersonal?: string | null;
+  }) => (
+    <div>
+      <p>panel de edición para {operativo.identificador}</p>
+      <form
+        id={idForm}
+        onSubmit={(evento) => {
+          evento.preventDefault();
+          onGuardar({ ...VALORES, horaFin: "13:00" }, AYUDAS);
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => onAgregarPersona(PERSONA)}
+        >
+          asignar-en-cajón
+        </button>
+      </form>
+      {avisoPersonal && <p>{avisoPersonal}</p>}
+      {confirmacionPersonal && <p>{confirmacionPersonal}</p>}
+    </div>
   ),
 }));
 
@@ -186,6 +224,7 @@ vi.mock("../../services/operativo.service.ts", () => ({
     consultar: vi.fn(),
     asignarPersonal: vi.fn(),
     retirarPersonal: vi.fn(),
+    actualizarTurnoPersonal: vi.fn(),
   },
 }));
 vi.mock("../../services/personal.service.ts", () => ({
@@ -492,30 +531,31 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
-   * SE CORRIGE EN EL MISMO FORMULARIO, Y NO SE ABRE UN SEGUNDO. 2026-09-01, tarde.
+   * «EDITAR» ABRE EL CAJÓN LATERAL, NO CARGA EL FORMULARIO DE ARRIBA. 2026-10-01.
    *
-   * Las dos mitades importan. Que el formulario cargue el operativo es lo que se pidió;
-   * que **no** aparezca un segundo formulario es lo que hace que se haya pedido, porque
-   * el defecto era tener que desplazarse hasta el final de la página para corregir una
-   * hora. Comprobar solo la primera dejaría pasar una pantalla con los dos.
+   * Antes la corrección caía sobre el formulario de captura; ahora abre el MISMO cajón
+   * lateral de Mis operativos (P-02). Lo que importa fijar es doble: que el cajón se abre
+   * con el operativo, y que el formulario de arriba se queda en captura (no se carga el
+   * operativo encima de lo que se estaba tecleando).
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  it("editar carga el operativo en el formulario de captura, sin abrir un segundo", async () => {
+  it("editar abre el cajón lateral con el operativo, y deja el formulario de arriba en captura", async () => {
     await registrarUno(operativo({ observaciones: [nota("lo ya registrado")] }));
     await cerrarExito();
 
-    expect(
-      screen.getByText("cargado con: (formulario en blanco)"),
-    ).toBeInTheDocument();
-
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
 
+    // Se abre el cajón (diálogo) con el operativo; su panel lo nombra.
+    const dialogo = screen.getByRole("dialog", {
+      name: /Editar operativo OCF-001-02-SEP-2026/,
+    });
     expect(
-      screen.getByText("cargado con: lo ya registrado"),
+      within(dialogo).getByText(/panel de edición para OCF-001-02-SEP-2026/),
     ).toBeInTheDocument();
-    // Un solo formulario en pantalla: el de captura, ahora en modo corrección.
-    expect(screen.getAllByText(/^cargado con: /)).toHaveLength(1);
-    expect(screen.queryByText(/panel de aporte/)).toBeNull();
+
+    // El formulario de arriba NO carga el operativo: sus notas («lo ya registrado») no
+    // aparecen en él; sigue siendo el de captura (alta).
+    expect(screen.queryByText(/cargado con: lo ya registrado/)).toBeNull();
   });
 
   /**
@@ -555,19 +595,27 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
    * sola de las dos pruebas dejaría el otro camino sin fijar.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  it("al cancelar la corrección, vuelve lo que se estaba capturando", async () => {
+  it("al cancelar la corrección en el cajón, el formulario de arriba conserva lo capturado", async () => {
     await registrarUno(operativo({ observaciones: [nota("lo ya registrado")] }));
     await cerrarExito();
 
     TECLEADO.observaciones = ["media captura sin enviar"];
 
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    // El cajón se abre; el formulario de arriba sigue mostrando la captura, no el operativo.
+    const dialogo = screen.getByRole("dialog", {
+      name: /Editar operativo OCF-001-02-SEP-2026/,
+    });
     expect(
-      screen.getByText("cargado con: lo ya registrado"),
+      screen.getByText("cargado con: media captura sin enviar"),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    await userEvent.click(
+      within(dialogo).getByRole("button", { name: "Cancelar" }),
+    );
 
+    // Cerrado el cajón, la captura sigue en su sitio.
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       screen.getByText("cargado con: media captura sin enviar"),
     ).toBeInTheDocument();
@@ -816,45 +864,52 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
-   * ASIGNAR PERSONAL LO DICE. 2026-09-01.
+   * EL PERSONAL DEL CAJÓN ES DIFERIDO. 2026-10-01.
    *
-   * Sobre un operativo que ya existe, cada persona es un `POST` inmediato, y hasta hoy
-   * el éxito **no decía nada**: el fallo hablaba y el acierto callaba. Quien aporta a un
-   * formulario ajeno abre esta pantalla para poner a una persona y se va sin volver a
-   * comprobar, así que ése es el único momento en que puede enterarse.
-   *
-   * SE EXIGE QUE EL MENSAJE NOMBRE A LA PERSONA. «Guardado» a secas no distingue entre
-   * haber asignado a quien se quería y a quien estaba al lado en la lista, que con
-   * treinta candidatos y `Enter` como atajo no es un caso raro.
+   * En el cajón de edición propia (como en Mis operativos) asignar NO toca el servidor en
+   * el acto: se acumula en el borrador y se aplica al «Guardar cambios», junto con los
+   * generales. Se fija que el clic de asignar no llama al servidor, y que el guardado sí.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  it("al asignar una persona, la pantalla confirma y la nombra", async () => {
+  it("al asignar en el cajón se difiere: no llama al servidor hasta «Guardar cambios»", async () => {
     vi.mocked(OperativoService.asignarPersonal).mockResolvedValue(
       operativo({ version: 2 }),
+    );
+    vi.mocked(OperativoService.actualizarTurnoPersonal).mockResolvedValue(
+      operativo({ version: 3 }),
+    );
+    vi.mocked(OperativoService.editar).mockResolvedValue(
+      operativo({ version: 4 }),
     );
 
     await registrarUno();
     await cerrarExito();
 
-    // La asignación en el acto es del operativo que ya existe, no del que se compone.
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "agregar-persona" }),
-    );
 
+    // Asignar en el cajón NO toca el servidor todavía (diferido).
+    await userEvent.click(
+      screen.getByRole("button", { name: "asignar-en-cajón" }),
+    );
+    expect(OperativoService.asignarPersonal).not.toHaveBeenCalled();
+
+    // Al «Guardar cambios» se aplica: asignarPersonal con la persona del borrador.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar cambios" }),
+    );
     await waitFor(() =>
-      expect(
-        screen.getByText(/Se agregó a YUNDA JESSICA/),
-      ).toBeInTheDocument(),
+      expect(OperativoService.asignarPersonal).toHaveBeenCalledWith(7, {
+        funcionarioId: 41,
+      }),
     );
   });
 
   /**
-   * ES LA QUE DISCRIMINA. La anterior pasaría con una pantalla que confirmara siempre,
-   * incluso cuando el servidor rechaza. Aquí el `POST` falla y lo que debe verse es el
-   * motivo del servidor —tal cual, regla 7— y **ninguna confirmación**.
+   * ES LA QUE DISCRIMINA. Si el servidor rechaza a una persona AL GUARDAR, se detiene: se
+   * muestra el motivo del servidor (regla 7) y NO se tocan los datos generales (no se
+   * llama a `editar`). El cajón sigue abierto para corregir.
    */
-  it("y si el servidor la rechaza, no confirma nada", async () => {
+  it("si el servidor rechaza a la persona al guardar, lo dice y no toca los generales", async () => {
     vi.mocked(OperativoService.asignarPersonal).mockRejectedValue({
       status: 409,
       originalError: {
@@ -872,13 +927,18 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Editar" }));
     await userEvent.click(
-      screen.getByRole("button", { name: "agregar-persona" }),
+      screen.getByRole("button", { name: "asignar-en-cajón" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar cambios" }),
     );
 
     await waitFor(() =>
-      expect(OperativoService.asignarPersonal).toHaveBeenCalled(),
+      expect(
+        screen.getByText(/Su departamento ya asignó/),
+      ).toBeInTheDocument(),
     );
-    expect(screen.queryByText(/Se agregó a/)).toBeNull();
+    expect(OperativoService.editar).not.toHaveBeenCalled();
   });
 
   it("ofrece la visión general del día, con el prefijo de las rutas privadas", async () => {

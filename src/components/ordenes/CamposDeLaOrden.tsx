@@ -39,9 +39,17 @@ const ROTULOS = {
 
 type CamposDeLaOrdenProps = {
   dato: DatoAislado;
+  /**
+   * Resalta en color de ADVERTENCIA los campos vacíos (conductor/placa sin asignar), para que la
+   * Dirección vea de un vistazo lo que le falta a la orden. No añade ni quita campos (INV-24).
+   */
+  resaltarVacios?: boolean;
 };
 
-const CamposDeLaOrden: FC<CamposDeLaOrdenProps> = ({ dato }) => (
+const CamposDeLaOrden: FC<CamposDeLaOrdenProps> = ({
+  dato,
+  resaltarVacios = false,
+}) => (
   <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
     <Campo
       rotulo={ROTULOS.horario}
@@ -58,11 +66,13 @@ const CamposDeLaOrden: FC<CamposDeLaOrdenProps> = ({ dato }) => (
       // único dato de contacto de la orden, y sirve para encontrarse en territorio.
       complemento={dato.conductor?.telefono ?? null}
       vacio="Sin conductor asignado"
+      resaltarVacio={resaltarVacios}
     />
     <Campo
       rotulo={ROTULOS.placa}
       valor={dato.placa}
       vacio="Sin vehículo asignado"
+      resaltarVacio={resaltarVacios}
     />
   </dl>
 );
@@ -72,10 +82,13 @@ const Campo: FC<{
   valor: string | null;
   complemento?: string | null;
   vacio?: string;
-}> = ({ rotulo, valor, complemento, vacio = "—" }) => (
+  resaltarVacio?: boolean;
+}> = ({ rotulo, valor, complemento, vacio = "—", resaltarVacio = false }) => (
   <div>
     <dt className="text-xs uppercase tracking-wider text-base-content/70">{rotulo}</dt>
-    <dd className="font-medium">{valor || vacio}</dd>
+    <dd className={`font-medium ${!valor && resaltarVacio ? "text-warning" : ""}`}>
+      {valor || vacio}
+    </dd>
     {complemento && <dd className="text-sm text-base-content/70">{complemento}</dd>}
   </div>
 );

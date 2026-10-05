@@ -134,6 +134,18 @@ type SelectorZonalPuntoProps = {
    * colocarlo por separado, junto a Instituciones, con `SelectorTipoControl`.
    */
   renderTipo?: boolean;
+  /**
+   * Variante en el cajón de edición (2026-09-30): zonales con desplegable flotante y chips con
+   * wrap; punto/tipo con la opción «Otro…» (en vez de «ADICIONALES…»). Por omisión, P-01 no cambia.
+   */
+  enCajon?: boolean;
+  /**
+   * Solo los selectores flotantes (2026-10-01), sin el «Otro…» ni el resto del cajón: `zonalesFlotante`
+   * activa la variante `flotante` de los chips de zonales; `tiposFlotante` la del tipo interno (cuando
+   * `renderTipo`). Se usan en la ventana principal (P-01) para igualar el aspecto del cajón sin lo demás.
+   */
+  zonalesFlotante?: boolean;
+  tiposFlotante?: boolean;
 };
 
 const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
@@ -162,6 +174,9 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
   deshabilitado,
   errores,
   renderTipo = true,
+  enCajon = false,
+  zonalesFlotante = false,
+  tiposFlotante = false,
 }) => {
   // Formulario en línea para agregar un punto al catálogo (Unidad de Operativos).
   const [agregando, setAgregando] = useState(false);
@@ -219,6 +234,8 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
       etiquetaCorta={nombreDeZonal}
       etiquetaLarga={nombreDeZonal}
       marcador="Buscar zonal…"
+      flotante={zonalesFlotante || enCajon}
+      cajaUnica={enCajon}
       deshabilitado={deshabilitado}
       error={errores.zonal}
     />
@@ -279,7 +296,9 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
           </option>
         )}
         {capturaLibrePunto && (
-          <option value={OPCION_ADICIONALES}>ADICIONALES…</option>
+          <option value={OPCION_ADICIONALES}>
+            {enCajon ? "Otro…" : "ADICIONALES…"}
+          </option>
         )}
       </select>
 
@@ -424,6 +443,8 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
     */}
     {renderTipo && (
       <SelectorTipoControl
+        enCajon={enCajon}
+        tiposFlotante={tiposFlotante || enCajon}
         tiposControl={tiposControl}
         tipoSeleccionado={tipoSeleccionado}
         onTipoChange={onTipoChange}

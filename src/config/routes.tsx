@@ -244,7 +244,18 @@ export const pantallas = [
  * un índice de cadena la ausencia habría pasado la compilación y se habría visto al abrir
  * la ruta, en el navegador y con suerte.
  */
-type Ruta = (typeof pantallas)[number]["path"];
+export type Ruta = (typeof pantallas)[number]["path"];
+
+/**
+ * Roles exigidos ADEMÁS del permiso, por ruta (2026-10-05). Va aparte de `pantallas` para no
+ * alterar su `as const`. EXCEPCIÓN DELIBERADA A LA REGLA 4: Órdenes de servicio es solo del
+ * DIRECTOR —el documento lo firma él, y el servidor responde 403 a cualquier otro rol—, así que
+ * conceder `ordenes:gestionar` a otro rol no debe abrirle la pantalla. El menú lo replica
+ * (`requiredRoles`) y `InicioSegunRol` lo respeta.
+ */
+export const ROLES_REQUERIDOS: Partial<Record<Ruta, readonly string[]>> = {
+  "cuadro/ordenes": ["DIRECTOR"],
+};
 
 const CONSTRUIDAS: Record<Ruta, ReactNode> = {
   "cuadro/registro": <CuadroRegistroPage />,
@@ -276,8 +287,12 @@ const CONSTRUIDAS: Record<Ruta, ReactNode> = {
 const protegida = (
   permisos: readonly string[],
   contenido: ReactNode,
+  rolesRequeridos?: readonly string[],
 ): ReactNode => (
-  <RutaProtegida permisosPermitidos={[...permisos]}>
+  <RutaProtegida
+    permisosPermitidos={[...permisos]}
+    rolesRequeridos={rolesRequeridos}
+  >
     <Suspense fallback={<Loading />}>{contenido}</Suspense>
   </RutaProtegida>
 );
@@ -330,7 +345,11 @@ export const routes: RouteObject[] = [
 
       ...pantallas.map((pantalla) => ({
         path: pantalla.path,
-        element: protegida(pantalla.permisos, CONSTRUIDAS[pantalla.path]),
+        element: protegida(
+          pantalla.permisos,
+          CONSTRUIDAS[pantalla.path],
+          ROLES_REQUERIDOS[pantalla.path],
+        ),
       })),
       // Una ruta desconocida bajo /home vuelve al inicio del área, no a una página en
       // blanco. `RutaProtegida` ya redirige aquí cuando el rol no corresponde.

@@ -23,10 +23,12 @@
 import httpClient from "../api/httpClient";
 import type {
   Apartado,
+  DatosGeneralesPlantilla,
   DatosMemorando,
   EditablesMemorando,
   Matriz,
   OrdenServicio,
+  Plantilla,
 } from "../interfaces/Documento";
 
 /** `GET /matriz/:fecha`. Solo la Dirección (RN-48). */
@@ -98,31 +100,95 @@ const generarMemorandoEditado = async (
   return data;
 };
 
-/** `GET /plantilla-orden`. La plantilla compartida (apartados). Solo Dirección. */
-const obtenerPlantilla = async (): Promise<Apartado[]> => {
-  const { data } = await httpClient.get<Apartado[]>("/plantilla-orden");
+/**
+ * `PATCH /ordenes-servicio/:codigo/datos-persona`. Completa EL CARGO del destinatario de una orden
+ * (E21, origen 'persona'): el único dato de la ficha que falta en la práctica. Actualiza solo esa
+ * orden —no la ficha del módulo de Personal— y, con el resto completo, la orden pasa a Vigente.
+ */
+const completarDatosPersona = async (
+  codigo: string,
+  cargo: string,
+): Promise<void> => {
+  await httpClient.patch(`/ordenes-servicio/${codigo}/datos-persona`, { cargo });
+};
+
+/**
+ * La config del memorando de una jornada (D13): del DÍA, compartida por todas sus órdenes. El número
+ * de memorando SALIÓ de aquí (2026-10-02): ahora es un dato general de la plantilla (origen
+ * 'plantilla'). Quedan el NUT y «elaborado por», que sí son del día.
+ */
+export interface ConfigCuadroOrden {
+  nut: string | null;
+  elaboradoPor: string | null;
+}
+
+/** `GET /cuadro/:fecha/config-orden`. Precarga el formulario de configuración del cuadro (E21). */
+const obtenerConfigCuadro = async (
+  fecha: string,
+): Promise<ConfigCuadroOrden> => {
+  const { data } = await httpClient.get<ConfigCuadroOrden>(
+    `/cuadro/${fecha}/config-orden`,
+  );
   return data;
 };
 
-/** `PUT /plantilla-orden`. Guarda la plantilla; se aplica a todas las órdenes futuras. */
-const guardarPlantilla = async (apartados: Apartado[]): Promise<Apartado[]> => {
-  const { data } = await httpClient.put<Apartado[]>("/plantilla-orden", {
+/**
+ * `PUT /cuadro/:fecha/config-orden`. Guarda la config del memorando de la jornada (E21, origen
+ * 'configuracion') y PROMUEVE sus borradores: al completar estos datos del día, las órdenes del
+ * cuadro que ya no tengan faltantes pasan a Vigente con su número AMC-OS.
+ */
+const guardarConfigCuadro = async (
+  fecha: string,
+  datos: ConfigCuadroOrden,
+): Promise<ConfigCuadroOrden> => {
+  const { data } = await httpClient.put<ConfigCuadroOrden>(
+    `/cuadro/${fecha}/config-orden`,
+    datos,
+  );
+  return data;
+};
+
+/**
+ * `GET /plantilla-orden`. La plantilla compartida: apartados + datos generales del Director
+ * (2026-10-02). Solo Dirección.
+ */
+const obtenerPlantilla = async (): Promise<Plantilla> => {
+  const { data } = await httpClient.get<Plantilla>("/plantilla-orden");
+  return data;
+};
+
+/**
+ * `PUT /plantilla-orden`. Guarda la plantilla (apartados + datos generales); se aplica a todas las
+ * órdenes que se emitan después.
+ */
+const guardarPlantilla = async (
+  apartados: Apartado[],
+  datosGenerales: DatosGeneralesPlantilla,
+): Promise<Plantilla> => {
+  const { data } = await httpClient.put<Plantilla>("/plantilla-orden", {
     apartados,
+    datosGenerales,
   });
   return data;
 };
 
 /**
  * `POST /plantilla-orden/previsualizar`. El PDF de la plantilla EN EDICIÓN (aún sin guardar), con
- * datos de muestra, para la vista previa real del editor de plantilla. Solo Dirección.
+ * los datos generales en edición y datos de muestra, para la vista previa real del editor. Solo
+ * Dirección.
  */
 const previsualizarPlantilla = async (
   apartados: Apartado[],
+  datosGenerales: DatosGeneralesPlantilla,
+  /** Cancela la petición si llega una más nueva (el editor aborta la anterior). */
+  signal?: AbortSignal,
 ): Promise<Blob> => {
   const { data } = await httpClient.post<Blob>(
     "/plantilla-orden/previsualizar",
-    { apartados },
-    { responseType: "blob" },
+    // La plantilla EN BORRADOR (sin guardar). La vista previa es siempre genérica (D17): los datos
+    // de la orden salen como marcadores grises; ya no hay `codigo` de una persona real.
+    { apartados, datosGenerales },
+    { responseType: "blob", signal },
   );
   return data;
 };
@@ -135,6 +201,9 @@ export const DocumentoService = {
   verOrdenMemorando,
   obtenerDatosMemorando,
   generarMemorandoEditado,
+  completarDatosPersona,
+  obtenerConfigCuadro,
+  guardarConfigCuadro,
   obtenerPlantilla,
   guardarPlantilla,
   previsualizarPlantilla,

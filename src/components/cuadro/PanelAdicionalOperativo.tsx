@@ -119,6 +119,18 @@ type PanelAdicionalOperativoProps = {
     ayudas: FormikHelpers<ValoresOperativo>,
   ) => void | Promise<void>;
   onCancelar: () => void;
+  /**
+   * DENTRO DEL CAJÓN (2026-09-30, Fase E). El adicional pasó de tarjeta en línea a cajón lateral, el
+   * mismo que la edición. `sinMarco` quita la tarjeta y la cabecera propias —las pone el
+   * `DrawerLateral`—; `idForm`/`ocultarAcciones` mueven el pie de acción al pie fijo del cajón;
+   * `enCajon` refluye a una columna y `bandejaSinTope` aplana las bandejas de personal. Por omisión
+   * (uso anterior en línea) nada cambia.
+   */
+  sinMarco?: boolean;
+  enCajon?: boolean;
+  idForm?: string;
+  ocultarAcciones?: boolean;
+  bandejaSinTope?: boolean;
 };
 
 /** Quién del equipo del padre no pudo heredarse, y por qué lo dice el servidor. */
@@ -142,6 +154,11 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
   guardando,
   onGuardar,
   onCancelar,
+  sinMarco = false,
+  enCajon = false,
+  idForm,
+  ocultarAcciones = false,
+  bandejaSinTope = false,
 }) => {
   const yaAgregados = new Set(
     personalAgregado.map((persona) => persona.funcionarioId),
@@ -228,34 +245,14 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
     heredarPersonal();
   }, [cargandoPersonal, candidatos.length, heredarPersonal]);
 
-  return (
-  <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-    <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-        Operativo adicional de {origen.identificador}
-      </h2>
-      {/*
-        EL COLOR DEL BANNER LO ENTREGA EL SERVIDOR, Y EL DEL TEXTO SE CALCULA.
-        Regla 3 de CLAUDE.md, cumplida desde el 2026-08-26. Ver la nota gemela en
-        `PanelEdicionOperativo`: con `text-white` fijo el rótulo del formulario 8 era
-        blanco sobre blanco.
-      */}
-      <span
-        className="badge badge-sm min-w-0 max-w-full"
-        title={`${origen.formulario.numero}. ${origen.formulario.nombre}`}
-        style={{
-          backgroundColor: origen.formulario.colorFondo,
-          color: colorDeTextoSobre(origen.formulario.colorFondo),
-        }}
-      >
-        {/* `min-w-0` + `truncate`: ver la nota gemela en `PanelEdicionOperativo`. */}
-        <span className="min-w-0 truncate">
-          {origen.formulario.numero}. {origen.formulario.nombre}
-        </span>
-      </span>
-    </div>
-
-    <div className="app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6">
+  const cuerpo = (
+    <div
+      className={
+        sinMarco
+          ? "flex flex-col gap-4"
+          : "app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6"
+      }
+    >
       <p className="text-xs text-base-content/70">
         Se registra en la misma jornada y en el mismo formulario que{" "}
         {origen.identificador}, y con su propia numeración: el identificador lo
@@ -420,9 +417,48 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         bloqueado={bloqueado}
         guardando={guardando}
         onGuardar={onGuardar}
+        enCajon={enCajon}
+        idForm={idForm}
+        ocultarAcciones={ocultarAcciones}
+        bandejaSinTope={bandejaSinTope}
+        // El personal del adicional NO se guarda al instante: entra con él al registrar. Así la
+        // lista compacta del cajón no promete «Se guarda al instante» (a diferencia de la edición).
+        personalInmediato={false}
       />
     </div>
-  </div>
+  );
+
+  // Dentro del cajón: sin tarjeta ni cabecera propias (las pone `DrawerLateral`).
+  if (sinMarco) return cuerpo;
+
+  return (
+    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
+          Operativo adicional de {origen.identificador}
+        </h2>
+        {/*
+          EL COLOR DEL BANNER LO ENTREGA EL SERVIDOR, Y EL DEL TEXTO SE CALCULA.
+          Regla 3 de CLAUDE.md, cumplida desde el 2026-08-26. Ver la nota gemela en
+          `PanelEdicionOperativo`: con `text-white` fijo el rótulo del formulario 8 era
+          blanco sobre blanco.
+        */}
+        <span
+          className="badge badge-sm min-w-0 max-w-full"
+          title={`${origen.formulario.numero}. ${origen.formulario.nombre}`}
+          style={{
+            backgroundColor: origen.formulario.colorFondo,
+            color: colorDeTextoSobre(origen.formulario.colorFondo),
+          }}
+        >
+          {/* `min-w-0` + `truncate`: ver la nota gemela en `PanelEdicionOperativo`. */}
+          <span className="min-w-0 truncate">
+            {origen.formulario.numero}. {origen.formulario.nombre}
+          </span>
+        </span>
+      </div>
+      {cuerpo}
+    </div>
   );
 };
 

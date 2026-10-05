@@ -328,6 +328,25 @@ const ReporteroDeValores: FC<{
   return null;
 };
 
+/**
+ * Avisa a la página de si el formulario tiene GENERALES sin guardar (`dirty` de Formik), para el
+ * indicador «Cambios sin guardar / Sin cambios» del pie del cajón de edición (P-02, Fase D). El
+ * personal se guarda al instante y NO entra en `dirty`, así que el indicador habla solo de los
+ * campos del operativo. No pinta nada, como `ReporteroDeValores`: vive dentro de `<Formik>` por su
+ * contexto. Solo se monta cuando la página pasa `onCambiosSinGuardar` (el cajón de P-02).
+ */
+const ReporteroDeCambios: FC<{
+  onCambiosSinGuardar: (hayCambios: boolean) => void;
+}> = ({ onCambiosSinGuardar }) => {
+  const { dirty } = useFormikContext<ValoresOperativo>();
+
+  useEffect(() => {
+    onCambiosSinGuardar(dirty);
+  }, [dirty, onCambiosSinGuardar]);
+
+  return null;
+};
+
 const FocoAlPrimerError: FC = () => {
   const { submitCount, isValidating, errors } =
     useFormikContext<ValoresOperativo>();
@@ -467,6 +486,11 @@ type FormularioOperativoProps = {
    */
   onValoresCambian?: (valores: ValoresOperativo) => void;
   /**
+   * AVISA SI HAY GENERALES SIN GUARDAR (`dirty`), para el indicador del pie del cajón de P-02
+   * (Fase D). Opcional y solo en ese uso; el personal se guarda al instante y no entra en `dirty`.
+   */
+  onCambiosSinGuardar?: (hayCambios: boolean) => void;
+  /**
    * ═══════════════════════════════════════════════════════════════════════════════
    * «CANTIDAD DE OPERATIVOS» POR PERSONA · SOLO EN EL FORMULARIO QUE LO ADMITE (form 8). 2026-09-10.
    *
@@ -500,6 +524,37 @@ type FormularioOperativoProps = {
    * No se puede deducir de `valoresIniciales` porque el alta también los pasa (el borrador).
    */
   proponerZonalDePersona?: boolean;
+  /**
+   * PIE EN OTRO SITIO (2026-09-30). En el cajón de edición de P-02 los botones Cancelar/Guardar
+   * viven en el PIE FIJO del cajón, no en el formulario: `idForm` da al `<Form>` un `id` para que
+   * un `<button type="submit" form={idForm}>` externo lo envíe, y `ocultarAcciones` esconde el pie
+   * interno. Por omisión (P-01) el pie interno se mantiene.
+   */
+  idForm?: string;
+  ocultarAcciones?: boolean;
+  /** Aplana las bandejas de personal (sin tope/scroll) dentro del cajón. Ver `SelectorPersonal`. */
+  bandejaSinTope?: boolean;
+  /**
+   * DENTRO DEL CAJÓN (2026-09-30). Reflujo a UNA columna: el bloque de Personal deja de ir lado a
+   * lado con los campos y se apila, para caber en `max-w-2xl`. Los pares cortos (Zonal|Punto,
+   * Instituciones|Tipo) conservan sus dos columnas. Por omisión (P-01) la rejilla no cambia.
+   */
+  enCajon?: boolean;
+  /**
+   * SOLO los SELECTORES flotantes (2026-10-01), SIN el reflujo a una columna ni la lista compacta.
+   * Activa la variante `flotante` de Zonales, Instituciones y Tipo de control —chips con texto
+   * completo y desplegable `absolute`, en vez de la lista con scroll dentro del flujo— manteniendo
+   * el layout de dos columnas de P-01 y el Punto/los rótulos como están. `enCajon` ya los activa
+   * por su cuenta; esto es para usarlos en la ventana principal sin lo demás del cajón.
+   */
+  selectoresFlotantes?: boolean;
+  /**
+   * Si el personal se guarda AL INSTANTE (edición de P-02) o entra al registrar (alta, adicional).
+   * Solo cambia el rótulo «Se guarda al instante» de la lista compacta del cajón. Por omisión no.
+   */
+  personalInmediato?: boolean;
+  /** Subtítulo del drawer de «Reparto de carga» en el alta (p. ej. «<formulario> · semana N»). */
+  repartoSubtitulo?: string;
 };
 
 const FormularioOperativo: FC<FormularioOperativoProps> = ({
@@ -527,11 +582,19 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
   onGuardar,
   refFormik,
   onValoresCambian,
+  onCambiosSinGuardar,
   permiteCantidadPorPersona = false,
   onCambiarCantidadPersona,
   personalBloqueado = false,
   personalOculto = false,
   proponerZonalDePersona = false,
+  idForm,
+  ocultarAcciones = false,
+  bandejaSinTope = false,
+  enCajon = false,
+  selectoresFlotantes = false,
+  personalInmediato = false,
+  repartoSubtitulo,
 }) => (
   <Formik<ValoresOperativo>
     innerRef={refFormik}
@@ -633,7 +696,10 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
       };
 
       return (
-        <Form className="flex flex-col gap-4">
+        <Form
+          id={idForm}
+          className="flex flex-col gap-4"
+        >
           {/*
             ═══════════════════════════════════════════════════════════════════════════
             DOS COLUMNAS: PERSONAL A LA IZQUIERDA, EL RESTO APILADO A LA DERECHA. 2026-09-09.
@@ -653,7 +719,7 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
           */}
           <div
             className={`grid grid-cols-1 gap-3 ${
-              personalOculto ? "" : "lg:grid-cols-2"
+              personalOculto || enCajon ? "" : "lg:grid-cols-2"
             }`}
           >
             {/*
@@ -662,7 +728,15 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
               En la PATRULLA al editar se OCULTA: su personal se gestiona con el roster del panel.
             */}
             {!personalOculto && (
-            <div className="flex flex-col gap-3">
+            <div
+              className={`flex flex-col gap-3 ${
+                enCajon ? "rounded-box border border-base-300 p-3" : ""
+              }`}
+            >
+              {/* SECCIÓN 1 (solo en el cajón): la cabecera reemplaza al rótulo interno del selector. */}
+              {enCajon && (
+                <p className="app-section-heading">Personal asignado</p>
+              )}
               <SelectorPersonal
                 candidatos={candidatos}
                 cargando={cargandoPersonal}
@@ -693,6 +767,29 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
                   (hayErrorPersonal ? (errorPersonal ?? null) : null)
                 }
                 confirmacion={confirmacionPersonal}
+                bandejaSinTope={bandejaSinTope}
+                /*
+                  LISTA DE UNA COLUMNA EN TODAS PARTES (2026-10-01): candidatos con «+ Agregar/Asignar»,
+                  filtros en pestañas y contador único, tanto en el cajón de edición como en el ALTA.
+                  La diferencia la marca `horarioInline`: en el alta el horario se captura por persona
+                  con los dos campos de hora SIEMPRE visibles (regla 14/RN-66); en el cajón, con
+                  «Cambiar turno» al vuelo. (P-13 usa `SelectorPersonal` directo, sin estas props.)
+                */
+                listaCompacta
+                horarioInline={!enCajon}
+                /*
+                  El rótulo «Se guarda al instante» de la lista compacta solo es cierto en la EDICIÓN
+                  (asignar/retirar/turno son al vuelo). En el adicional el personal entra con él al
+                  registrar, así que la página pasa `personalInmediato={false}` y el rótulo se calla.
+                */
+                guardadoInmediato={personalInmediato}
+                ocultarEtiqueta={enCajon}
+                /*
+                  REPARTO DE CARGA (2026-10-01): dentro del cajón se abre como vista del mismo cajón;
+                  en el alta (fuera del cajón), como un drawer lateral aparte con su subtítulo.
+                */
+                repartoEnCajon={enCajon}
+                repartoSubtitulo={repartoSubtitulo}
                 onCambiarHorario={onCambiarHorarioPersona}
                 horasHorario={horasSeleccionables()}
                 permiteCantidadPorPersona={
@@ -705,13 +802,29 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
 
             {/* DERECHA · la pila de campos del operativo. */}
             <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {/* SECCIÓN 2 (solo en el cajón): «Datos del operativo», con su ayuda de guardado. */}
+              {enCajon && (
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="app-section-heading">Datos del operativo</p>
+                  <span className="text-xs text-base-content/80">
+                    Se guardan con «Guardar cambios»
+                  </span>
+                </div>
+              )}
+              <div
+                className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${
+                  enCajon ? "rounded-box border border-base-300 p-3" : ""
+                }`}
+              >
                 {/*
                   Zonal y Punto de encuentro (fila 1 de la pila). El «Tipo de control» NO se
                   pinta aquí (`renderTipo={false}`): baja a la fila de Instituciones.
                 */}
                 <SelectorZonalPunto
                   renderTipo={false}
+                  enCajon={enCajon}
+                  zonalesFlotante={enCajon || selectoresFlotantes}
+                  tiposFlotante={enCajon || selectoresFlotantes}
                   zonales={catalogos?.zonales ?? []}
                   zonalesSeleccionadas={values.zonalesIds}
                   onZonalesChange={(ids) => {
@@ -826,6 +939,8 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
                     etiquetaCorta={siglaDeInstitucion}
                     etiquetaLarga={nombreDeInstitucion}
                     marcador="Escriba para buscar una institución…"
+                    flotante={enCajon || selectoresFlotantes}
+                    cajaUnica={enCajon}
                     deshabilitado={bloqueado || soloPersonal}
                     error={
                       touched.institucionesIds && errors.institucionesIds
@@ -837,6 +952,8 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
 
                 {/* TIPO DE CONTROL · a la derecha de Instituciones. */}
                 <SelectorTipoControl
+                  enCajon={enCajon}
+                  tiposFlotante={enCajon || selectoresFlotantes}
                   tiposControl={catalogos?.tiposControl ?? []}
                   tipoSeleccionado={values.tipoControl}
                   onTipoChange={(valor) => {
@@ -865,12 +982,20 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
                 />
               </div>
 
+              {/* SECCIÓN 3 (solo en el cajón): «Observaciones (opcional)». */}
+              {enCajon && (
+                <p className="app-section-heading">Observaciones (opcional)</p>
+              )}
               {/*
                 LAS OBSERVACIONES SON NOTAS INDEPENDIENTES desde el 2026-09-09 (bitácora): se
                 teclea una y se agrega; en corrección se muestran las ya escritas en solo
                 lectura. Van a lo ancho, al pie de la pila derecha.
               */}
-              <div>
+              <div
+                className={
+                  enCajon ? "rounded-box border border-base-300 p-3" : ""
+                }
+              >
                 <CapturadorNotas
                   notasNuevas={values.observaciones}
                   onCambio={(notas) =>
@@ -878,6 +1003,8 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
                   }
                   notasExistentes={observacionesExistentes}
                   deshabilitado={bloqueado || soloPersonal}
+                  distinguirNuevas={enCajon}
+                  ocultarEtiqueta={enCajon}
                 />
               </div>
             </div>
@@ -907,42 +1034,48 @@ const FormularioOperativo: FC<FormularioOperativoProps> = ({
               «Registrar operativo» saltaba a la derecha. Con `ml-auto` los botones quedan
               fijos a la derecha aparezca o no el resumen a su izquierda, y no se mueven.
             */}
-            <div className="ml-auto flex gap-2">
-              {onCancelar && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={onCancelar}
-                  disabled={guardando}
-                >
-                  Cancelar
-                </button>
-              )}
-              {!soloPersonal && (
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={bloqueado || guardando}
-                >
-                  {guardando ? (
-                    <>
-                      <span
-                        className="loading loading-spinner loading-sm"
-                        aria-hidden="true"
-                      />
-                      Guardando…
-                    </>
-                  ) : (
-                    textoAccion
-                  )}
-                </button>
-              )}
-            </div>
+            {/* Pie interno: se OCULTA cuando el cajón de P-02 lleva sus botones al pie fijo. */}
+            {!ocultarAcciones && (
+              <div className="ml-auto flex gap-2">
+                {onCancelar && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={onCancelar}
+                    disabled={guardando}
+                  >
+                    Cancelar
+                  </button>
+                )}
+                {!soloPersonal && (
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={bloqueado || guardando}
+                  >
+                    {guardando ? (
+                      <>
+                        <span
+                          className="loading loading-spinner loading-sm"
+                          aria-hidden="true"
+                        />
+                        Guardando…
+                      </>
+                    ) : (
+                      textoAccion
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <FocoAlPrimerError />
           {onValoresCambian && (
             <ReporteroDeValores onValoresCambian={onValoresCambian} />
+          )}
+          {onCambiosSinGuardar && (
+            <ReporteroDeCambios onCambiosSinGuardar={onCambiosSinGuardar} />
           )}
         </Form>
       );

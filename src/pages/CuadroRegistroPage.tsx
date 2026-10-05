@@ -32,6 +32,7 @@ import type { FormikHelpers, FormikProps } from "formik";
 import CamposCalculados from "../components/cuadro/CamposCalculados.tsx";
 import FormularioOperativo from "../components/cuadro/FormularioOperativo.tsx";
 import PanelEdicionOperativo from "../components/cuadro/PanelEdicionOperativo.tsx";
+import DrawerLateral from "../components/common/DrawerLateral.tsx";
 import RosterPatrulla, {
   type MiembroPatrulla,
 } from "../components/cuadro/RosterPatrulla.tsx";
@@ -63,7 +64,7 @@ import {
 } from "../utils/borradorOperativo.util.ts";
 import { useVentanaCarga } from "../hooks/useVentanaCarga.ts";
 import { ROLES_DE_CARGA } from "../config/env.ts";
-import type { Operativo } from "../interfaces/Operativo.ts";
+import type { Operativo, PersonaAsignada } from "../interfaces/Operativo.ts";
 import {
   nombreDePersona,
   type PersonaElegible,
@@ -100,6 +101,33 @@ const RECHAZOS_DE_PERSONAL = [
   "CUPO_COMPARTIDO_SUPERADO",
   "AREA_NO_ADMITIDA",
 ];
+
+/** Id del `<form>` del cajón de edición propia (P-01), para el submit externo del pie. */
+const ID_FORM_CAJON = "form-edicion-registro";
+
+/**
+ * ¿El borrador de personal del cajón difiere del original del servidor? (2026-10-01). Al editar un
+ * operativo PROPIO en el cajón lateral de P-01 el personal se aplica al «Guardar cambios» —igual
+ * que en Mis operativos—: alta/baja/turno se acumulan en `enEdicion` y esto mira si hay algo
+ * pendiente, para que el pie diga «Cambios sin guardar» y el cierre pregunte antes de descartar.
+ */
+const hayCambiosDePersonal = (
+  actual: PersonaAsignada[],
+  original: PersonaAsignada[],
+): boolean => {
+  if (actual.length !== original.length) return true;
+  const porId = new Map(
+    original.map((persona) => [persona.funcionarioId, persona]),
+  );
+  return actual.some((persona) => {
+    const antes = porId.get(persona.funcionarioId);
+    return (
+      !antes ||
+      antes.horaInicio !== persona.horaInicio ||
+      antes.horaFin !== persona.horaFin
+    );
+  });
+};
 
 const CuadroRegistroPage = () => {
   /** El antetítulo nombra al departamento dueño de estos formularios. */
@@ -331,6 +359,18 @@ const CuadroRegistroPage = () => {
   );
   /** Para leer lo tecleado en el instante de cambiar de modo. Ver `refFormik`. */
   const formularioRef = useRef<FormikProps<ValoresOperativo> | null>(null);
+
+  /**
+   * CAJÓN DE EDICIÓN PROPIA (2026-10-01). Al pulsar «Editar» sobre un operativo propio YA NO se
+   * corrige en el formulario de arriba: se abre el MISMO cajón lateral de Mis operativos, con el
+   * personal DIFERIDO (se aplica al «Guardar cambios»). `refFormikCajon` lee si hay GENERALES sin
+   * guardar (`dirty`) y `personalOriginalRef` guarda el personal del servidor al abrir, para el diff.
+   */
+  const refFormikCajon = useRef<FormikProps<ValoresOperativo> | null>(null);
+  const personalOriginalRef = useRef<PersonaAsignada[]>([]);
+  const [confirmandoDescarte, setConfirmandoDescarte] = useState(false);
+  const [hayCambiosGeneralesCajon, setHayCambiosGeneralesCajon] =
+    useState(false);
 
   /**
    * Los últimos valores del formulario, reportados desde dentro de `<Formik>` (el
@@ -815,6 +855,29 @@ const CuadroRegistroPage = () => {
   );
 
   /**
+   * ¿Esta edición usa el CAJÓN con guardado DIFERIDO? (2026-10-01). Solo el operativo PROPIO que se
+   * corrige en el cajón: NO el aporte (operativo ajeno, personal al instante), NI la patrulla (su
+   * personal se gestiona con el roster, al instante). El personal se acumula en `enEdicion` y se
+   * aplica al «Guardar cambios».
+   */
+  const esEdicionDiferida = useCallback(
+    (operativo: Operativo | null): boolean =>
+      operativo !== null &&
+      !esAporte &&
+      !agregandoAPatrulla &&
+      !operativo.formulario.esPatrulla &&
+      accesoAlOperativo(operativo, user?.rolCodes ?? []) === "PROPIO",
+    [esAporte, agregandoAPatrulla, user],
+  );
+
+  // Al abrir/cambiar de operativo, el personal del servidor es el punto de partida del borrador del
+  // cajón. SOLO al cambiar de `id`, no en cada mutación local (eso anularía el diff).
+  useEffect(() => {
+    personalOriginalRef.current = enEdicion?.personal ?? [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enEdicion?.id]);
+
+  /**
    * ═══════════════════════════════════════════════════════════════════════════════
    * PERSONAL SOBRE UN OPERATIVO QUE YA EXISTE. Modo aporte, PER-06.
    *
@@ -835,6 +898,33 @@ const CuadroRegistroPage = () => {
       setAvisoPersonal(null);
       setConfirmacionPersonal(null);
 
+      // DIFERIDO (cajón de edición propia): se acumula en `enEdicion` local; NO toca el servidor ni
+      // la tabla hasta «Guardar cambios». El turno arranca heredando la ventana del operativo.
+      if (esEdicionDiferida(enEdicion)) {
+        setEnEdicion((actual) =>
+          actual
+            ? {
+                ...actual,
+                personal: [
+                  ...actual.personal,
+                  {
+                    funcionarioId: persona.id,
+                    nombre: nombreDePersona(persona),
+                    area: persona.area,
+                    telefono: null,
+                    esResponsable: false,
+                    asignadoPorRol: actual.creadoPorRol,
+                    horaInicio: actual.horaInicio,
+                    horaFin: actual.horaFin,
+                  },
+                ],
+              }
+            : actual,
+        );
+        return;
+      }
+
+      // INMEDIATO (aporte a formulario ajeno: no hay «Guardar cambios»).
       try {
         const actualizado = await OperativoService.asignarPersonal(
           enEdicion.id,
@@ -855,7 +945,12 @@ const CuadroRegistroPage = () => {
         setAvisoPersonal(presentarError(fallo).mensaje);
       }
     },
-    [enEdicion, empalmarEnLaLista, cargarOperativosDelFormulario],
+    [
+      enEdicion,
+      esEdicionDiferida,
+      empalmarEnLaLista,
+      cargarOperativosDelFormulario,
+    ],
   );
 
   const retirarPersonaDelOperativo = useCallback(
@@ -865,6 +960,21 @@ const CuadroRegistroPage = () => {
       setAvisoPersonal(null);
       setConfirmacionPersonal(null);
 
+      // DIFERIDO (cajón de edición propia): se quita del borrador local; se aplica al guardar.
+      if (esEdicionDiferida(enEdicion)) {
+        setEnEdicion((actual) =>
+          actual
+            ? {
+                ...actual,
+                personal: actual.personal.filter(
+                  (persona) => persona.funcionarioId !== funcionarioId,
+                ),
+              }
+            : actual,
+        );
+        return;
+      }
+
       /*
         EL NOMBRE SE TOMA ANTES DE LLAMAR, porque después ya no está: la respuesta trae el
         operativo **sin** esa persona. Solo se dispone del identificador del funcionario.
@@ -873,6 +983,7 @@ const CuadroRegistroPage = () => {
         (persona) => persona.funcionarioId === funcionarioId,
       );
 
+      // INMEDIATO (aporte).
       try {
         const actualizado = await OperativoService.retirarPersonal(
           enEdicion.id,
@@ -890,7 +1001,12 @@ const CuadroRegistroPage = () => {
         setAvisoPersonal(presentarError(fallo).mensaje);
       }
     },
-    [enEdicion, empalmarEnLaLista, cargarOperativosDelFormulario],
+    [
+      enEdicion,
+      esEdicionDiferida,
+      empalmarEnLaLista,
+      cargarOperativosDelFormulario,
+    ],
   );
 
   /**
@@ -992,6 +1108,23 @@ const CuadroRegistroPage = () => {
       setAvisoPersonal(null);
       setConfirmacionPersonal(null);
 
+      // DIFERIDO (cajón de edición propia): el turno se ajusta en el borrador; se aplica al guardar.
+      if (esEdicionDiferida(enEdicion)) {
+        setEnEdicion((actual) =>
+          actual
+            ? {
+                ...actual,
+                personal: actual.personal.map((persona) =>
+                  persona.funcionarioId === funcionarioId
+                    ? { ...persona, horaInicio, horaFin }
+                    : persona,
+                ),
+              }
+            : actual,
+        );
+        return;
+      }
+
       try {
         const actualizado = await OperativoService.actualizarTurnoPersonal(
           enEdicion.id,
@@ -1013,7 +1146,12 @@ const CuadroRegistroPage = () => {
         setAvisoPersonal(presentarError(fallo).mensaje);
       }
     },
-    [enEdicion, empalmarEnLaLista, cargarOperativosDelFormulario],
+    [
+      enEdicion,
+      esEdicionDiferida,
+      empalmarEnLaLista,
+      cargarOperativosDelFormulario,
+    ],
   );
 
   /**
@@ -1261,12 +1399,36 @@ const CuadroRegistroPage = () => {
     setAgregandoAPatrulla(false);
     setAvisoPersonal(null);
     setConfirmacionPersonal(null);
+    setConfirmandoDescarte(false);
+    setHayCambiosGeneralesCajon(false);
 
     if (borrador) {
       setPersonalAgregado(borrador.personal);
       return;
     }
   }, [borrador]);
+
+  /**
+   * Cerrar el CAJÓN de edición propia (X/velo/Esc/Cancelar). Si hay cambios pendientes —generales
+   * (`dirty`) o personal del borrador— pregunta antes de descartar: en el cajón NADA se guarda hasta
+   * «Guardar cambios». Sin cambios, cierra directo.
+   */
+  const cerrarCajon = useCallback(() => {
+    const personalPendiente = enEdicion
+      ? hayCambiosDePersonal(enEdicion.personal, personalOriginalRef.current)
+      : false;
+    if (refFormikCajon.current?.dirty || personalPendiente) {
+      setConfirmandoDescarte(true);
+      return;
+    }
+    cerrarEdicion();
+  }, [enEdicion, cerrarEdicion]);
+
+  /** Descarta los cambios del cajón (personal y generales) y cierra. */
+  const descartarCajon = useCallback(() => {
+    setConfirmandoDescarte(false);
+    cerrarEdicion();
+  }, [cerrarEdicion]);
 
   /**
    * «Agregar Personal» a una patrulla: abre el panel de aporte (solo personal) sobre un miembro
@@ -1416,10 +1578,91 @@ const CuadroRegistroPage = () => {
           return;
         }
 
+        // DIFERIDO (cajón de edición propia): aplicar el borrador de personal acumulado ANTES de los
+        // generales. Cada alta/baja/turno es su propia petición y NO son una transacción: si el
+        // servidor rechaza una persona (descanso/cruce, RN-24/25), se detiene ahí, se avisa en el
+        // bloque de personal y NO se tocan los generales; lo ya aplicado queda guardado y el cajón
+        // sigue abierto para corregir. Se usa la `version` al día que devuelve cada respuesta.
+        let versionVigente = enEdicion.version;
+        if (esEdicionDiferida(enEdicion)) {
+          const original = personalOriginalRef.current;
+          const idsActual = new Set(
+            enEdicion.personal.map((persona) => persona.funcionarioId),
+          );
+          const idsOriginal = new Set(
+            original.map((persona) => persona.funcionarioId),
+          );
+          const bajas = original.filter(
+            (persona) => !idsActual.has(persona.funcionarioId),
+          );
+          const altas = enEdicion.personal.filter(
+            (persona) => !idsOriginal.has(persona.funcionarioId),
+          );
+          const turnos = enEdicion.personal.filter((persona) => {
+            const antes = original.find(
+              (otra) => otra.funcionarioId === persona.funcionarioId,
+            );
+            return (
+              antes !== undefined &&
+              (antes.horaInicio !== persona.horaInicio ||
+                antes.horaFin !== persona.horaFin)
+            );
+          });
+
+          let actual = enEdicion;
+          const aplicado = (operativoAlDia: Operativo) => {
+            actual = operativoAlDia;
+            versionVigente = operativoAlDia.version;
+            // Lo ya aplicado se consolida: la tabla y el «original» del borrador avanzan, así un
+            // reintento tras un fallo no vuelve a aplicar lo que ya quedó guardado.
+            personalOriginalRef.current = operativoAlDia.personal;
+            empalmarEnLaLista(operativoAlDia);
+          };
+
+          try {
+            for (const baja of bajas) {
+              aplicado(
+                await OperativoService.retirarPersonal(
+                  actual.id,
+                  baja.funcionarioId,
+                ),
+              );
+            }
+            for (const alta of altas) {
+              aplicado(
+                await OperativoService.asignarPersonal(actual.id, {
+                  funcionarioId: alta.funcionarioId,
+                }),
+              );
+              aplicado(
+                await OperativoService.actualizarTurnoPersonal(
+                  actual.id,
+                  alta.funcionarioId,
+                  { horaInicio: alta.horaInicio, horaFin: alta.horaFin },
+                ),
+              );
+            }
+            for (const turno of turnos) {
+              aplicado(
+                await OperativoService.actualizarTurnoPersonal(
+                  actual.id,
+                  turno.funcionarioId,
+                  { horaInicio: turno.horaInicio, horaFin: turno.horaFin },
+                ),
+              );
+            }
+          } catch (falloPersonal: unknown) {
+            // Se detiene y se avisa en el bloque de personal; los generales no se tocan. El `finally`
+            // del `try` externo repone `procesando`. El cajón queda abierto con lo ya aplicado.
+            setAvisoPersonal(presentarError(falloPersonal).mensaje);
+            return;
+          }
+        }
+
         // RN-66: el operativo conserva su ventana (derivada de las personas). En corrección no se
         // toca el horario; se editan zonal, punto, tipo, instituciones y notas (`generales`).
         const actualizado = await OperativoService.editar(enEdicion.id, {
-          version: enEdicion.version,
+          version: versionVigente,
           ...generales,
         });
 
@@ -1438,6 +1681,7 @@ const CuadroRegistroPage = () => {
     },
     [
       enEdicion,
+      esEdicionDiferida,
       empalmarEnLaLista,
       cerrarEdicion,
       catalogos.catalogos?.tipoControlMultiple,
@@ -1503,21 +1747,33 @@ const CuadroRegistroPage = () => {
    * `PanelEdicionOperativo`, que sigue sirviendo al modo aporte y a P-02.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  const personalDelFormulario = useMemo<PersonaAgregada[]>(
-    () =>
-      enEdicion
-        ? enEdicion.personal.map((persona) => ({
-            funcionarioId: persona.funcionarioId,
-            nombre: persona.nombre,
-            telefono: persona.telefono,
-            // El turno de cada persona, para poder EDITARLO en corrección (RN-66, 2026-09-09).
-            // Viene siempre lleno: es la ventana efectiva que resuelve el servidor.
-            horaInicio: persona.horaInicio,
-            horaFin: persona.horaFin,
-          }))
-        : personalAgregado,
-    [enEdicion, personalAgregado],
-  );
+  /*
+    EL FORMULARIO DE ARRIBA ES SIEMPRE EL DEL ALTA (2026-10-01). La corrección de un operativo propio
+    se hace ahora en el CAJÓN lateral, no aquí, así que el personal de este formulario sale siempre de
+    `personalAgregado` (la captura en memoria). En la patrulla, el bloque de personal va oculto
+    (`personalOculto`) y se gestiona con el roster.
+  */
+  const personalDelFormulario = personalAgregado;
+
+  /**
+   * ¿La edición PROPIA se muestra en el CAJÓN lateral? (2026-10-01). Es el operativo propio
+   * no-patrulla que se corrige: aporte y patrulla tienen su propio camino (el cajón de aporte y el
+   * roster, respectivamente).
+   */
+  const edicionEnCajon =
+    enEdicion != null &&
+    !esAporte &&
+    !agregandoAPatrulla &&
+    !editandoPatrulla &&
+    accesoAlOperativo(enEdicion, user?.rolCodes ?? []) === "PROPIO";
+  // ¿Hay personal pendiente de aplicar en el cajón (alta/baja/turno en el borrador)?
+  const personalSucioCajon =
+    edicionEnCajon && enEdicion != null
+      ? hayCambiosDePersonal(enEdicion.personal, personalOriginalRef.current)
+      : false;
+  // El pie y el cierre del cajón miran los generales (`dirty`) Y el personal pendiente.
+  const hayCambiosPendientesCajon =
+    hayCambiosGeneralesCajon || personalSucioCajon;
 
   return (
     <section className="app-page-shell">
@@ -1750,14 +2006,14 @@ const CuadroRegistroPage = () => {
                     lector de pantalla lo anuncie al entrar en el modo.
                     ═══════════════════════════════════════════════════════════════════
                   */}
-                  {enEdicion && (
+                  {editandoPatrulla && (
                     <div
                       className="alert alert-info"
                       role="status"
                     >
                       <span>
-                        Está corrigiendo el operativo{" "}
-                        <strong>{enEdicion.identificador}</strong>. Lo que estaba
+                        Está corrigiendo la patrulla{" "}
+                        <strong>{enEdicion?.identificador}</strong>. Lo que estaba
                         capturando quedó guardado y vuelve al cancelar o al
                         guardar los cambios.
                       </span>
@@ -1807,11 +2063,30 @@ const CuadroRegistroPage = () => {
                   <FormularioOperativo
                     refFormik={formularioRef}
                     /*
-                      SOLO EN ALTA SE CONSERVA LA CAPTURA. En edición la captura está
-                      apartada en `borrador` y a salvo; persistir lo que se teclea sobre
-                      un operativo que se corrige no es lo que se pidió.
+                      ESTILO FLOTANTE DE LOS SELECTORES (2026-10-01). La ventana principal de
+                      registro hereda el desplegable flotante + chips de Zonales, Instituciones y
+                      Tipo de control del cajón lateral, SIN su reflujo a una columna ni las
+                      etiquetas «Otro…»: solo el aspecto flotante.
                     */
-                    onValoresCambian={enEdicion ? undefined : alCambiarValores}
+                    selectoresFlotantes
+                    /*
+                      Subtítulo del drawer «Reparto de carga» del alta: formulario + semana del cuadro.
+                    */
+                    repartoSubtitulo={
+                      cuadro
+                        ? `${formularioElegido.nombre} · semana ${cuadro.nroSemana}`
+                        : formularioElegido.nombre
+                    }
+                    /*
+                      ESTE FORMULARIO ES SIEMPRE EL DEL ALTA (2026-10-01), salvo la corrección de una
+                      PATRULLA propia (que sigue inline por su roster). La edición de un operativo
+                      normal se hace en el CAJÓN lateral, no aquí. Por eso las propiedades «de modo» se
+                      derivan de `editandoPatrulla`, no de `enEdicion`: en alta persiste la captura y en
+                      patrulla no (su borrador está apartado).
+                    */
+                    onValoresCambian={
+                      editandoPatrulla ? undefined : alCambiarValores
+                    }
                     formularioCodigo={formularioElegido.codigo}
                     catalogos={catalogos.catalogos}
                     puntos={catalogos.puntos}
@@ -1825,81 +2100,46 @@ const CuadroRegistroPage = () => {
                       `FormularioOperativo` combina esto con esa bandera. Al teclearlo queda pendiente y
                       el servidor lo crea al registrar, en la misma transacción del operativo.
                     */
-                    permiteAgregarPunto={!enEdicion}
+                    permiteAgregarPunto={!editandoPatrulla}
                     candidatos={candidatos}
                     cargandoPersonal={cargandoPersonal}
                     personalAgregado={personalDelFormulario}
-                    /*
-                      EN ALTA SE ACUMULA EN MEMORIA; EN EDICIÓN SE ESCRIBE EN EL ACTO.
-                      No es una inconsistencia: al registrar no existe todavía el
-                      operativo al que colgar a nadie, y al corregir sí, y cada persona
-                      tiene su propio veredicto de descanso y puede fallar sola.
-                    */
-                    onAgregarPersona={
-                      enEdicion
-                        ? (persona) => void agregarPersonaAlOperativo(persona)
-                        : agregarPersona
-                    }
-                    onRetirarPersona={
-                      enEdicion
-                        ? (funcionarioId) =>
-                            void retirarPersonaDelOperativo(funcionarioId)
-                        : retirarPersona
-                    }
-                    /*
-                      El turno por persona es editable en los DOS modos (RN-66, 2026-09-09).
-                      Al REGISTRAR se acumula en memoria (`cambiarHorarioPersona`); al CORREGIR
-                      se escribe en el acto, como el resto del personal en edición
-                      (`cambiarHorarioPersonaDelOperativo`). Con la función presente, la bandeja
-                      muestra los dos `select` de horario.
-                    */
-                    onCambiarHorarioPersona={
-                      enEdicion
-                        ? cambiarHorarioPersonaDelOperativo
-                        : cambiarHorarioPersona
-                    }
+                    // En alta se acumula en memoria; en la patrulla el personal va por el roster (y el
+                    // bloque de abajo se oculta), así que aquí van siempre los manejadores del alta.
+                    onAgregarPersona={agregarPersona}
+                    onRetirarPersona={retirarPersona}
+                    onCambiarHorarioPersona={cambiarHorarioPersona}
                     avisoPersonal={avisoPersonal}
                     confirmacionPersonal={confirmacionPersonal}
-                    // En corrección se muestran las notas ya escritas (bitácora); en alta no hay.
-                    observacionesExistentes={enEdicion?.observaciones ?? []}
+                    // En la corrección de patrulla se muestran las notas ya escritas; en alta no hay.
+                    observacionesExistentes={
+                      editandoPatrulla ? (enEdicion?.observaciones ?? []) : []
+                    }
                     valoresIniciales={
-                      enEdicion
+                      editandoPatrulla && enEdicion
                         ? comoValoresDeFormulario(enEdicion)
                         : borrador?.valores
                     }
-                    textoAccion={enEdicion ? "Guardar cambios" : undefined}
-                    onCancelar={enEdicion ? cerrarEdicion : undefined}
-                    // Solo en el ALTA se propone la zonal de la persona al asignarla; en
-                    // edición el operativo ya tiene la suya y no se cambia por agregar gente.
-                    proponerZonalDePersona={!enEdicion}
+                    textoAccion={editandoPatrulla ? "Guardar cambios" : undefined}
+                    onCancelar={editandoPatrulla ? cerrarEdicion : undefined}
+                    // Solo en el ALTA se propone la zonal de la persona al asignarla; en la patrulla el
+                    // operativo ya tiene la suya.
+                    proponerZonalDePersona={!editandoPatrulla}
                     bloqueado={bloqueado}
-                    guardando={enEdicion ? procesando : guardando}
-                    onGuardar={enEdicion ? guardarEdicion : registrar}
+                    guardando={editandoPatrulla ? procesando : guardando}
+                    onGuardar={editandoPatrulla ? guardarEdicion : registrar}
                     /*
                       «CANTIDAD DE OPERATIVOS» POR PERSONA, SOLO EN EL ALTA DEL FORMULARIO QUE LA
-                      OFRECE (`cantidadPorPersona`, hoy solo el 8). 2026-09-14: se separó del split
-                      —`variosPorPersona`, que también tiene el 5—, porque el 5 divide por persona
-                      (cada área su código) pero NO ofrece elegir cantidad. En edición no se generan
-                      copias; este bloque ya excluye el aporte (`!esAporte`).
+                      OFRECE (`cantidadPorPersona`, hoy solo el 8). En la patrulla no aplica.
                     */
                     permiteCantidadPorPersona={
-                      !enEdicion &&
+                      !editandoPatrulla &&
                       (catalogos.catalogos?.cantidadPorPersona ?? false)
                     }
                     onCambiarCantidadPersona={cambiarCantidadPersona}
-                    /*
-                      FORM 8 EN EDICIÓN: EL PERSONAL NO SE TOCA (2026-09-14). Los N operativos
-                      del 8 ya tienen su identificador generado —uno por operativo, no
-                      modificable—, así que al corregir uno solo se cambian zonal, punto,
-                      instituciones y tipo; agregar/retirar/editar personal queda bloqueado.
-                    */
-                    personalBloqueado={
-                      Boolean(enEdicion) &&
-                      ((catalogos.catalogos?.cantidadPorPersona ?? false) ||
-                        // En una patrulla el personal se gestiona con las acciones fusionadas
-                        // (Agregar / Eliminar por persona), no dentro del editor de generales.
-                        Boolean(enEdicion?.grupoRegistro))
-                    }
+                    // En la patrulla el personal se gestiona con las acciones fusionadas (roster), no
+                    // dentro del editor de generales: el bloque va oculto y bloqueado.
+                    personalBloqueado={editandoPatrulla}
                     // Al editar una patrulla propia, el personal vive en el roster de arriba: aquí
                     // se OCULTA el bloque de personal y el formulario solo edita los generales.
                     personalOculto={editandoPatrulla}
@@ -1951,9 +2191,18 @@ const CuadroRegistroPage = () => {
             P-01 a un cuarto rol.
             ═══════════════════════════════════════════════════════════════════════
           */}
+          <div className="flex flex-wrap items-center gap-2">
+          {/*
+            CONTRASTE AA SOBRE LA CABECERA AZUL (2026-10-05). Como `btn-ghost` heredaba un texto oscuro
+            sobre el azul y casi no se veía. `app-modules-panel-action` es el botón de cabecera del
+            sistema (borde y texto blancos, con su variante de tema oscuro), el mismo de Matriz,
+            Catálogos o Personal; queda a la derecha, junto al contador. Ancho automático: el rótulo
+            es más largo que el ancho fijo de esa clase.
+          */}
           <Link
             to="/home/cuadro/jornada"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-sm app-modules-panel-action"
+            style={{ width: "auto" }}
           >
             Ver la Jornada del Día
           </Link>
@@ -1968,6 +2217,7 @@ const CuadroRegistroPage = () => {
               ? "Cargando…"
               : `${operativosDelFormulario.length} en la jornada`}
           </span>
+          </div>
         </div>
 
         <div className="app-data-panel-body px-2 pb-4 pt-2 md:px-4">
@@ -2111,38 +2361,207 @@ const CuadroRegistroPage = () => {
         puede pintar aquí un operativo propio, que es justo lo que dejó de hacer.
         ═══════════════════════════════════════════════════════════════════════════════
       */}
-      {(esAporte || agregandoAPatrulla) && enEdicion && (
-        <PanelEdicionOperativo
-          operativo={enEdicion}
-          catalogos={catalogos.catalogos}
-          puntos={catalogos.puntos}
-          cargandoPuntos={catalogos.cargandoPuntos}
-          onZonalesElegidas={(zonalesIds) => {
-            void catalogos.cargarPuntosDeZonales(zonalesIds);
-          }}
-          candidatos={candidatos}
-          cargandoPersonal={cargandoPersonal}
-          onAgregarPersona={(persona) => void agregarPersonaAlOperativo(persona)}
-          onRetirarPersona={(funcionarioId) =>
-            void retirarPersonaDelOperativo(funcionarioId)
-          }
-          avisoPersonal={avisoPersonal}
-          confirmacionPersonal={confirmacionPersonal}
-          bloqueado={bloqueado}
-          /*
-            SOLO PERSONAL: el operativo es de otro departamento y PER-08 dice que aportar
-            personal no es tener el formulario.
-          */
-          soloPersonal
-          guardando={guardando || procesando}
-          /*
-            NO HAY NADA QUE ENVIAR AL FINAL. Cada persona se guarda en su clic, y con
-            `soloPersonal` el botón ni se pinta; el manejador está por contrato.
-          */
-          onGuardar={() => undefined}
-          onCancelar={cerrarEdicion}
-        />
-      )}
+      {/*
+        EN CAJÓN LATERAL (2026-10-01). Antes este panel aparecía EN LÍNEA al pie de la página y la
+        empujaba; ahora vive en el `DrawerLateral` —el mismo cajón flotante de la edición de P-02—,
+        con velo, foco atrapado, Escape y pie fijo. Solo cambia el CONTENEDOR: los manejadores
+        inmediatos (POST/DELETE por persona) y `soloPersonal` no cambian, así que el contrato con el
+        backend es idéntico. Cubre tanto el aporte (DMIT a un formulario compartido) como el agregar
+        a una patrulla, que es lo que ya compartía esta rama.
+      */}
+      <DrawerLateral
+        abierto={(esAporte || agregandoAPatrulla) && enEdicion !== null}
+        antetitulo="Registro de operativo"
+        titulo={
+          enEdicion
+            ? `Personal de ${
+                enEdicion.grupoRegistro && enEdicion.formulario.esPatrulla
+                  ? `patrulla ${enEdicion.grupoRegistro}`
+                  : `operativo ${enEdicion.identificador}`
+              }`
+            : ""
+        }
+        subtitulo={
+          enEdicion
+            ? `${enEdicion.formulario.nombre} · ${enEdicion.horaInicio} a ${enEdicion.horaFin}`
+            : undefined
+        }
+        onCerrar={cerrarEdicion}
+        pie={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={cerrarEdicion}
+              disabled={guardando || procesando}
+            >
+              Cancelar
+            </button>
+          </div>
+        }
+      >
+        {(esAporte || agregandoAPatrulla) && enEdicion && (
+          <PanelEdicionOperativo
+            operativo={enEdicion}
+            catalogos={catalogos.catalogos}
+            puntos={catalogos.puntos}
+            cargandoPuntos={catalogos.cargandoPuntos}
+            onZonalesElegidas={(zonalesIds) => {
+              void catalogos.cargarPuntosDeZonales(zonalesIds);
+            }}
+            candidatos={candidatos}
+            cargandoPersonal={cargandoPersonal}
+            onAgregarPersona={(persona) =>
+              void agregarPersonaAlOperativo(persona)
+            }
+            onRetirarPersona={(funcionarioId) =>
+              void retirarPersonaDelOperativo(funcionarioId)
+            }
+            avisoPersonal={avisoPersonal}
+            confirmacionPersonal={confirmacionPersonal}
+            bloqueado={bloqueado}
+            /*
+              SOLO PERSONAL: el operativo es de otro departamento y PER-08 dice que aportar
+              personal no es tener el formulario.
+            */
+            soloPersonal
+            /*
+              DENTRO DEL CAJÓN: sin marco ni cabecera propios (los pone el `DrawerLateral`),
+              reflujo a una columna, bandejas sin tope y el pie de acción oculto —el Cancelar
+              vive en el pie fijo del cajón, como en P-02—.
+            */
+            sinMarco
+            enCajon
+            bandejaSinTope
+            ocultarAcciones
+            guardando={guardando || procesando}
+            /*
+              NO HAY NADA QUE ENVIAR AL FINAL. Cada persona se guarda en su clic, y con
+              `soloPersonal` el botón ni se pinta; el manejador está por contrato.
+            */
+            onGuardar={() => undefined}
+            onCancelar={cerrarEdicion}
+          />
+        )}
+      </DrawerLateral>
+
+      {/*
+        ═══════════════════════════════════════════════════════════════════════════════
+        CAJÓN DE EDICIÓN PROPIA (2026-10-01). «Editar» un operativo propio abre AQUÍ, el MISMO cajón
+        lateral de Mis operativos (P-02), y ya NO en el formulario de arriba. El personal es DIFERIDO:
+        agregar/quitar/cambiar turno se acumulan en el borrador y se aplican al «Guardar cambios»,
+        junto con los generales. El formulario de arriba queda siempre en modo alta.
+        ═══════════════════════════════════════════════════════════════════════════════
+      */}
+      <DrawerLateral
+        abierto={edicionEnCajon}
+        antetitulo="Registro de operativo"
+        titulo={enEdicion ? `Editar operativo ${enEdicion.identificador}` : ""}
+        subtitulo={
+          enEdicion
+            ? `${enEdicion.formulario.nombre} · ${enEdicion.horaInicio} a ${enEdicion.horaFin}`
+            : undefined
+        }
+        onCerrar={cerrarCajon}
+        pie={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span
+              role="status"
+              className={`mr-auto text-xs ${
+                hayCambiosPendientesCajon
+                  ? "text-warning"
+                  : "text-base-content/70"
+              }`}
+            >
+              {hayCambiosPendientesCajon
+                ? "Cambios sin guardar"
+                : "Sin cambios pendientes"}
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={cerrarCajon}
+              disabled={procesando}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              form={ID_FORM_CAJON}
+              className="btn btn-primary btn-sm"
+              disabled={bloqueado || procesando}
+            >
+              {procesando ? (
+                <>
+                  <span
+                    className="loading loading-spinner loading-sm"
+                    aria-hidden="true"
+                  />
+                  Guardando…
+                </>
+              ) : (
+                "Guardar cambios"
+              )}
+            </button>
+          </div>
+        }
+      >
+        {edicionEnCajon && enEdicion && (
+          <PanelEdicionOperativo
+            operativo={enEdicion}
+            catalogos={catalogos.catalogos}
+            puntos={catalogos.puntos}
+            cargandoPuntos={catalogos.cargandoPuntos}
+            onZonalesElegidas={(zonalesIds) => {
+              void catalogos.cargarPuntosDeZonales(zonalesIds);
+            }}
+            candidatos={candidatos}
+            cargandoPersonal={cargandoPersonal}
+            onAgregarPersona={(persona) =>
+              void agregarPersonaAlOperativo(persona)
+            }
+            onRetirarPersona={(funcionarioId) =>
+              void retirarPersonaDelOperativo(funcionarioId)
+            }
+            onCambiarHorarioPersona={cambiarHorarioPersonaDelOperativo}
+            avisoPersonal={avisoPersonal}
+            confirmacionPersonal={confirmacionPersonal}
+            bloqueado={bloqueado}
+            // FORM 8: EL PERSONAL NO SE TOCA en edición (identificadores ya generados); solo generales.
+            personalBloqueado={catalogos.catalogos?.cantidadPorPersona ?? false}
+            /*
+              DENTRO DEL CAJÓN: sin marco ni cabecera propios (los pone `DrawerLateral`), reflujo a una
+              columna, bandejas sin tope, el pie de acción fuera (lo dispara el submit del `idForm`), y
+              el personal DIFERIDO (`personalInmediato={false}`): se aplica al «Guardar cambios».
+            */
+            sinMarco
+            enCajon
+            bandejaSinTope
+            idForm={ID_FORM_CAJON}
+            ocultarAcciones
+            personalInmediato={false}
+            refFormik={refFormikCajon}
+            onCambiosSinGuardar={setHayCambiosGeneralesCajon}
+            guardando={procesando}
+            onGuardar={guardarEdicion}
+            onCancelar={cerrarCajon}
+          />
+        )}
+      </DrawerLateral>
+
+      {/*
+        Descartar la edición del cajón con cambios pendientes. En el cajón NADA se guarda hasta
+        «Guardar cambios», así que descartar pierde TAMBIÉN el personal del borrador.
+      */}
+      <ModalConfirmacion
+        abierto={confirmandoDescarte}
+        titulo="Descartar cambios"
+        mensaje="¿Descartar los cambios? Se perderán los cambios en el personal asignado y en los datos del operativo (punto de encuentro, zonales, instituciones, tipo de control y observaciones nuevas). Nada se ha guardado todavía."
+        textoSi="Descartar"
+        textoNo="Seguir editando"
+        onConfirmar={descartarCajon}
+        onCancelar={() => setConfirmandoDescarte(false)}
+      />
 
       {/* Caso 2 de CU-03: la confirmación nombra el operativo, no pregunta en abstracto. */}
       <ModalConfirmacion

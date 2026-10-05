@@ -187,3 +187,16 @@ const camposImplicados = (cuerpo: ErrorApi | null): string[] => {
 
   return Object.keys(detalles);
 };
+
+/**
+ * ¿El fallo es una CANCELACIÓN pedida por la propia app (AbortController), no un error? (2026-10-05)
+ *
+ * La vista previa del editor aborta la petición anterior cuando llega una edición nueva; ese aborto
+ * NO es un fallo del servidor y no debe mostrarse. `httpClient` normaliza el error conservando el
+ * `code` de axios (`ERR_CANCELED`); se mira también el nombre por si llega sin normalizar.
+ */
+export const esCancelacion = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, name } = error as { code?: unknown; name?: unknown };
+  return code === "ERR_CANCELED" || name === "CanceledError" || name === "AbortError";
+};

@@ -23,6 +23,11 @@ export type NavigationItem = {
   children?: NavigationItem[];
   /** Permisos que abren el ítem. Si no se define, lo ven todos. Basta tener UNO. */
   requiredPermissions?: string[];
+  /**
+   * Roles exigidos ADEMÁS del permiso (basta uno). Debe coincidir con `ROLES_REQUERIDOS` de la
+   * ruta (hoy solo Órdenes de servicio → DIRECTOR; excepción deliberada a la regla 4).
+   */
+  requiredRoles?: string[];
   defaultOpen?: boolean;
 };
 
@@ -95,6 +100,7 @@ export const shellNavigationItems: NavigationItem[] = [
         path: "cuadro/ordenes",
         icon: "ordenes",
         requiredPermissions: ["ordenes:gestionar"],
+        requiredRoles: ["DIRECTOR"],
       },
     ],
   },

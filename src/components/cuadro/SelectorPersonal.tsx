@@ -56,12 +56,18 @@
 import {
   useId,
   useMemo,
+  useRef,
   useState,
   type FC,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import ModalRepartoCarga from "./ModalRepartoCarga.tsx";
+import BotonRepartoCarga, {
+  type ConteoSemaforo,
+} from "./BotonRepartoCarga.tsx";
+import RepartoCarga, { type ModoReparto } from "./RepartoCarga.tsx";
+import DrawerLateral from "../common/DrawerLateral.tsx";
+import ModalConfirmacion from "../common/ModalConfirmacion.tsx";
 import Paginacion from "../common/Paginacion.tsx";
 import {
   nombreDePersona,
@@ -170,6 +176,52 @@ type SelectorPersonalProps = {
    * ═══════════════════════════════════════════════════════════════════════════════
    */
   confirmacion?: string | null;
+  /**
+   * BANDEJAS SIN TOPE (2026-09-30). Por defecto las bandejas de asignados llevan tope de alto con
+   * scroll propio (regla 14, el registro corto). Dentro del cajón de edición de P-02 —que ya
+   * desplaza— se APLANAN (sin `max-h`/scroll) para no anidar scrolls. P-01 no lo pasa: conserva el tope.
+   */
+  bandejaSinTope?: boolean;
+  /**
+   * LISTA COMPACTA DE ASIGNADOS (Fase C, 2026-09-30). SOLO para el cajón de edición de P-02. En
+   * vez de las bandejas de distintivos (P-01) o de las dos columnas de horario, el personal ya
+   * asignado se pinta como una LISTA de una columna: cada persona con su nombre, unidad·cargo, su
+   * distintivo de carga y «Sugerido», un botón «Quitar» y —cuando se editan turnos
+   * (`onCambiarHorario`)— un «Cambiar turno» que despliega dos horas en línea. Es donde el guardado
+   * es inmediato (asignar/retirar/turno son `PATCH`/`POST`/`DELETE` al vuelo), así que la cabecera
+   * lo dice en palabras. P-01 y el adicional NO lo pasan: conservan sus bandejas.
+   */
+  listaCompacta?: boolean;
+  /**
+   * SOLO en `listaCompacta`: si asignar/retirar/turno se guardan al instante (edición de P-02) o no
+   * (el adicional, cuyo personal entra con él al registrar). Gobierna el rótulo «Se guarda al
+   * instante» de la cabecera: no se pinta cuando el guardado es diferido, para no mentir (regla 6).
+   */
+  guardadoInmediato?: boolean;
+  /**
+   * EN EL CAJÓN: la etiqueta «Personal asignado» la pone la cabecera de la sección
+   * (`app-section-heading`), así que aquí se oculta su texto para no repetirla. Los controles del
+   * encabezado (el botón «Ver reparto de carga») se conservan.
+   */
+  ocultarEtiqueta?: boolean;
+  /**
+   * REPARTO DE CARGA — CONTENEDOR (2026-10-01). Si el selector vive DENTRO de un cajón de edición
+   * (`enCajon`), el reparto se abre como una VISTA del mismo cajón con «← Volver al operativo»; fuera
+   * (alta de P-01), como un `DrawerLateral` aparte con «Listo». El contenido es el mismo (`RepartoCarga`).
+   */
+  repartoEnCajon?: boolean;
+  /** Subtítulo del `DrawerLateral` del reparto en el alta (p. ej. «<formulario> · semana N»). */
+  repartoSubtitulo?: string;
+  /**
+   * ALTA EN UNA COLUMNA CON HORARIO INLINE (2026-10-01). En el ALTA de P-01 la lista pasa a una
+   * columna (como el cajón: candidatos con «+ Agregar», filtros en pestañas, contador único), PERO
+   * el horario se captura POR PERSONA con los dos campos de hora SIEMPRE VISIBLES inline (regla 14 /
+   * RN-66), no detrás de «Cambiar turno». Con `horarioInline` la bandeja de asignados es la de
+   * horario (dos/tres columnas por fila) en vez de la lista compacta de «Cambiar turno»; además el
+   * verbo de las acciones es «Agregar» (borrador) y aparece la nota de borrador. En el cajón de
+   * EDICIÓN es false: allí el turno se cambia al vuelo con «Cambiar turno».
+   */
+  horarioInline?: boolean;
 };
 
 const SelectorPersonal: FC<SelectorPersonalProps> = ({
@@ -186,12 +238,47 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   horasHorario = [],
   permiteCantidadPorPersona = false,
   onCambiarCantidad,
+  bandejaSinTope = false,
+  listaCompacta = false,
+  guardadoInmediato = false,
+  ocultarEtiqueta = false,
+  repartoEnCajon = false,
+  repartoSubtitulo,
+  horarioInline = false,
 }) => {
+  // El verbo de las acciones de asignación: «Agregar» en el borrador del alta, «Asignar» al editar.
+  const verboAsignar = horarioInline ? "Agregar" : "Asignar";
   const [busqueda, setBusqueda] = useState("");
   // Ventana de «reparto de carga»: visión global de las dos señales del formulario. 2026-09-29.
   const [verReparto, setVerReparto] = useState(false);
+  // Para devolver el foco al botón «Ver reparto de carga» al cerrar la vista del cajón.
+  const botonRepartoRef = useRef<HTMLButtonElement>(null);
   // Id del `<datalist>` de horas, único por instancia (P-01 y el panel de aporte conviven). 2026-09-21.
   const idHoras = useId();
+
+  /**
+   * LISTA COMPACTA (Fase C): qué persona tiene desplegado el editor de turno en línea, y el
+   * BORRADOR de sus dos horas. Es local para no lanzar un `PATCH` en cada tecla —el guardado del
+   * turno es una llamada al servidor—: se teclea sobre el borrador y se confirma al pulsar «Guardar
+   * turno», que es cuando se llama a `onCambiarHorario`. Solo hay un editor abierto a la vez.
+   */
+  const [turnoAbierto, setTurnoAbierto] = useState<number | null>(null);
+  const [borradorIni, setBorradorIni] = useState("");
+  const [borradorFin, setBorradorFin] = useState("");
+
+  /**
+   * «QUITAR TODOS» PIDE CONFIRMAR EN EL CAJÓN (2026-10-01). En el cajón de edición la acción se
+   * guarda al instante y retira a TODO el personal: vaciar sin preguntar es demasiado fácil. Fuera
+   * del cajón (P-01, el alta) se conserva el comportamiento inmediato de siempre.
+   */
+  const [confirmandoQuitarTodos, setConfirmandoQuitarTodos] = useState(false);
+
+  /** Abre el editor de turno de una persona, sembrando el borrador con su horario actual. */
+  const abrirTurno = (persona: PersonaAgregada) => {
+    setTurnoAbierto(persona.funcionarioId);
+    setBorradorIni(persona.horaInicio ?? "");
+    setBorradorFin(persona.horaFin ?? "");
+  };
 
   /**
    * El reparto solo tiene sentido si el servidor calculó las señales (llegan en los candidatos).
@@ -201,6 +288,62 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     () => candidatos.some((persona) => persona.indiceCarga !== undefined),
     [candidatos],
   );
+
+  /**
+   * Resumen del semáforo para el botón del reparto (2026-10-05): los MISMOS datos que pinta el
+   * reparto —el `nivelFatiga` de cada candidato—, contados por nivel.
+   */
+  const conteoSemaforo = useMemo<ConteoSemaforo>(
+    () =>
+      candidatos.reduce<ConteoSemaforo>(
+        (cuenta, persona) => {
+          if (persona.nivelFatiga === "VERDE") cuenta.baja += 1;
+          else if (persona.nivelFatiga === "AMBAR") cuenta.media += 1;
+          else if (persona.nivelFatiga === "ROJO") cuenta.alta += 1;
+          return cuenta;
+        },
+        { baja: 0, media: 0, alta: 0 },
+      ),
+    [candidatos],
+  );
+
+  // ── Reparto de carga (2026-10-01) ────────────────────────────────────────────────
+  // El modo solo cambia los TEXTOS del reparto; las acciones reusan onAgregar/onRetirar del selector.
+  const modoReparto: ModoReparto = guardadoInmediato
+    ? "inmediato"
+    : repartoEnCajon
+      ? "diferido"
+      : "borrador";
+  const idsAgregados = useMemo(
+    () => agregadas.map((persona) => persona.funcionarioId),
+    [agregadas],
+  );
+  const cuotaReparto = candidatos.find(
+    (persona) => persona.cuotaJusta !== undefined,
+  )?.cuotaJusta;
+  // `RepartoCarga` agrega por id; el selector espera la persona completa.
+  const agregarDesdeReparto = (id: number) => {
+    const persona = candidatos.find((candidato) => candidato.id === id);
+    if (persona) onAgregar(persona);
+  };
+  const cerrarReparto = () => setVerReparto(false);
+  const volverDelReparto = () => {
+    setVerReparto(false);
+    // Devuelve el foco al botón que abrió la vista (§8 accesibilidad).
+    requestAnimationFrame(() => botonRepartoRef.current?.focus());
+  };
+
+  /**
+   * LISTA COMPACTA: la carga, el «Sugerido» y el cargo de una persona ya asignada viven en los
+   * `candidatos` (la persona agregada solo trae nombre y horario). Se indexan por id para pintarlos
+   * en la lista sin recorrer el arreglo en cada fila. Si alguien ya no está entre los candidatos
+   * —caso raro—, su fila se pinta sin distintivo, no con un dato inventado.
+   */
+  const infoCandidato = useMemo(() => {
+    const mapa = new Map<number, PersonaElegible>();
+    for (const persona of candidatos) mapa.set(persona.id, persona);
+    return mapa;
+  }, [candidatos]);
 
   /** Solo el formulario que lo admite (form 8) muestra la columna de cantidad por persona. */
   const conCantidad = Boolean(permiteCantidadPorPersona && onCambiarCantidad);
@@ -270,9 +413,18 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
       agregadas.map((persona) => persona.funcionarioId),
     );
 
+    // Orden de la lista (2026-10-01): SUGERIDOS primero, luego menor carga y, a igualdad, alfabético.
+    // Los sugeridos son los que están bajo su cuota —a quienes conviene repartir—, así que encabezan.
     return candidatos
       .filter((persona) => !yaAgregadas.has(persona.id))
-      .sort(compararPorCarga);
+      .sort((a, b) => {
+        if (Boolean(a.sugerido) !== Boolean(b.sugerido)) {
+          return a.sugerido ? -1 : 1;
+        }
+        const porCarga = compararPorCarga(a, b);
+        if (porCarga !== 0) return porCarga;
+        return nombreDePersona(a).localeCompare(nombreDePersona(b));
+      });
   }, [candidatos, agregadas]);
 
   /**
@@ -331,6 +483,12 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   const asignables = useMemo(
     () => visibles.filter((persona) => persona.elegible),
     [visibles],
+  );
+
+  /** ¿Todo el personal es de la misma unidad? Entonces no se repite en cada tarjeta ni en pestañas. */
+  const unaSolaUnidad = useMemo(
+    () => new Set(candidatos.map((persona) => persona.area)).size <= 1,
+    [candidatos],
   );
 
   /**
@@ -394,6 +552,59 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     (paginaCandidatosValida + 1) * POR_PAGINA,
   );
 
+  /**
+   * El detalle de un candidato —nombre, unidad·cargo, distintivos de carga y, si no es elegible,
+   * su motivo— es el MISMO en las dos presentaciones (tarjeta-botón de P-01 y fila con «+ Asignar»
+   * del cajón). Se extrae para no duplicarlo entre las dos ramas.
+   */
+  const detalleCandidato = (persona: PersonaElegible) => (
+    <>
+      <span className="text-sm font-medium">{nombreDePersona(persona)}</span>
+      <span className="text-xs text-base-content/70">
+        {NOMBRE_AREA[persona.area]}
+        {persona.cargo ? ` · ${persona.cargo}` : ""}
+      </span>
+      {persona.nivelFatiga && (
+        <span className="mt-0.5 flex flex-wrap gap-1">
+          <span
+            className={`badge badge-sm ${CLASE_BADGE_FATIGA[persona.nivelFatiga]}`}
+          >
+            {NIVEL_FATIGA[persona.nivelFatiga]}
+          </span>
+          {persona.sugerido && (
+            <span className="badge badge-primary badge-sm">Sugerido</span>
+          )}
+        </span>
+      )}
+      {!persona.elegible && persona.motivo && (
+        <span className="text-xs text-warning">{persona.motivo}</span>
+      )}
+    </>
+  );
+
+  // REPARTO EN CAJÓN: una VISTA del mismo cajón de edición (no un drawer aparte), con «← Volver».
+  if (verReparto && repartoEnCajon) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm self-start"
+          onClick={volverDelReparto}
+        >
+          ← Volver al operativo
+        </button>
+        <RepartoCarga
+          personas={candidatos}
+          cuota={cuotaReparto}
+          idsAgregados={idsAgregados}
+          onAgregar={agregarDesdeReparto}
+          onQuitar={onRetirar}
+          modo={modoReparto}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2">
       {/*
@@ -402,7 +613,12 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         mirando. `aria-live="polite"` lo anuncia al asignar y al retirar sin interrumpir
         lo que el lector de pantalla esté diciendo.
       */}
-      <div className="flex items-center justify-between gap-2">
+      <div
+        className={`flex items-center gap-2 ${
+          ocultarEtiqueta ? "justify-end" : "justify-between"
+        }`}
+      >
+        {!ocultarEtiqueta && (
         <label
           className="label"
           htmlFor="busquedaPersonal"
@@ -430,6 +646,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             )}
           </span>
         </label>
+        )}
 
         {/*
           AQUÍ QUEDA EL CONTADOR; «QUITAR TODOS» BAJÓ CON LOS FILTROS. 2026-09-02.
@@ -449,15 +666,15 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         */}
         <div className="flex items-center gap-2">
           {hayCarga && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
+            <BotonRepartoCarga
+              ref={botonRepartoRef}
               onClick={() => setVerReparto(true)}
-            >
-              Ver reparto de carga
-            </button>
+              expandido={verReparto}
+              conteo={conteoSemaforo}
+            />
           )}
-          {agregadas.length > 0 && (
+          {/* En la lista compacta el conteo lo lleva su propia cabecera; aquí sobraría. */}
+          {agregadas.length > 0 && !listaCompacta && (
             <span
               aria-live="polite"
               className="badge badge-primary badge-sm"
@@ -468,11 +685,77 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         </div>
       </div>
 
-      <ModalRepartoCarga
-        abierto={verReparto}
-        onCerrar={() => setVerReparto(false)}
-        candidatos={candidatos}
-      />
+      {/*
+        REPARTO FUERA DEL CAJÓN (alta de P-01): drawer lateral aparte. Dentro del cajón se abre como
+        VISTA (arriba, antes del return principal), no aquí, para no anidar dos drawers.
+      */}
+      {!repartoEnCajon && (
+        <DrawerLateral
+          abierto={verReparto}
+          antetitulo="PERSONAL DEL FORMULARIO"
+          titulo="Reparto de carga"
+          subtitulo={repartoSubtitulo}
+          onCerrar={cerrarReparto}
+          pie={
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-base-content/70">
+                {idsAgregados.length > 0
+                  ? `${idsAgregados.length} agregados al formulario · sin registrar`
+                  : "Aún no agrega personal"}
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={cerrarReparto}
+              >
+                Listo
+              </button>
+            </div>
+          }
+        >
+          <RepartoCarga
+            personas={candidatos}
+            cuota={cuotaReparto}
+            idsAgregados={idsAgregados}
+            onAgregar={agregarDesdeReparto}
+            onQuitar={onRetirar}
+            modo={modoReparto}
+          />
+        </DrawerLateral>
+      )}
+
+      {/*
+        UN SOLO CONTADOR, ARRIBA (2026-10-01). Vale para el cajón de edición y para el alta en una
+        columna. «X de Y efectivos»: X = asignados, Y = total del grupo de candidatos (el mismo
+        significado del pie «X de Y efectivos» de la lista). El operativo NO declara un número
+        exigido de efectivos, así que NO se dice «faltan N» —no hay cupo—; «completo» es el mínimo
+        real (al menos uno, el personal es obligatorio): verde con gente, naranja sin ella (la
+        palabra acompaña al color, regla 6). Debajo, la franja según el modo.
+      */}
+      {listaCompacta && (
+        <div className="flex flex-col gap-1">
+          <span
+            aria-live="polite"
+            className={`text-sm font-semibold ${
+              agregadas.length === 0 ? "text-warning" : "text-success"
+            }`}
+          >
+            {agregadas.length} de {candidatos.length} efectivos
+          </span>
+          {guardadoInmediato ? (
+            <p
+              role="status"
+              className="text-xs text-base-content/80"
+            >
+              Se guarda al instante: no necesita pulsar «Guardar cambios».
+            </p>
+          ) : horarioInline ? (
+            <p className="text-xs text-base-content/70">
+              Borrador: el personal se registra al pulsar «Registrar operativo».
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {/*
         ═══════════════════════════════════════════════════════════════════════════════
@@ -488,8 +771,10 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         justas habrían pedido una altura que no está en el inventario (regla 1).
         ═══════════════════════════════════════════════════════════════════════════════
       */}
-      {agregadas.length > 0 && !onCambiarHorario && (
-        <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+      {agregadas.length > 0 && !onCambiarHorario && !listaCompacta && (
+        <div
+          className={`flex flex-wrap gap-2 ${bandejaSinTope ? "" : "max-h-32 overflow-y-auto"}`}
+        >
           {agregadas.map((persona) => (
             /*
               EL TELÉFONO SALE DEL ANCHO Y SE VA AL `title`. RN-34 lo llama dato de
@@ -565,7 +850,9 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         «Hora inicio y fin») y `select select-bordered select-sm` para las horas.
         ═══════════════════════════════════════════════════════════════════════════════
       */}
-      {agregadas.length > 0 && onCambiarHorario && (
+      {agregadas.length > 0 &&
+        onCambiarHorario &&
+        (horarioInline || !listaCompacta) && (
         <>
           {/*
             CABECERA DE LAS DOS COLUMNAS. 2026-09-09. Sin ella no se percibía que la segunda
@@ -603,7 +890,9 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             ))}
           </datalist>
 
-          <div className="flex max-h-48 flex-col gap-1 overflow-y-auto">
+          <div
+            className={`flex flex-col gap-1 ${bandejaSinTope ? "" : "max-h-48 overflow-y-auto"}`}
+          >
             {agregadas.map((persona) => (
               <div
                 key={persona.funcionarioId}
@@ -752,6 +1041,193 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         </>
       )}
 
+      {/*
+        ═══════════════════════════════════════════════════════════════════════════════
+        LISTA COMPACTA DE ASIGNADOS (Fase C, 2026-09-30). SOLO en el cajón de edición de P-02.
+
+        En vez de las bandejas de distintivos (P-01) o de las dos columnas de horario, aquí el
+        personal ya asignado es una LISTA de una columna: cada persona con su nombre, su unidad·cargo,
+        su distintivo de carga y «Sugerido» —tomados de `candidatos` por id—, un «Quitar» y, cuando se
+        editan turnos (`onCambiarHorario`), un «Cambiar turno» que despliega dos horas en línea. Como
+        el cajón ya se desplaza, la lista NO lleva scroll propio (regla 14 solo aplica al registro
+        corto de P-01). Todas las clases son del inventario (regla 1).
+
+        EL GUARDADO ES INMEDIATO y se dice con palabras (regla 6): asignar, retirar y cambiar el turno
+        son llamadas al servidor al vuelo, así que la cabecera lleva «Se guarda al instante» y la lista
+        no tiene botón propio de guardar. El turno, en cambio, se confirma con «Guardar turno» para no
+        lanzar una llamada por cada tecla.
+        ═══════════════════════════════════════════════════════════════════════════════
+      */}
+      {/*
+        LISTA COMPACTA DE ASIGNADOS CON «CAMBIAR TURNO»: SOLO en la edición en cajón (`!horarioInline`).
+        En el alta (`horarioInline`) la bandeja es la de horario de arriba, con los campos de hora
+        SIEMPRE visibles (regla 14). El contador y la franja ya se pintaron arriba.
+      */}
+      {listaCompacta && !horarioInline && (
+        <>
+          {/* Horas sugeridas, compartidas por los editores de turno en línea. */}
+          {onCambiarHorario && (
+            <datalist id={idHoras}>
+              {horasHorario.map((hora) => (
+                <option
+                  key={hora}
+                  value={hora}
+                >
+                  {comoHoraConMeridiano(hora)}
+                </option>
+              ))}
+            </datalist>
+          )}
+
+          {agregadas.length > 0 && (
+            <ul className="flex flex-col divide-y divide-base-200 rounded-box border border-base-300">
+              {agregadas.map((persona) => {
+                const info = infoCandidato.get(persona.funcionarioId);
+                const editandoTurno = turnoAbierto === persona.funcionarioId;
+                return (
+                  <li
+                    key={persona.funcionarioId}
+                    className="flex flex-col gap-2 px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span
+                          className="text-sm font-medium"
+                          title={
+                            persona.telefono
+                              ? `${persona.nombre} · ${persona.telefono}`
+                              : persona.nombre
+                          }
+                        >
+                          {persona.nombre}
+                        </span>
+                        {info && (
+                          <span className="text-xs text-base-content/70">
+                            {NOMBRE_AREA[info.area]}
+                            {info.cargo ? ` · ${info.cargo}` : ""}
+                          </span>
+                        )}
+                        {info?.nivelFatiga && (
+                          <span className="mt-0.5 flex flex-wrap gap-1">
+                            <span
+                              className={`badge badge-sm ${CLASE_BADGE_FATIGA[info.nivelFatiga]}`}
+                            >
+                              {NIVEL_FATIGA[info.nivelFatiga]}
+                            </span>
+                            {info.sugerido && (
+                              <span className="badge badge-primary badge-sm">
+                                Sugerido
+                              </span>
+                            )}
+                          </span>
+                        )}
+                        {/* El turno actual, en palabras, cuando hay horas y no se está editando. */}
+                        {onCambiarHorario &&
+                          !editandoTurno &&
+                          persona.horaInicio &&
+                          persona.horaFin && (
+                            <span className="text-xs text-base-content/70">
+                              Turno {persona.horaInicio} a {persona.horaFin}
+                            </span>
+                          )}
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1">
+                        {onCambiarHorario && !editandoTurno && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={deshabilitado}
+                            onClick={() => abrirTurno(persona)}
+                          >
+                            Cambiar turno
+                          </button>
+                        )}
+                        {persona.editable !== false && (
+                          <button
+                            type="button"
+                            aria-label={`Quitar a ${persona.nombre}`}
+                            disabled={deshabilitado}
+                            {...propsRetirar(persona.funcionarioId)}
+                            className="btn btn-ghost btn-sm text-error"
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/*
+                      EDITOR DE TURNO EN LÍNEA. Se teclea sobre el borrador (o se elige de la lista) y
+                      «Guardar turno» confirma con una sola llamada al servidor. Las horas son
+                      OBLIGATORIAS (RN-66): sin las dos, el botón se apaga. Reutiliza `input
+                      input-bordered input-sm` (inventario, regla 1).
+                    */}
+                    {onCambiarHorario && editandoTurno && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          list={idHoras}
+                          aria-label={`Hora de inicio de ${persona.nombre}`}
+                          className="input input-bordered input-sm min-w-0"
+                          placeholder="Inicio…"
+                          value={borradorIni}
+                          disabled={deshabilitado}
+                          onChange={(evento) => setBorradorIni(evento.target.value)}
+                        />
+                        <span
+                          aria-hidden="true"
+                          className="text-sm text-base-content/70"
+                        >
+                          a
+                        </span>
+                        <input
+                          type="text"
+                          list={idHoras}
+                          aria-label={`Hora de fin de ${persona.nombre}`}
+                          className="input input-bordered input-sm min-w-0"
+                          placeholder="Fin…"
+                          value={borradorFin}
+                          disabled={deshabilitado}
+                          onChange={(evento) => setBorradorFin(evento.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={
+                            deshabilitado ||
+                            borradorIni.trim() === "" ||
+                            borradorFin.trim() === ""
+                          }
+                          onClick={() => {
+                            onCambiarHorario(
+                              persona.funcionarioId,
+                              borradorIni,
+                              borradorFin,
+                            );
+                            setTurnoAbierto(null);
+                          }}
+                        >
+                          Guardar turno
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={deshabilitado}
+                          onClick={() => setTurnoAbierto(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
+
       {/* Caso 7 del plan: el motivo del servidor se muestra tal cual, y lo capturado en
           el resto del formulario **no se pierde**. */}
       {avisoRechazo && (
@@ -828,7 +1304,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         vacía no filtra nada.
         ═══════════════════════════════════════════════════════════════════════════════
       */}
-      {!cargando && (areas.length > 0 || agregadas.length > 0) && (
+      {!cargando && (areas.length > 0 || agregadas.length > 0) && !listaCompacta && (
         <div className="flex flex-wrap items-center gap-2">
           {areas.length > 0 && (
             <button
@@ -862,7 +1338,9 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
               onClick={asignarVisibles}
               className="btn btn-sm btn-outline"
             >
-              Asignar visibles ({asignables.length})
+              {listaCompacta
+                ? `Asignar ${asignables.length} sugeridos`
+                : `Asignar visibles (${asignables.length})`}
             </button>
           )}
 
@@ -889,6 +1367,100 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
           )}
         </div>
       )}
+
+      {/*
+        ═══════════════════════════════════════════════════════════════════════════════
+        EN EL CAJÓN: LOS FILTROS SON PESTAÑAS (role="tablist"), SEPARADAS DE LAS ACCIONES.
+        2026-10-01. Los filtros por unidad son un `tablist` accesible; «Asignar N sugeridos» y
+        «Quitar todos» quedan en su propia fila, para no confundir un filtro con una acción. P-01
+        conserva su fila única de arriba. Solo clases del inventario (regla 1).
+        ═══════════════════════════════════════════════════════════════════════════════
+      */}
+      {!cargando && (areas.length > 1 || agregadas.length > 0) && listaCompacta && (
+        <div className="flex flex-col gap-2">
+          {/* PESTAÑAS DE UNIDAD solo si hay MÁS de una unidad; con una sola, filtrarían por nada. */}
+          {areas.length > 1 && (
+            <div
+              role="tablist"
+              aria-label="Filtrar disponibles por unidad"
+              className="flex flex-wrap items-center gap-2"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={area === null}
+                disabled={deshabilitado}
+                onClick={() => filtrarPorArea(null)}
+                className={`btn btn-sm ${area === null ? "btn-primary" : "btn-ghost"}`}
+              >
+                Todas ({disponibles.length})
+              </button>
+              {areas.map(([codigo, cuantos]) => (
+                <button
+                  key={codigo}
+                  type="button"
+                  role="tab"
+                  aria-selected={area === codigo}
+                  disabled={deshabilitado}
+                  onClick={() => filtrarPorArea(area === codigo ? null : codigo)}
+                  className={`btn btn-sm ${area === codigo ? "btn-primary" : "btn-ghost"}`}
+                >
+                  {NOMBRE_AREA[codigo]} ({cuantos})
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/*
+            ACCIONES DE LISTA ENTERA. «Asignar N sugeridos» se oculta sin cupos (nada que sugerir);
+            su tooltip explica a quiénes prioriza. «Quitar todos» en rojo pide CONFIRMAR, porque
+            retira a todo el personal y se guarda al instante.
+          */}
+          {(asignables.length > 0 || retirables.length > 0) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {asignables.length > 0 && (
+                <button
+                  type="button"
+                  disabled={deshabilitado}
+                  onClick={asignarVisibles}
+                  title="Agrega a los disponibles elegibles, primero los sugeridos y luego los de menor carga."
+                  className="btn btn-sm btn-outline"
+                >
+                  {/*
+                    El botón agrega TODOS los elegibles visibles (sugeridos primero y luego menor
+                    carga), no solo los marcados «Sugerido»; por eso se rotula «Completar con N de
+                    menor carga» y no «N sugeridos», que prometería menos de lo que hace.
+                  */}
+                  Completar con {asignables.length} de menor carga
+                </button>
+              )}
+              {retirables.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm text-error"
+                  disabled={deshabilitado}
+                  onClick={() => setConfirmandoQuitarTodos(true)}
+                >
+                  Quitar todos ({retirables.length})
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ModalConfirmacion
+        abierto={confirmandoQuitarTodos}
+        titulo="Quitar a todo el personal"
+        mensaje={`¿Quitar a los ${retirables.length} asignados? Se retiran todos del operativo. Este cambio se guarda al instante.`}
+        textoSi="Quitar todos"
+        textoNo="Cancelar"
+        onConfirmar={() => {
+          quitarTodos();
+          setConfirmandoQuitarTodos(false);
+        }}
+        onCancelar={() => setConfirmandoQuitarTodos(false)}
+      />
 
       {/*
         ═══════════════════════════════════════════════════════════════════════════════
@@ -928,77 +1500,102 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
           </p>
         )}
 
+        {/*
+          DOS PRESENTACIONES DE LA MISMA LISTA. P-01: tarjeta-botón (toda la tarjeta asigna al
+          hacer clic), en dos columnas. CAJÓN (listaCompacta): UNA columna, cada fila con el detalle
+          y un botón «+ Asignar» explícito a la derecha —de tamaño `btn` (≥44 px, sin `min-h`
+          arbitrario, regla 16)—, en vez de una tarjeta clicable. El detalle es el mismo
+          (`detalleCandidato`). El motivo del no elegible se muestra tal cual (PV-37).
+        */}
         {!cargando && visibles.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2">
-            {candidatosVisibles.map((persona) => (
-              <button
-                key={persona.id}
-                type="button"
-                disabled={deshabilitado || !persona.elegible}
+          <div
+            className={`grid grid-cols-1 md:grid-cols-2 ${
+              listaCompacta ? "gap-2" : ""
+            }`}
+          >
+            {candidatosVisibles.map((persona) =>
+              listaCompacta ? (
                 /*
-                `aria-disabled` SOLO EN EL NO ELEGIBLE, y no en el bloqueado por la
-                ventana. `disabled` ya lo apaga para todos; esto distingue **por qué**
-                está apagado, que es lo que el lector de pantalla necesita para no
-                confundir «no puede salir hoy» con «el formulario está cerrado».
-
-                Sigue siendo un `<button>`: convertirlo en `div` lo sacaría del tabulador
-                y quien navega con teclado dejaría de poder recorrer la lista.
-              */
-                aria-disabled={!persona.elegible || undefined}
-                // El motivo también en `title`: en una lista larga es lo que se lee al
-                // pasar por encima, sin tener que buscar la línea correspondiente.
-                title={persona.motivo ?? undefined}
-                onClick={() => onAgregar(persona)}
-                className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-base-200"
-              >
-                <span className="text-sm font-medium">
-                  {nombreDePersona(persona)}
-                </span>
-                {/*
-                  EL ÁREA, TRADUCIDA. Hasta el 2026-08-27 aquí se pintaba
-                  `persona.area` en crudo —«INSTRUCCION»— mientras el botón de filtro
-                  de unas líneas más arriba decía «Instrucción». Con los nombres
-                  largos la incoherencia dejó de ser un detalle.
-
-                  La BÚSQUEDA sigue cubriendo las dos formas a propósito: quien
-                  teclea «operativos» y quien teclea «unidad» encuentran lo mismo.
-                */}
-                <span className="text-xs text-base-content/70">
-                  {NOMBRE_AREA[persona.area]}
-                  {persona.cargo ? ` · ${persona.cargo}` : ""}
-                </span>
-                {/*
-                  ÍNDICE DE CARGA / SEMÁFORO DE FATIGA (FRMS, 2026-09-24). ADVISORY: el texto es
-                  la señal (regla 6), no el color —`badge-ghost` es neutro, del inventario (regla
-                  1)—. NO deshabilita a nadie: un elegible con «Carga alta» sigue asignable; el
-                  `disabled` de arriba solo mira `elegible` y la ventana. «Sugerido» marca a los
-                  elegibles de menor carga, para repartir de forma equitativa.
-                */}
-                {persona.nivelFatiga && (
-                  <span className="mt-0.5 flex flex-wrap gap-1">
-                    <span
-                      className={`badge badge-sm ${CLASE_BADGE_FATIGA[persona.nivelFatiga]}`}
-                    >
-                      {NIVEL_FATIGA[persona.nivelFatiga]}
-                    </span>
-                    {persona.sugerido && (
-                      <span className="badge badge-primary badge-sm">
-                        Sugerido
-                      </span>
+                  TARJETA EN GRILLA 2×3 (2026-10-01). Arriba: nombre (hasta 2 líneas, sin ellipsis) y
+                  el cargo/unidad en texto secundario (la unidad se calla si TODOS son de la misma).
+                  Abajo: a la izquierda el badge de carga + «Sugerido»; a la derecha el botón. SOLO el
+                  botón es clicable (la tarjeta no), y va en estilo secundario (outline).
+                */
+                <div
+                  key={persona.id}
+                  className="flex flex-col justify-between gap-2 rounded-box border border-base-300 p-2"
+                >
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-medium">
+                      {nombreDePersona(persona)}
+                    </p>
+                    {(!unaSolaUnidad || persona.cargo) && (
+                      <p className="text-xs text-base-content/70">
+                        {unaSolaUnidad
+                          ? persona.cargo
+                          : `${NOMBRE_AREA[persona.area]}${
+                              persona.cargo ? ` · ${persona.cargo}` : ""
+                            }`}
+                      </p>
                     )}
-                  </span>
-                )}
-                {/*
-                PV-37. El motivo del servidor se muestra TAL CUAL y con el nombre que él
-                redacta: «SOSA BARZOLA JOSE LUIS ya está asignada al operativo
-                OCF-001-12-AGO-2026 de 08H00 A 14H30, que se cruza con este horario».
-                Reescribirlo aquí duplicaría la regla y las dos versiones se separarían.
-              */}
-                {!persona.elegible && persona.motivo && (
-                  <span className="text-xs text-warning">{persona.motivo}</span>
-                )}
-              </button>
-            ))}
+                    {!persona.elegible && persona.motivo && (
+                      <p className="mt-0.5 text-xs text-warning">
+                        No disponible: {persona.motivo}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="flex flex-wrap items-center gap-1">
+                      {persona.nivelFatiga && (
+                        <span
+                          className={`badge badge-sm whitespace-nowrap ${CLASE_BADGE_FATIGA[persona.nivelFatiga]}`}
+                        >
+                          {NIVEL_FATIGA[persona.nivelFatiga]}
+                        </span>
+                      )}
+                      {persona.sugerido && (
+                        <span className="badge badge-primary badge-sm whitespace-nowrap">
+                          Sugerido
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={deshabilitado || !persona.elegible}
+                      aria-disabled={!persona.elegible || undefined}
+                      title={persona.motivo ?? undefined}
+                      onClick={() => onAgregar(persona)}
+                      className="btn btn-outline btn-sm shrink-0 whitespace-nowrap"
+                    >
+                      + {verboAsignar}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  key={persona.id}
+                  type="button"
+                  disabled={deshabilitado || !persona.elegible}
+                  /*
+                  `aria-disabled` SOLO EN EL NO ELEGIBLE, y no en el bloqueado por la
+                  ventana. `disabled` ya lo apaga para todos; esto distingue **por qué**
+                  está apagado, que es lo que el lector de pantalla necesita para no
+                  confundir «no puede salir hoy» con «el formulario está cerrado».
+
+                  Sigue siendo un `<button>`: convertirlo en `div` lo sacaría del tabulador
+                  y quien navega con teclado dejaría de poder recorrer la lista.
+                */
+                  aria-disabled={!persona.elegible || undefined}
+                  // El motivo también en `title`: en una lista larga es lo que se lee al
+                  // pasar por encima, sin tener que buscar la línea correspondiente.
+                  title={persona.motivo ?? undefined}
+                  onClick={() => onAgregar(persona)}
+                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-base-200"
+                >
+                  {detalleCandidato(persona)}
+                </button>
+              ),
+            )}
           </div>
         )}
       </div>
@@ -1023,7 +1620,12 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         La pista del teclado va aquí y no en el marcador porque el marcador desaparece en
         cuanto se escribe la primera letra, que es justo cuando `Enter` empieza a servir.
       */}
-      {!cargando && (
+      {/*
+        EN EL CAJÓN NO SE PINTA ESTE PIE. 2026-10-01. El contador de arriba ya es el único; y la
+        pista «↵ asigna el primer elegible» se retira porque en el cajón se asigna con «+ Asignar»
+        por fila, no con Enter sobre el buscador. P-01 conserva el pie con su «X de Y» y su pista.
+      */}
+      {!cargando && !listaCompacta && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-base-content/70">
           <span>
             {visibles.length} de {candidatos.length} efectivos

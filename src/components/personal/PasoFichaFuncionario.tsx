@@ -11,9 +11,10 @@
  * SOLO LOS CAMPOS: el `<Formik>` y el pie los provee `DrawerFlujoAlta`. Lee los valores por
  * `useFormikContext`, igual que hacía `CampoZonal` en el modal.
  *
- *   · Modo AUTH: cédula y correo llegan de Auth y NO se editan — van en una tarjeta-resumen de
- *     solo lectura, con «Cambiar» para volver al paso 1. Se retira el banner azul del modal.
- *   · Modo MANUAL: sin Auth; cédula (obligatoria) y correo (opcional) sí son campos.
+ *   · Modo AUTH: cédula y correo INSTITUCIONAL llegan de Auth y NO se editan — van en una
+ *     tarjeta-resumen de solo lectura, con «Cambiar» para volver al paso 1. El correo PERSONAL
+ *     (Auth no lo conoce) sí es un campo editable. Se retira el banner azul del modal.
+ *   · Modo MANUAL: sin Auth; cédula (obligatoria) y los dos correos (opcionales) son campos.
  *   · Tipo de contrato PRIMERO, segmentado y SIN valor por defecto (RN-26 se decide mirando).
  *   · Área obligatoria sin precargar; zonal/cargo/teléfono opcionales, marcados «(opcional)».
  *   · Sin placeholders que parezcan datos reales.
@@ -44,7 +45,8 @@ export type ValoresFichaAlta = {
   apellidos: string;
   nombres: string;
   telefono: string;
-  correo: string;
+  correoInstitucional: string;
+  correoPersonal: string;
   cargo: string;
   area: AreaPersonal | "";
   tipoContrato: TipoContrato | "";
@@ -52,8 +54,15 @@ export type ValoresFichaAlta = {
   zonalId: string;
 };
 
-/** Lo que Auth sabe de la persona elegida, para la tarjeta-resumen de solo lectura. */
-export type ResumenAuth = { nombre: string; cedula: string; correo: string };
+/**
+ * Lo que Auth sabe de la persona elegida, para la tarjeta-resumen de solo lectura. El correo
+ * de Auth es el INSTITUCIONAL (la cuenta AD); el personal no lo conoce Auth y se captura aparte.
+ */
+export type ResumenAuth = {
+  nombre: string;
+  cedula: string;
+  correoInstitucional: string;
+};
 
 /** Áreas de la DMIP que capturan zonal en la ficha; Instrucción no (la fija su matriz). */
 const AREAS_CON_ZONAL: AreaPersonal[] = ["OPERATIVOS", "GENERAL", "TECNICO"];
@@ -101,36 +110,46 @@ const PasoFichaFuncionario: FC<PasoFichaFuncionarioProps> = ({
   return (
     <div className="flex flex-col gap-3">
       {modo === "auth" && resumen ? (
-        <div className="rounded-md border border-base-300 bg-base-200 p-3">
-          <div className="flex items-center gap-3">
-            <span
-              className="badge badge-primary badge-lg"
-              aria-hidden="true"
-            >
-              {inicialesDe(resumen.nombre)}
-            </span>
-            <div className="flex min-w-0 flex-col">
-              <span className="font-medium">{resumen.nombre}</span>
-              <span className="text-xs text-base-content/70">
-                <span className="font-mono">{resumen.cedula}</span>
-                {resumen.correo ? ` · ${resumen.correo}` : ""}
+        <>
+          <div className="rounded-md border border-base-300 bg-base-200 p-3">
+            <div className="flex items-center gap-3">
+              <span
+                className="badge badge-primary badge-lg"
+                aria-hidden="true"
+              >
+                {inicialesDe(resumen.nombre)}
               </span>
+              <div className="flex min-w-0 flex-col">
+                <span className="font-medium">{resumen.nombre}</span>
+                <span className="text-xs text-base-content/70">
+                  <span className="font-mono">{resumen.cedula}</span>
+                  {resumen.correoInstitucional
+                    ? ` · ${resumen.correoInstitucional}`
+                    : ""}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm ml-auto"
+                onClick={onCambiar}
+              >
+                Cambiar
+              </button>
             </div>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm ml-auto"
-              onClick={onCambiar}
-            >
-              Cambiar
-            </button>
+            <p className="mt-2 flex items-center gap-1 text-xs text-base-content/70">
+              <Iconos nombre="permisos" />
+              Correo institucional y datos de Auth central · solo lectura
+            </p>
           </div>
-          <p className="mt-2 flex items-center gap-1 text-xs text-base-content/70">
-            <Iconos nombre="permisos" />
-            Datos de Auth central · solo lectura
-          </p>
-        </div>
+          {/* El correo PERSONAL no lo conoce Auth: se captura a mano aun en modo AUTH. */}
+          <Field
+            name="correoPersonal"
+            component={EmailInput}
+            label="Correo personal (opcional)"
+          />
+        </>
       ) : modo === "edicion" ? (
-        // EDICIÓN: la cédula es la identidad de la ficha, no se cambia (solo lectura); el correo sí.
+        // EDICIÓN: la cédula es la identidad de la ficha, no se cambia (solo lectura); los correos sí.
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
             name="cedula"
@@ -139,9 +158,14 @@ const PasoFichaFuncionario: FC<PasoFichaFuncionarioProps> = ({
             disabled
           />
           <Field
-            name="correo"
+            name="correoInstitucional"
             component={EmailInput}
-            label="Correo (opcional)"
+            label="Correo institucional (opcional)"
+          />
+          <Field
+            name="correoPersonal"
+            component={EmailInput}
+            label="Correo personal (opcional)"
           />
         </div>
       ) : (
@@ -160,9 +184,14 @@ const PasoFichaFuncionario: FC<PasoFichaFuncionarioProps> = ({
               required
             />
             <Field
-              name="correo"
+              name="correoInstitucional"
               component={EmailInput}
-              label="Correo (opcional)"
+              label="Correo institucional (opcional)"
+            />
+            <Field
+              name="correoPersonal"
+              component={EmailInput}
+              label="Correo personal (opcional)"
             />
           </div>
         </>

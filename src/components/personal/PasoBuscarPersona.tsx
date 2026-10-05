@@ -14,8 +14,11 @@
  *     línea «N resultados · M ya tienen {ficha|cuenta}».
  *   · Cada fila es un botón con radio visual; se ELIGE, no se «crea» desde la fila. El botón de
  *     avanzar vive en el pie del cajón.
- *   · Quien ya lo tiene aparece deshabilitado con su distintivo; sin roles de Auth a la vista.
- *   · Estado vacío / Auth caído con salida a «Registro manual».
+ *   · Quien ya lo tiene aparece deshabilitado con su distintivo y ORDENADO AL FINAL; sin roles de
+ *     Auth a la vista.
+ *   · Estado vacío / Auth caído con salida a «Registro manual» (estilo enlace).
+ *   · La lista ocupa TODO el alto disponible hasta el pie (columna `flex-1` con su propio scroll);
+ *     el buscador y el recuento quedan fijos arriba.
  *
  * Es GENÉRICO por `proposito` (P-07 ficha, P-11 cuenta): cambian las palabras y a qué campo mira,
  * no la mecánica. El motivo de un impedimento se muestra tal cual (regla 7).
@@ -66,8 +69,16 @@ const PasoBuscarPersona: FC<PasoBuscarPersonaProps> = ({
 
   const visibles = useMemo(() => {
     const texto = normalizar(busqueda);
-    return texto === "" ? filas : filas.filter((fila) => coincide(fila, texto));
-  }, [filas, busqueda]);
+    const filtradas =
+      texto === "" ? filas : filas.filter((fila) => coincide(fila, texto));
+    // Quienes YA lo tienen van AL FINAL. `sort` es estable, así que los disponibles conservan
+    // el orden del servidor y los ya-fichados quedan detrás en el suyo.
+    return [...filtradas].sort(
+      (a, b) =>
+        (proposito.loSuyo(a) != null ? 1 : 0) -
+        (proposito.loSuyo(b) != null ? 1 : 0),
+    );
+  }, [filas, busqueda, proposito]);
 
   const yaLoTienen = useMemo(
     () => visibles.filter((fila) => proposito.loSuyo(fila) != null).length,
@@ -75,25 +86,36 @@ const PasoBuscarPersona: FC<PasoBuscarPersonaProps> = ({
   );
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <input
-          type="search"
-          // Autofoco: el paso 1 se abre para buscar; el operador teclea sin tocar el ratón.
-          autoFocus
-          aria-label="Buscar en el directorio de Auth"
-          className="input input-bordered input-sm w-full"
-          placeholder="Cédula, nombre, correo o dependencia…"
-          value={busqueda}
-          onChange={(evento) => setBusqueda(evento.target.value)}
-        />
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={onActualizar}
-        >
-          Actualizar
-        </button>
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* Buscador con label visible, lupa dentro y tamaño md (≥44px); «Actualizar» con icono. */}
+      <div className="flex flex-col gap-1">
+        <span className="label-text font-medium">
+          Buscar por cédula, nombre, correo o dependencia
+        </span>
+        <div className="flex items-center gap-2">
+          <label className="input input-bordered flex w-full items-center gap-2">
+            <Iconos nombre="buscar" />
+            <input
+              type="search"
+              // Autofoco: el paso 1 se abre para buscar; el operador teclea sin tocar el ratón.
+              autoFocus
+              aria-label="Buscar en el directorio de Auth"
+              className="min-w-0 flex-1"
+              placeholder="Cédula, nombre, correo o dependencia…"
+              value={busqueda}
+              onChange={(evento) => setBusqueda(evento.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-label="Actualizar el directorio"
+            onClick={onActualizar}
+          >
+            <Iconos nombre="actualizar" />
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {cargando ? (
@@ -105,7 +127,7 @@ const PasoBuscarPersona: FC<PasoBuscarPersonaProps> = ({
           </p>
           <button
             type="button"
-            className="btn btn-ghost btn-sm self-start"
+            className="self-start text-sm text-primary underline"
             onClick={onRegistroManual}
           >
             ¿No aparece? Registro manual
@@ -125,14 +147,14 @@ const PasoBuscarPersona: FC<PasoBuscarPersonaProps> = ({
               </p>
               <button
                 type="button"
-                className="btn btn-ghost btn-sm self-start"
+                className="self-start text-sm text-primary underline"
                 onClick={onRegistroManual}
               >
                 ¿No aparece? Registro manual
               </button>
             </div>
           ) : (
-            <ul className="flex max-h-96 flex-col gap-1 overflow-y-auto">
+            <ul className="flex min-h-0 flex-1 flex-col overflow-y-auto">
               {visibles.map((fila) => {
                 const suyo = proposito.loSuyo(fila);
                 const impedimento = proposito.impedimento(fila);
@@ -151,17 +173,23 @@ const PasoBuscarPersona: FC<PasoBuscarPersonaProps> = ({
                       disabled={bloqueada}
                       aria-pressed={seleccionada}
                       onClick={() => onSeleccionar(fila)}
-                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left ${
-                        seleccionada ? "bg-primary/5" : "hover:bg-primary/5"
+                      className={`flex w-full items-center gap-3 px-3 py-3 text-left ${
+                        seleccionada
+                          ? "border border-primary bg-primary/5"
+                          : "border-b border-base-300 hover:bg-base-200"
                       }`}
                     >
-                      {/* Radio visual: punto lleno cuando está elegida (más el `aria-pressed`). */}
+                      {/* Radio visual con borde de contraste; punto interior cuando está elegida. */}
                       <span
                         aria-hidden="true"
-                        className={`badge badge-xs ${seleccionada ? "badge-primary" : "badge-ghost"}`}
-                      />
+                        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-base-content/40"
+                      >
+                        {seleccionada && (
+                          <span className="h-2 w-2 rounded-full bg-primary" />
+                        )}
+                      </span>
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="font-medium">{fila.nombre}</span>
+                        <span className="text-sm font-medium">{fila.nombre}</span>
                         <span className="text-xs text-base-content/70">
                           <span className="font-mono">
                             {fila.cedula || "Sin cédula en Auth"}

@@ -42,6 +42,14 @@ type SelectorTipoControlProps = {
   deshabilitado: boolean;
   errorTipoControl?: string;
   errorTipoLibre?: string;
+  /** Variante en el cajón de edición (2026-09-30): desplegable flotante y opción «Otro…». */
+  enCajon?: boolean;
+  /**
+   * Solo el desplegable flotante de los chips, sin la opción «Otro…» ni el resto de la
+   * variante de cajón. Lo usa la ventana principal de registro (P-01) para heredar el
+   * estilo flotante del cajón sin su reflujo a una columna. 2026-10-01.
+   */
+  tiposFlotante?: boolean;
 };
 
 const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
@@ -57,6 +65,8 @@ const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
   deshabilitado,
   errorTipoControl,
   errorTipoLibre,
+  enCajon = false,
+  tiposFlotante = false,
 }) => (
   <div className="form-control w-full">
     {tipoMultiple ? (
@@ -78,10 +88,30 @@ const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
           etiquetaCorta={nombreDeTipo}
           etiquetaLarga={nombreDeTipo}
           marcador="Escriba para buscar un tipo de control…"
+          flotante={tiposFlotante || enCajon}
+          cajaUnica={enCajon}
+          /*
+            EN EL CAJÓN, EL «OTRO» LIBRE SE INTEGRA EN EL COMBOBOX (2026-10-01): si lo tecleado no
+            coincide con un tipo del catálogo, el desplegable ofrece «+ Agregar … como otro tipo»
+            (o «Reemplazar…»), y el libre se pinta como chip «OTRO ·». Así desaparece el campo
+            separado «Otro tipo (adicional)», que queda SOLO en P-01 (fuera del cajón).
+          */
+          valorLibre={enCajon && capturaLibreTipo ? tipoLibre : undefined}
+          onValorLibre={
+            enCajon && capturaLibreTipo ? onTipoLibreChange : undefined
+          }
           deshabilitado={deshabilitado}
           error={errorTipoControl ?? null}
         />
-        {capturaLibreTipo && (
+        {/* Ayuda del «otro tipo» integrado (solo en el cajón). */}
+        {enCajon && capturaLibreTipo && (
+          <p className="mt-1 text-xs text-base-content/80">
+            Si no encuentra el tipo, escríbalo y elija «Agregar como otro tipo».
+          </p>
+        )}
+        {/* CAMPO SEPARADO «Otro tipo (adicional)»: SOLO fuera del cajón (P-01). En el cajón se
+            integró en el combobox de arriba. */}
+        {capturaLibreTipo && !enCajon && (
           <>
             <label
               className="label mt-2"
@@ -141,7 +171,9 @@ const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
             </option>
           ))}
           {capturaLibreTipo && (
-            <option value={OPCION_ADICIONALES}>ADICIONALES…</option>
+            <option value={OPCION_ADICIONALES}>
+              {enCajon ? "Otro…" : "ADICIONALES…"}
+            </option>
           )}
         </select>
 

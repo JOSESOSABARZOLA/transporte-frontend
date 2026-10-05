@@ -25,7 +25,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormikHelpers } from "formik";
+import type { FormikHelpers, FormikProps } from "formik";
 
 import CamposCalculados from "../components/cuadro/CamposCalculados.tsx";
 import Iconos from "../components/common/Iconos.tsx";
@@ -34,6 +34,7 @@ import AvisoVentana from "../components/common/AvisoVentana.tsx";
 import ModalExito from "../components/common/ModalExito.tsx";
 import PanelAdicionalOperativo from "../components/cuadro/PanelAdicionalOperativo.tsx";
 import PanelEdicionOperativo from "../components/cuadro/PanelEdicionOperativo.tsx";
+import DrawerEdicionOperativo from "../components/cuadro/DrawerEdicionOperativo.tsx";
 import type { MiembroPatrulla } from "../components/cuadro/RosterPatrulla.tsx";
 import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
 import TablaOperativos from "../components/cuadro/TablaOperativos.tsx";
@@ -47,7 +48,7 @@ import { useCuadroDiario } from "../hooks/useCuadroDiario.ts";
 import { useUser } from "../hooks/useUser.ts";
 import { useVentanaCarga } from "../hooks/useVentanaCarga.ts";
 import { ROLES_DE_CARGA } from "../config/env.ts";
-import type { Operativo } from "../interfaces/Operativo.ts";
+import type { Operativo, PersonaAsignada } from "../interfaces/Operativo.ts";
 import {
   nombreDePersona,
   type PersonaElegible,
@@ -81,6 +82,28 @@ import {
  * aspecto de completo.
  */
 const TAMANIO_MAXIMO_SERVIDOR = 200;
+
+/**
+ * ¿El borrador de personal difiere del original del servidor? (2026-10-01). En la edición de un
+ * operativo PROPIO el personal ya no se guarda al instante: se acumula en el borrador y se aplica
+ * al pulsar «Guardar cambios». Esto mira si hay alta/baja o cambio de turno pendiente, para que el
+ * pie diga «Cambios sin guardar» y el cierre pregunte antes de descartar.
+ */
+const hayCambiosDePersonal = (
+  actual: PersonaAsignada[],
+  original: PersonaAsignada[],
+): boolean => {
+  if (actual.length !== original.length) return true;
+  const porId = new Map(original.map((persona) => [persona.funcionarioId, persona]));
+  return actual.some((persona) => {
+    const antes = porId.get(persona.funcionarioId);
+    return (
+      !antes ||
+      antes.horaInicio !== persona.horaInicio ||
+      antes.horaFin !== persona.horaFin
+    );
+  });
+};
 
 const MisOperativosPage = () => {
   /** El antetítulo nombra al departamento dueño de estos formularios. */
@@ -140,6 +163,30 @@ const MisOperativosPage = () => {
   // PATRULLA (2026-09-18): «Agregar Personal» abre el panel en modo solo-personal aunque el que
   // mira sea el registrante (que si no vería el editor de generales completo).
   const [agregandoAPatrulla, setAgregandoAPatrulla] = useState(false);
+  // Cajón de edición (2026-09-30): ref al Formik para saber si hay GENERALES sin guardar (`dirty`)
+  // y confirmar el descarte al cerrar. El personal ya se guardó al instante (no entra en `dirty`).
+  const refFormikEdicion = useRef<FormikProps<ValoresOperativo>>(null);
+  /**
+   * EDICIÓN DIFERIDA (2026-10-01). El personal de un operativo PROPIO ya no se guarda al instante:
+   * los cambios (alta/baja/turno) se acumulan en el borrador local —`editando.personal`— y se
+   * aplican al pulsar «Guardar cambios». Aquí se guarda el personal ORIGINAL del servidor (al abrir
+   * o recargar) para calcular el diff a aplicar y para saber si hay cambios pendientes.
+   */
+  const personalOriginalRef = useRef<PersonaAsignada[]>([]);
+  const [confirmandoDescarte, setConfirmandoDescarte] = useState(false);
+  // Fase D: indicador «Cambios sin guardar / Sin cambios» del pie del cajón (Formik `dirty`).
+  const [hayCambiosSinGuardar, setHayCambiosSinGuardar] = useState(false);
+  /**
+   * Confirmación en palabras tras asignar/retirar personal en el cajón (2026-10-01). El personal se
+   * guarda al instante; esta franja («… asignado/retirado · guardado») lo dice sin color solo
+   * (regla 6). Se limpia al cerrar el cajón.
+   */
+  const [confirmacionPersonal, setConfirmacionPersonal] = useState<
+    string | null
+  >(null);
+  // Fase D: mensaje del servidor tras un 409 al guardar. Se muestra DENTRO del cajón, con
+  // «Recargar datos», y conserva lo capturado (RN de bloqueo optimista). Nulo si no hay conflicto.
+  const [conflictoEdicion, setConflictoEdicion] = useState<string | null>(null);
   /**
    * Operativo del que se está capturando un adicional. 2026-08-20.
    *
@@ -185,6 +232,52 @@ const MisOperativosPage = () => {
   /** El operativo cuyo formulario y horario gobiernan los catálogos y los elegibles. */
   const enPanel = editando ?? creandoAdicional;
 
+  /**
+   * Fase D: al abrir, cerrar o cambiar de operativo en el cajón se olvida el conflicto (409) de la
+   * edición anterior. Recargar reusa el mismo id y limpia el conflicto por su cuenta, así que no lo
+   * borra este efecto. El indicador «sin guardar» lo repone el propio reportero al montar (dirty=false).
+   */
+  useEffect(() => {
+    setConflictoEdicion(null);
+    // Al abrir/cambiar de operativo, el personal del servidor es el punto de partida del borrador.
+    // SOLO al cambiar de `id`, NO en cada mutación local: incluir `editando.personal` en las
+    // dependencias recapturaría el «original» en cada alta/baja del borrador y anularía el diff.
+    personalOriginalRef.current = editando?.personal ?? [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editando?.id]);
+
+  /**
+   * Sale de la edición. Con cambios sin guardar pregunta antes. Desde 2026-10-01, en la edición
+   * DIFERIDA de un operativo propio los cambios de personal TAMPOCO están guardados, así que cuentan
+   * junto a los generales (`dirty`). En el aporte el personal sí se guardó al instante y no cuenta.
+   */
+  const cerrarEdicion = useCallback(() => {
+    const diferida =
+      editando != null &&
+      !agregandoAPatrulla &&
+      !editando.formulario.esPatrulla &&
+      accesoAlOperativo(editando, user?.rolCodes ?? []) === "PROPIO";
+    const personalPendiente =
+      diferida &&
+      editando != null &&
+      hayCambiosDePersonal(editando.personal, personalOriginalRef.current);
+    if (refFormikEdicion.current?.dirty || personalPendiente) {
+      setConfirmandoDescarte(true);
+      return;
+    }
+    setEditando(null);
+    setAgregandoAPatrulla(false);
+    setConfirmacionPersonal(null);
+  }, [editando, agregandoAPatrulla, user]);
+
+  /** Descarta sin guardar los generales y cierra (el personal ya quedó guardado). */
+  const descartarEdicion = useCallback(() => {
+    setConfirmandoDescarte(false);
+    setEditando(null);
+    setAgregandoAPatrulla(false);
+    setConfirmacionPersonal(null);
+  }, []);
+
   const catalogos = useCatalogosFormulario(
     enPanel?.formulario.codigo ?? null,
   );
@@ -229,6 +322,21 @@ const MisOperativosPage = () => {
     (operativo: Operativo) =>
       accesoAlOperativo(operativo, user?.rolCodes ?? []),
     [user],
+  );
+
+  /**
+   * ¿Esta edición usa el guardado DIFERIDO del personal? (2026-10-01). Solo el operativo PROPIO que
+   * se corrige con «Guardar cambios» y NO es patrulla (la patrulla gestiona su personal con el
+   * roster, al instante). El APORTE (operativo ajeno, solo-personal) NO tiene «Guardar cambios», así
+   * que ahí el personal sigue al instante: no hay a dónde diferirlo.
+   */
+  const esEdicionDiferida = useCallback(
+    (operativo: Operativo | null, aportandoAPatrulla: boolean): boolean =>
+      operativo !== null &&
+      !aportandoAPatrulla &&
+      !operativo.formulario.esPatrulla &&
+      accesoDe(operativo) === "PROPIO",
+    [accesoDe],
   );
 
   const cargar = useCallback(async () => {
@@ -380,6 +488,21 @@ const MisOperativosPage = () => {
     setPagina(0);
   }, []);
 
+  /**
+   * BUG #9 (2026-09-30): reemplaza en la lista de la jornada el operativo COMPLETO que devuelve una
+   * mutación de personal (`asignarPersonal`/`retirarPersonal` traen el operativo con su personal al
+   * día). El endpoint de LISTA puede devolver el operativo sin el detalle de personal, así que
+   * `cargar()` no basta: sin esto la fila seguía diciendo «todavía no tiene personal asignado» aun
+   * con asignados. Solo cambia ese operativo; el resto de la lista no se toca.
+   */
+  const empalmarEnLaLista = useCallback((actualizado: Operativo) => {
+    setOperativos((previos) =>
+      previos.map((operativo) =>
+        operativo.id === actualizado.id ? actualizado : operativo,
+      ),
+    );
+  }, []);
+
   const guardarEdicion = useCallback(
     async (
       valores: ValoresOperativo,
@@ -389,6 +512,7 @@ const MisOperativosPage = () => {
 
       setProcesando(true);
       setAviso(null);
+      setConflictoEdicion(null);
 
       // RN-66: el operativo conserva su ventana; la corrección edita zonal, punto, tipo,
       // instituciones y notas (los campos GENERALES), no el horario.
@@ -400,13 +524,26 @@ const MisOperativosPage = () => {
             : Number(valores.punto),
         puntoLibre:
           valores.punto === OPCION_ADICIONALES ? valores.puntoLibre : undefined,
+        /*
+          TIPO DE CONTROL — MISMA REGLA QUE EL ALTA (P-01), y se decide por el flag del catálogo
+          `tipoControlMultiple`, no por si el arreglo trae datos. En el form 8 (múltiple) viajan los
+          ids en `tipoControlIds` y el «otro tipo» integrado en `tipoLibre`; en el resto, el tipo
+          único (o el adicional de la rama «ADICIONALES»). OJO: la clave del contrato es
+          `tipoControlIds` (NO `tiposControlIds`, que es solo el nombre del valor local); enviar un
+          campo ajeno al DTO hace que el servidor rechace el PATCH (400) y el guardado «no haga nada».
+        */
         tipoControlId:
+          catalogos.catalogos?.tipoControlMultiple ||
           valores.tipoControl === OPCION_ADICIONALES ||
           valores.tipoControl === ""
             ? undefined
             : Number(valores.tipoControl),
-        tipoLibre:
-          valores.tipoControl === OPCION_ADICIONALES
+        tipoControlIds: catalogos.catalogos?.tipoControlMultiple
+          ? valores.tiposControlIds
+          : undefined,
+        tipoLibre: catalogos.catalogos?.tipoControlMultiple
+          ? valores.tipoLibre.trim() || undefined
+          : valores.tipoControl === OPCION_ADICIONALES
             ? valores.tipoLibre
             : undefined,
         institucionesIds: valores.institucionesIds,
@@ -428,8 +565,89 @@ const MisOperativosPage = () => {
           return;
         }
 
+        // DIFERIDO (operativo propio): aplicar el borrador de personal acumulado ANTES de los
+        // generales. Cada alta/baja/turno es su propia petición y NO son una transacción: si el
+        // servidor rechaza una persona (descanso/cruce, RN-24/25), se detiene ahí, se avisa en el
+        // bloque de personal y NO se tocan los generales; lo ya aplicado queda guardado y el cajón
+        // sigue abierto para corregir. Se usa la `version` al día que devuelve cada respuesta.
+        let versionVigente = editando.version;
+        if (esEdicionDiferida(editando, agregandoAPatrulla)) {
+          const original = personalOriginalRef.current;
+          const idsActual = new Set(
+            editando.personal.map((persona) => persona.funcionarioId),
+          );
+          const idsOriginal = new Set(
+            original.map((persona) => persona.funcionarioId),
+          );
+          const bajas = original.filter(
+            (persona) => !idsActual.has(persona.funcionarioId),
+          );
+          const altas = editando.personal.filter(
+            (persona) => !idsOriginal.has(persona.funcionarioId),
+          );
+          const turnos = editando.personal.filter((persona) => {
+            const antes = original.find(
+              (otra) => otra.funcionarioId === persona.funcionarioId,
+            );
+            return (
+              antes !== undefined &&
+              (antes.horaInicio !== persona.horaInicio ||
+                antes.horaFin !== persona.horaFin)
+            );
+          });
+
+          let actual = editando;
+          const aplicado = (operativoAlDia: Operativo) => {
+            actual = operativoAlDia;
+            versionVigente = operativoAlDia.version;
+            // Lo ya aplicado se consolida: la fila de la tabla y el «original» del borrador avanzan,
+            // así un reintento tras un fallo no vuelve a aplicar lo que ya quedó guardado.
+            personalOriginalRef.current = operativoAlDia.personal;
+            empalmarEnLaLista(operativoAlDia);
+          };
+
+          try {
+            for (const baja of bajas) {
+              aplicado(
+                await OperativoService.retirarPersonal(
+                  actual.id,
+                  baja.funcionarioId,
+                ),
+              );
+            }
+            for (const alta of altas) {
+              aplicado(
+                await OperativoService.asignarPersonal(actual.id, {
+                  funcionarioId: alta.funcionarioId,
+                }),
+              );
+              aplicado(
+                await OperativoService.actualizarTurnoPersonal(
+                  actual.id,
+                  alta.funcionarioId,
+                  { horaInicio: alta.horaInicio, horaFin: alta.horaFin },
+                ),
+              );
+            }
+            for (const turno of turnos) {
+              aplicado(
+                await OperativoService.actualizarTurnoPersonal(
+                  actual.id,
+                  turno.funcionarioId,
+                  { horaInicio: turno.horaInicio, horaFin: turno.horaFin },
+                ),
+              );
+            }
+          } catch (falloPersonal: unknown) {
+            // Se detiene y se avisa en el bloque de personal; los generales no se tocan (el `finally`
+            // del `try` externo repone `procesando`). El cajón queda abierto con lo ya aplicado.
+            setAvisoPersonal(presentarError(falloPersonal).mensaje);
+            return;
+          }
+        }
+
         await OperativoService.editar(editando.id, {
-          version: editando.version,
+          version: versionVigente,
           ...generales,
         });
 
@@ -439,14 +657,26 @@ const MisOperativosPage = () => {
         await cargar();
       } catch (fallo: unknown) {
         const error = presentarError(fallo);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-        // `conservaCaptura`: el panel sigue abierto con lo escrito. Un 409 de bloqueo
-        // optimista se resuelve recargando, y el mensaje del servidor lo explica.
+        // `conservaCaptura`: el panel sigue abierto con lo escrito. Un 409 de bloqueo optimista se
+        // resuelve recargando, así que su aviso va DENTRO del cajón, con «Recargar datos» (Fase D),
+        // donde está mirando quien acaba de pulsar. El resto de errores siguen en el aviso de arriba.
+        if (error.estado === 409) {
+          setConflictoEdicion(error.mensaje);
+        } else {
+          setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        }
       } finally {
         setProcesando(false);
       }
     },
-    [editando, cargar],
+    [
+      editando,
+      cargar,
+      catalogos.catalogos?.tipoControlMultiple,
+      agregandoAPatrulla,
+      esEdicionDiferida,
+      empalmarEnLaLista,
+    ],
   );
 
   // «Agregar Personal» a una patrulla: abre el panel en modo solo-personal sobre un miembro del
@@ -533,6 +763,12 @@ const MisOperativosPage = () => {
     setPersonalAdicional([]);
     setAvisoPersonal(null);
     setCreandoAdicional(origen);
+  }, []);
+
+  /** Cierra el cajón del adicional y descarta lo capturado (aún no existía nada que guardar). */
+  const cerrarAdicional = useCallback(() => {
+    setCreandoAdicional(null);
+    setPersonalAdicional([]);
   }, []);
 
   /**
@@ -640,17 +876,48 @@ const MisOperativosPage = () => {
 
       setAvisoPersonal(null);
 
+      // DIFERIDO (operativo propio): se acumula en el borrador local; NO toca el servidor ni la
+      // tabla hasta «Guardar cambios». El turno arranca heredando la ventana del operativo (lo
+      // mismo que hace el servidor al asignar); se puede ajustar con «Cambiar turno».
+      if (esEdicionDiferida(editando, agregandoAPatrulla)) {
+        setEditando((actual) =>
+          actual
+            ? {
+                ...actual,
+                personal: [
+                  ...actual.personal,
+                  {
+                    funcionarioId: persona.id,
+                    nombre: nombreDePersona(persona),
+                    area: persona.area,
+                    telefono: null,
+                    esResponsable: false,
+                    asignadoPorRol: actual.creadoPorRol,
+                    horaInicio: actual.horaInicio,
+                    horaFin: actual.horaFin,
+                  },
+                ],
+              }
+            : actual,
+        );
+        return;
+      }
+
+      // INMEDIATO (aporte a formulario ajeno: no hay «Guardar cambios»).
       try {
         const actualizado = await OperativoService.asignarPersonal(editando.id, {
           funcionarioId: persona.id,
         });
         setEditando(actualizado);
-        await cargar();
+        empalmarEnLaLista(actualizado);
+        setConfirmacionPersonal(
+          `Se guarda al instante · ${nombreDePersona(persona)} asignado · guardado.`,
+        );
       } catch (fallo: unknown) {
         setAvisoPersonal(presentarError(fallo).mensaje);
       }
     },
-    [editando, cargar],
+    [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
   );
 
   const retirarPersona = useCallback(
@@ -659,19 +926,113 @@ const MisOperativosPage = () => {
 
       setAvisoPersonal(null);
 
+      // DIFERIDO (operativo propio): se quita del borrador local; se aplica al «Guardar cambios».
+      if (esEdicionDiferida(editando, agregandoAPatrulla)) {
+        setEditando((actual) =>
+          actual
+            ? {
+                ...actual,
+                personal: actual.personal.filter(
+                  (persona) => persona.funcionarioId !== funcionarioId,
+                ),
+              }
+            : actual,
+        );
+        return;
+      }
+
+      // El nombre se toma ANTES de retirar: tras la respuesta ya no está en el operativo.
+      const nombreRetirado =
+        editando.personal.find(
+          (persona) => persona.funcionarioId === funcionarioId,
+        )?.nombre ?? "La persona";
+
+      // INMEDIATO (aporte).
       try {
         const actualizado = await OperativoService.retirarPersonal(
           editando.id,
           funcionarioId,
         );
         setEditando(actualizado);
-        await cargar();
+        empalmarEnLaLista(actualizado);
+        setConfirmacionPersonal(
+          `Se guarda al instante · ${nombreRetirado} retirado · guardado.`,
+        );
       } catch (fallo: unknown) {
         setAvisoPersonal(presentarError(fallo).mensaje);
       }
     },
-    [editando, cargar],
+    [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
   );
+
+  /**
+   * CAMBIAR EL TURNO DE UNA PERSONA (Fase C, 2026-09-30). Igual que asignar y retirar en edición: es
+   * un `PATCH` INMEDIATO (RN-66). El servidor re-deriva la ventana del operativo (envolvente) y
+   * revalida el cruce/descanso de esa persona; devuelve el operativo al día, que se refleja en el
+   * cajón (`setEditando`) y en la fila de la lista (`empalmarEnLaLista`).
+   */
+  const cambiarHorarioPersona = useCallback(
+    async (funcionarioId: number, horaInicio: string, horaFin: string) => {
+      if (!editando) return;
+
+      setAvisoPersonal(null);
+
+      // DIFERIDO (operativo propio): el turno se ajusta en el borrador; se aplica al guardar.
+      if (esEdicionDiferida(editando, agregandoAPatrulla)) {
+        setEditando((actual) =>
+          actual
+            ? {
+                ...actual,
+                personal: actual.personal.map((persona) =>
+                  persona.funcionarioId === funcionarioId
+                    ? { ...persona, horaInicio, horaFin }
+                    : persona,
+                ),
+              }
+            : actual,
+        );
+        return;
+      }
+
+      try {
+        const actualizado = await OperativoService.actualizarTurnoPersonal(
+          editando.id,
+          funcionarioId,
+          { horaInicio, horaFin },
+        );
+        setEditando(actualizado);
+        empalmarEnLaLista(actualizado);
+      } catch (fallo: unknown) {
+        setAvisoPersonal(presentarError(fallo).mensaje);
+      }
+    },
+    [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
+  );
+
+  /**
+   * RECARGAR DATOS tras un 409 (Fase D). Vuelve a pedir el operativo al servidor y reinicia el cajón
+   * con la versión al día —así el siguiente guardado lleva la `version` correcta—, conservando el
+   * cajón abierto. El personal ya se guardó al instante, de modo que solo se repone lo que el otro
+   * cambió; lo capturado en los generales se pierde a propósito: ya no casa con la versión nueva.
+   */
+  const recargarEdicion = useCallback(async () => {
+    if (!editando) return;
+
+    setProcesando(true);
+    try {
+      const fresco = await OperativoService.obtener(editando.id);
+      setEditando(fresco);
+      empalmarEnLaLista(fresco);
+      // Mismo id: el efecto no repone el original, hay que resincronizarlo a mano con la versión al día.
+      personalOriginalRef.current = fresco.personal;
+      setConflictoEdicion(null);
+    } catch (fallo: unknown) {
+      const error = presentarError(fallo);
+      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+    } finally {
+      setProcesando(false);
+    }
+  }, [editando, empalmarEnLaLista]);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -723,6 +1084,16 @@ const MisOperativosPage = () => {
     editando.formulario.esPatrulla &&
     !agregandoAPatrulla &&
     accesoDe(editando) === "PROPIO";
+
+  // EDICIÓN DIFERIDA (2026-10-01): el personal del operativo propio se aplica al «Guardar cambios».
+  const edicionDiferida = esEdicionDiferida(editando, agregandoAPatrulla);
+  // ¿Hay personal pendiente de aplicar (alta/baja/turno en el borrador)?
+  const personalSucio =
+    edicionDiferida && editando != null
+      ? hayCambiosDePersonal(editando.personal, personalOriginalRef.current)
+      : false;
+  // El pie y el cierre miran los generales (`dirty`) Y el personal pendiente.
+  const hayCambiosPendientes = hayCambiosSinGuardar || personalSucio;
 
   /** Los códigos de la patrulla en edición, cada uno con su persona y si lo puedo tocar. */
   const miembrosPatrulla = useMemo<MiembroPatrulla[]>(() => {
@@ -859,61 +1230,240 @@ const MisOperativosPage = () => {
         </div>
       )}
 
-      {creandoAdicional && (
-        <PanelAdicionalOperativo
-          origen={creandoAdicional}
-          catalogos={catalogos.catalogos}
-          puntos={catalogos.puntos}
-          cargandoPuntos={catalogos.cargandoPuntos}
-          onZonalesElegidas={(zonalesIds) => {
-            void catalogos.cargarPuntosDeZonales(zonalesIds);
-          }}
-          candidatos={candidatos}
-          cargandoPersonal={cargandoPersonal}
-          personalAgregado={personalAdicional}
-          // Sin llamada al servidor: el adicional todavía no existe. Entran con él.
-          onAgregarPersona={(persona) =>
-            setPersonalAdicional((actuales) =>
-              actuales.some((agregada) => agregada.funcionarioId === persona.id)
-                ? actuales
-                : [
-                    ...actuales,
-                    {
-                      funcionarioId: persona.id,
-                      nombre: nombreDePersona(persona),
-                      // RN-34: el teléfono lo resuelve el servidor al asignar. Aquí
-                      // todavía no se conoce, y **no se inventa**. Igual que en P-01.
-                      telefono: null,
-                      // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la
-                      // primera persona; la primera queda vacía y hay que llenarla.
-                      ...turnoDePrimera(actuales),
-                    },
-                  ],
-            )
-          }
-          onRetirarPersona={(funcionarioId) =>
-            setPersonalAdicional((actuales) =>
-              actuales.filter(
-                (agregada) => agregada.funcionarioId !== funcionarioId,
-              ),
-            )
-          }
-          onCambiarHorarioPersona={cambiarHorarioAdicional}
-          avisoPersonal={avisoPersonal}
-          bloqueado={bloqueadoParaAdicional}
-          ventanaCerrada={!ventana.puedeEscribir}
-          guardando={procesando}
-          onGuardar={guardarAdicional}
-          onCancelar={() => {
-            setCreandoAdicional(null);
-            setPersonalAdicional([]);
-          }}
-        />
-      )}
+      {/*
+        Fase E · EL ADICIONAL VIVE EN EL MISMO CAJÓN QUE LA EDICIÓN. Antes era una tarjeta en línea
+        que empujaba la tabla; ahora es un `DrawerLateral` con velo, foco atrapado y pie fijo, igual
+        que «Editar». El título lo nombra («Nuevo operativo adicional») y el subtítulo dice de cuál
+        nace. Cancelar/Registrar viven en el pie del cajón (form externo por `idForm`).
+      */}
+      <DrawerEdicionOperativo
+        abierto={creandoAdicional !== null}
+        titulo="Nuevo operativo adicional"
+        subtitulo={
+          creandoAdicional
+            ? `Sobre ${creandoAdicional.identificador} · ${creandoAdicional.formulario.nombre}`
+            : undefined
+        }
+        onCerrar={cerrarAdicional}
+        pie={
+          creandoAdicional ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={cerrarAdicional}
+                disabled={procesando}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                form="form-adicional-operativo"
+                className="btn btn-primary btn-sm"
+                disabled={bloqueadoParaAdicional || procesando}
+              >
+                {procesando ? (
+                  <>
+                    <span
+                      className="loading loading-spinner loading-sm"
+                      aria-hidden="true"
+                    />
+                    Registrando…
+                  </>
+                ) : (
+                  "Registrar adicional"
+                )}
+              </button>
+            </div>
+          ) : null
+        }
+      >
+        {creandoAdicional && (
+          <PanelAdicionalOperativo
+            sinMarco
+            enCajon
+            idForm="form-adicional-operativo"
+            ocultarAcciones
+            bandejaSinTope
+            origen={creandoAdicional}
+            catalogos={catalogos.catalogos}
+            puntos={catalogos.puntos}
+            cargandoPuntos={catalogos.cargandoPuntos}
+            onZonalesElegidas={(zonalesIds) => {
+              void catalogos.cargarPuntosDeZonales(zonalesIds);
+            }}
+            candidatos={candidatos}
+            cargandoPersonal={cargandoPersonal}
+            personalAgregado={personalAdicional}
+            // Sin llamada al servidor: el adicional todavía no existe. Entran con él.
+            onAgregarPersona={(persona) =>
+              setPersonalAdicional((actuales) =>
+                actuales.some(
+                  (agregada) => agregada.funcionarioId === persona.id,
+                )
+                  ? actuales
+                  : [
+                      ...actuales,
+                      {
+                        funcionarioId: persona.id,
+                        nombre: nombreDePersona(persona),
+                        // RN-34: el teléfono lo resuelve el servidor al asignar. Aquí
+                        // todavía no se conoce, y **no se inventa**. Igual que en P-01.
+                        telefono: null,
+                        // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la
+                        // primera persona; la primera queda vacía y hay que llenarla.
+                        ...turnoDePrimera(actuales),
+                      },
+                    ],
+              )
+            }
+            onRetirarPersona={(funcionarioId) =>
+              setPersonalAdicional((actuales) =>
+                actuales.filter(
+                  (agregada) => agregada.funcionarioId !== funcionarioId,
+                ),
+              )
+            }
+            onCambiarHorarioPersona={cambiarHorarioAdicional}
+            avisoPersonal={avisoPersonal}
+            bloqueado={bloqueadoParaAdicional}
+            ventanaCerrada={!ventana.puedeEscribir}
+            guardando={procesando}
+            onGuardar={guardarAdicional}
+            onCancelar={cerrarAdicional}
+          />
+        )}
+      </DrawerEdicionOperativo>
 
-      {editando && (
-        <PanelEdicionOperativo
-          operativo={editando}
+      <DrawerEdicionOperativo
+        abierto={editando !== null}
+        titulo={
+          editando
+            ? `${
+                agregandoAPatrulla || accesoDe(editando) !== "PROPIO"
+                  ? "Personal de"
+                  : "Editar"
+              } ${
+                // Fase E: una patrulla (Form 5/6) se nombra por su GRUPO, no por un identificador
+                // suelto: editar sus generales los aplica a todo el lote. El resto, «operativo <id>».
+                editando.grupoRegistro && editando.formulario.esPatrulla
+                  ? `patrulla ${editando.grupoRegistro}`
+                  : `operativo ${editando.identificador}`
+              }`
+            : ""
+        }
+        subtitulo={
+          editando
+            ? `${editando.formulario.nombre} · ${editando.horaInicio} a ${editando.horaFin}`
+            : undefined
+        }
+        onCerrar={cerrarEdicion}
+        pie={
+          editando ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/*
+                Fase D: indicador «Cambios sin guardar / Sin cambios» (Formik `dirty`). `role="status"`
+                —no interrumpe— y en palabras (regla 6). Solo donde hay «Guardar cambios» (edición
+                propia): en el aporte/patrulla el personal se guarda solo y no hay generales que guardar.
+              */}
+              {!(agregandoAPatrulla || accesoDe(editando) !== "PROPIO") && (
+                <span
+                  role="status"
+                  className={`mr-auto text-xs ${
+                    hayCambiosPendientes
+                      ? "text-warning"
+                      : "text-base-content/70"
+                  }`}
+                >
+                  {hayCambiosPendientes
+                    ? "Cambios sin guardar"
+                    : "Sin cambios pendientes"}
+                </span>
+              )}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={cerrarEdicion}
+                disabled={procesando}
+              >
+                Cancelar
+              </button>
+              {!(agregandoAPatrulla || accesoDe(editando) !== "PROPIO") && (
+                <button
+                  type="submit"
+                  form="form-edicion-operativo"
+                  className="btn btn-primary btn-sm"
+                  disabled={bloqueado || procesando}
+                >
+                  {procesando ? (
+                    <>
+                      <span
+                        className="loading loading-spinner loading-sm"
+                        aria-hidden="true"
+                      />
+                      Guardando…
+                    </>
+                  ) : (
+                    "Guardar cambios"
+                  )}
+                </button>
+              )}
+            </div>
+          ) : null
+        }
+      >
+        {editando && (
+          <div className="flex flex-col gap-4">
+            {/*
+              Fase D · VENTANA CERRADA CON EL CAJÓN ABIERTO. El mismo bloqueo que apaga «Guardar
+              cambios» (RN-56/RN-58) se dice también aquí dentro, donde se está editando: sin esto, el
+              botón apagado abajo no explicaría por qué. El personal sí se puede seguir tocando (se
+              guarda al instante y su propia validación decide); lo que no se puede es guardar generales.
+            */}
+            {bloqueado &&
+              !(agregandoAPatrulla || accesoDe(editando) !== "PROPIO") && (
+                <div className="alert alert-info">
+                  <span>
+                    {cuadro && !cuadro.admiteEscritura
+                      ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no guardar cambios en sus datos.`
+                      : `${ventana.mensaje} Los cambios de datos del operativo no pueden guardarse hasta que su ventana vuelva a abrirse.`}
+                  </span>
+                </div>
+              )}
+
+            {/*
+              Fase D · CONFLICTO 409 (bloqueo optimista). Otro guardó el operativo entre que se abrió
+              el cajón y se pulsó «Guardar»: el servidor lo rechaza para no pisar ese cambio. El mensaje
+              va tal cual (regla 7) y «Recargar datos» trae la versión al día SIN cerrar el cajón. Lo
+              capturado en los generales se conserva hasta recargar (conservaCaptura).
+            */}
+            {conflictoEdicion && (
+              <div
+                className="alert alert-error"
+                role="alert"
+              >
+                <span>{conflictoEdicion}</span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={procesando}
+                  onClick={() => void recargarEdicion()}
+                >
+                  <Iconos nombre="actualizar" />
+                  Recargar datos
+                </button>
+              </div>
+            )}
+
+            <PanelEdicionOperativo
+              sinMarco
+              enCajon
+              idForm="form-edicion-operativo"
+              ocultarAcciones
+              bandejaSinTope
+              onCambiosSinGuardar={setHayCambiosSinGuardar}
+              refFormik={refFormikEdicion}
+              operativo={editando}
           catalogos={catalogos.catalogos}
           puntos={catalogos.puntos}
           cargandoPuntos={catalogos.cargandoPuntos}
@@ -930,6 +1480,10 @@ const MisOperativosPage = () => {
           cargandoPersonal={cargandoPersonal}
           onAgregarPersona={(persona) => void agregarPersona(persona)}
           onRetirarPersona={(funcionarioId) => void retirarPersona(funcionarioId)}
+          // Fase C: cambiar el turno de un asignado se guarda al instante (PATCH), como asignar/retirar.
+          onCambiarHorarioPersona={(funcionarioId, horaInicio, horaFin) =>
+            void cambiarHorarioPersona(funcionarioId, horaInicio, horaFin)
+          }
           // En el aporte, solo son retirables las personas que este departamento asignó (las de
           // Instrucción); las del dueño del formulario llegan en lectura. El servidor lo reafirma.
           puedeEditarPersona={(persona) =>
@@ -937,7 +1491,12 @@ const MisOperativosPage = () => {
             (user?.rolCodes ?? []).includes(persona.asignadoPorRol)
           }
           avisoPersonal={avisoPersonal}
+          confirmacionPersonal={confirmacionPersonal}
           bloqueado={bloqueado}
+          // DIFERIDO (2026-10-01): en la edición propia el personal se aplica al «Guardar cambios»,
+          // no al instante; se apaga el rótulo «Se guarda al instante» de la lista. En el aporte
+          // (no diferido) sigue siendo inmediato.
+          personalInmediato={!edicionDiferida}
           // PATRULLA: «Agregar Personal» abre en solo-personal; «Editar» de generales bloquea el
           // personal (se gestiona con las acciones fusionadas), pero deja los generales editables.
           soloPersonal={agregandoAPatrulla || accesoDe(editando) !== "PROPIO"}
@@ -956,12 +1515,11 @@ const MisOperativosPage = () => {
           }
           guardando={procesando}
           onGuardar={guardarEdicion}
-          onCancelar={() => {
-            setEditando(null);
-            setAgregandoAPatrulla(false);
-          }}
-        />
-      )}
+          onCancelar={cerrarEdicion}
+            />
+          </div>
+        )}
+      </DrawerEdicionOperativo>
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
         <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1146,6 +1704,25 @@ const MisOperativosPage = () => {
         procesando={procesando}
         onConfirmar={() => void confirmarRetiro()}
         onCancelar={() => setPorRetirar(null)}
+      />
+
+      {/*
+        Descartar la edición con cambios sin guardar. En la edición DIFERIDA (operativo propio) el
+        personal tampoco está guardado y también se pierde; en la patrulla el personal se gestiona
+        al instante con el roster, así que ahí sí quedó guardado.
+      */}
+      <ModalConfirmacion
+        abierto={confirmandoDescarte}
+        titulo="Descartar cambios"
+        mensaje={
+          edicionDiferida
+            ? "¿Descartar los cambios? Se perderán los cambios en el personal asignado y en los datos del operativo (punto de encuentro, zonales, instituciones, tipo de control y observaciones nuevas). Nada se ha guardado todavía."
+            : "¿Descartar los cambios de datos del operativo? Se perderán los cambios en punto de encuentro, zonales, instituciones, tipo de control y las observaciones nuevas. El personal ya quedó guardado."
+        }
+        textoSi="Descartar"
+        textoNo="Seguir editando"
+        onConfirmar={descartarEdicion}
+        onCancelar={() => setConfirmandoDescarte(false)}
       />
 
       {exito && (

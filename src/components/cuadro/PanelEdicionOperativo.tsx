@@ -26,8 +26,8 @@
  * disposición que el Product Owner descartó por lenta.
  */
 
-import type { FC } from "react";
-import type { FormikHelpers } from "formik";
+import type { FC, Ref } from "react";
+import type { FormikHelpers, FormikProps } from "formik";
 
 import FormularioOperativo from "./FormularioOperativo.tsx";
 import {
@@ -53,6 +53,17 @@ type PanelEdicionOperativoProps = {
   cargandoPersonal: boolean;
   onAgregarPersona: (persona: PersonaElegible) => void;
   onRetirarPersona: (funcionarioId: number) => void;
+  /**
+   * CAMBIAR EL TURNO DE UNA PERSONA YA ASIGNADA (Fase C, 2026-09-30). En edición el turno se guarda
+   * al instante (`PATCH /operativos/:id/personal/:funcionarioId`), como asignar y retirar. La lista
+   * compacta lo ofrece con «Cambiar turno». Cuando no llega —P-01, adicional— el turno se captura de
+   * otra forma y esta ranura queda vacía.
+   */
+  onCambiarHorarioPersona?: (
+    funcionarioId: number,
+    horaInicio: string,
+    horaFin: string,
+  ) => void;
   /**
    * Si quien edita puede RETIRAR a una persona ya asignada. En el aporte (Form 4 ECU) el
    * departamento que aporta solo maneja el personal que él asignó —el de Instrucción—; el del
@@ -90,6 +101,26 @@ type PanelEdicionOperativoProps = {
     ayudas: FormikHelpers<ValoresOperativo>,
   ) => void | Promise<void>;
   onCancelar: () => void;
+  /**
+   * DENTRO DEL CAJÓN (2026-09-30). `sinMarco` quita la tarjeta y la cabecera propias —las pone el
+   * `DrawerLateral`—; `idForm`/`ocultarAcciones` mueven el pie de acción al pie fijo del cajón; y
+   * `bandejaSinTope` aplana las bandejas de personal. Por omisión (uso en línea de P-01) nada cambia.
+   */
+  sinMarco?: boolean;
+  /**
+   * ¿El personal se guarda al instante? (2026-10-01). Por omisión true (conducta de P-02 hasta hoy y
+   * del aporte). En la edición DIFERIDA del operativo propio la página lo pasa false: el personal se
+   * acumula y se aplica al «Guardar cambios», así que se apaga el rótulo «Se guarda al instante».
+   */
+  personalInmediato?: boolean;
+  /** Reflujo a 1 columna dentro del cajón (`max-w-2xl`). Se pasa al formulario. */
+  enCajon?: boolean;
+  idForm?: string;
+  ocultarAcciones?: boolean;
+  bandejaSinTope?: boolean;
+  refFormik?: Ref<FormikProps<ValoresOperativo>>;
+  /** Avisa si hay GENERALES sin guardar (`dirty`), para el indicador del pie del cajón (Fase D). */
+  onCambiosSinGuardar?: (hayCambios: boolean) => void;
 };
 
 const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
@@ -102,6 +133,7 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   cargandoPersonal,
   onAgregarPersona,
   onRetirarPersona,
+  onCambiarHorarioPersona,
   puedeEditarPersona = () => true,
   avisoPersonal,
   confirmacionPersonal = null,
@@ -115,6 +147,14 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   guardando,
   onGuardar,
   onCancelar,
+  sinMarco = false,
+  personalInmediato = true,
+  enCajon = false,
+  idForm,
+  ocultarAcciones = false,
+  bandejaSinTope = false,
+  refFormik,
+  onCambiosSinGuardar,
 }) => {
   /**
    * ROSTER DE LA PATRULLA: se pinta cuando la página lo entrega y hay miembros. Sustituye al
@@ -137,54 +177,27 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
       funcionarioId: persona.funcionarioId,
       nombre: persona.nombre,
       telefono: persona.telefono,
+      // El turno EFECTIVO (2026-09-08): lo pinta la lista compacta y siembra «Cambiar turno».
+      horaInicio: persona.horaInicio,
+      horaFin: persona.horaFin,
       // Quien aporta al formulario ajeno solo retira SU personal; el resto va en lectura.
       editable: puedeEditarPersona(persona),
     }),
   );
 
-  return (
-    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-      <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-          {soloPersonal ? "Personal de" : "Editando"} {operativo.identificador}
-        </h2>
-        {/*
-          EL COLOR DEL BANNER LO ENTREGA EL SERVIDOR, Y EL DEL TEXTO SE CALCULA.
-          Regla 3 de CLAUDE.md, cumplida desde el 2026-08-26.
-
-          Llevaba `text-white` fijo, y con los nueve colores reales del Excel eso daba
-          **1,00:1 en el formulario 8**, cuyo `colorFondo` es blanco: el rótulo no se
-          veía nunca, en ningún tema. En el 4 daba 1,41:1 y en el 1, 1,86:1.
-
-          `colorDeTextoSobre` elige blanco o negro por luminancia —el mismo umbral WCAG
-          que ya usa `BannerFormulario` en la matriz—, y con él el peor de los nueve
-          pasa de 1,00 a 14,88:1.
-        */}
-        <span
-          className="badge badge-sm min-w-0 max-w-full"
-          title={`${operativo.formulario.numero}. ${operativo.formulario.nombre}`}
-          style={{
-            backgroundColor: operativo.formulario.colorFondo,
-            color: colorDeTextoSobre(operativo.formulario.colorFondo),
-          }}
-        >
-          {/*
-            `min-w-0` + `truncate`: el nombre del formulario se recorta si compite con el
-            identificador en la cabecera estrecha, en vez de estirar el distintivo. El
-            número —equivalente textual del banner, regla 6/14— va primero y siempre se ve.
-          */}
-          <span className="min-w-0 truncate">
-            {operativo.formulario.numero}. {operativo.formulario.nombre}
-          </span>
-        </span>
-      </div>
-
-      <div className="app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6">
-        {/* RN-13: el identificador no cambia al editar, y conviene que se vea. */}
+  const cuerpo = (
+    <div
+      className={
+        sinMarco
+          ? "flex flex-col gap-4"
+          : "app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6"
+      }
+    >
+        {/* RN-13: el identificador no cambia al editar, y conviene que se vea (ayuda corta). */}
         <p className="text-xs text-base-content/70">
           {soloPersonal
             ? "Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura. Cada persona se guarda en el momento."
-            : "El identificador y el secuencial no cambian al editar. El personal se guarda en el momento; el resto, al pulsar «Guardar cambios»."}
+            : "El identificador no cambia al editar."}
         </p>
 
         {/*
@@ -250,6 +263,7 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           personalAgregado={personalAgregado}
           onAgregarPersona={onAgregarPersona}
           onRetirarPersona={onRetirarPersona}
+          onCambiarHorarioPersona={onCambiarHorarioPersona}
           avisoPersonal={avisoPersonal}
           confirmacionPersonal={confirmacionPersonal}
           // Las notas ya escritas (bitácora): se muestran en solo lectura; aquí solo se agregan.
@@ -264,8 +278,42 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           personalOculto={conRoster}
           guardando={guardando}
           onGuardar={onGuardar}
+          enCajon={enCajon}
+          // Gobierna el rótulo «Se guarda al instante» de la lista compacta. En el aporte el
+          // personal es inmediato; en la edición diferida del operativo propio, false.
+          personalInmediato={personalInmediato}
+          idForm={idForm}
+          ocultarAcciones={ocultarAcciones}
+          bandejaSinTope={bandejaSinTope}
+          refFormik={refFormik}
+          onCambiosSinGuardar={onCambiosSinGuardar}
         />
+    </div>
+  );
+
+  // Dentro del cajón: sin tarjeta ni cabecera propias (las pone `DrawerLateral`).
+  if (sinMarco) return cuerpo;
+
+  return (
+    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+      <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
+          {soloPersonal ? "Personal de" : "Editando"} {operativo.identificador}
+        </h2>
+        <span
+          className="badge badge-sm min-w-0 max-w-full"
+          title={`${operativo.formulario.numero}. ${operativo.formulario.nombre}`}
+          style={{
+            backgroundColor: operativo.formulario.colorFondo,
+            color: colorDeTextoSobre(operativo.formulario.colorFondo),
+          }}
+        >
+          <span className="min-w-0 truncate">
+            {operativo.formulario.numero}. {operativo.formulario.nombre}
+          </span>
+        </span>
       </div>
+      {cuerpo}
     </div>
   );
 };

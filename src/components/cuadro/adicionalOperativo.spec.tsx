@@ -44,9 +44,11 @@ vi.mock("../../services/operativo.service.ts", () => ({
     consultar: vi.fn(),
     crearAdicional: vi.fn(),
     editar: vi.fn(),
+    obtener: vi.fn(),
     retirar: vi.fn(),
     asignarPersonal: vi.fn(),
     retirarPersonal: vi.fn(),
+    actualizarTurnoPersonal: vi.fn(),
   },
 }));
 
@@ -345,14 +347,37 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     expect(screen.getAllByRole("button", { name: "Adicional" })).toHaveLength(1);
   });
 
-  it("abrir el panel lo titula con el operativo del que nace", async () => {
+  it("abrir el cajón lo titula «Nuevo operativo adicional» y nombra de cuál nace", async () => {
     estado.ventanaAbierta = false;
     await pintarPantalla();
 
     await userEvent.click(screen.getByRole("button", { name: "Adicional" }));
 
+    // Fase E: el adicional vive ahora en el cajón lateral. El título lo nombra y el subtítulo dice
+    // de qué operativo nace.
     expect(
-      screen.getByText("Operativo adicional de OCPMO-004-31-JUL-2026"),
+      screen.getByRole("dialog", { name: /Nuevo operativo adicional/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Sobre OCPMO-004-31-JUL-2026/),
+    ).toBeInTheDocument();
+  });
+
+  it("el pie del cajón del adicional ofrece Cancelar y Registrar adicional", async () => {
+    estado.ventanaAbierta = false;
+    await pintarPantalla();
+
+    await userEvent.click(screen.getByRole("button", { name: "Adicional" }));
+
+    const dialogo = screen.getByRole("dialog", {
+      name: /Nuevo operativo adicional/,
+    });
+    // Fase E: las acciones viven en el pie fijo del cajón, no dentro del formulario.
+    expect(
+      within(dialogo).getByRole("button", { name: "Registrar adicional" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialogo).getByRole("button", { name: "Cancelar" }),
     ).toBeInTheDocument();
   });
 });

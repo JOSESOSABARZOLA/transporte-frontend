@@ -123,6 +123,41 @@ export const CLASE_BADGE_EQUIDAD: Record<NivelEquidad, string> = {
   ENCIMA: "badge-warning",
 };
 
+/** Tres clases del reparto, para el color de la barra, el texto y los conteos del cuadrito. */
+export type ClaseReparto = "bajo" | "en" | "sobre";
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * CLASIFICACIÓN ÚNICA DEL REPARTO. 2026-10-01.
+ *
+ * De aquí salen el COLOR de la barra, el TEXTO y los CONTEOS del reparto de carga, para que no
+ * discrepen entre sí. La tolerancia de «en su parte» la decide el SERVIDOR (es quien calcula la
+ * equidad), así que se respeta `nivelEquidad` cuando viene: DEBAJO→'bajo', EQUILIBRADO→'en',
+ * ENCIMA→'sobre'. Antes el color se sacaba del SIGNO de la desviación, y una desviación pequeña
+ * no-cero —que el servidor considera «en su parte»— salía pintada de naranja: ese desajuste se
+ * cierra usando el mismo veredicto del servidor en los tres sitios.
+ *
+ * Solo si `nivelEquidad` NO viene (señal advisory, opcional) se cae a comparar el índice contra la
+ * cuota con una tolerancia pequeña (±5 % de la cuota, mínimo ±1), para no pintar «sobre» a quien
+ * apenas la roza.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export const clasificarReparto = (
+  indice: number | undefined,
+  cuota: number | undefined,
+  nivelEquidad?: NivelEquidad,
+): ClaseReparto => {
+  if (nivelEquidad === "DEBAJO") return "bajo";
+  if (nivelEquidad === "ENCIMA") return "sobre";
+  if (nivelEquidad === "EQUILIBRADO") return "en";
+
+  if (indice === undefined || cuota === undefined) return "en";
+  const margen = Math.max(1, cuota * 0.05);
+  if (indice < cuota - margen) return "bajo";
+  if (indice > cuota + margen) return "sobre";
+  return "en";
+};
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ORDEN POR CARGA EN EL SELECTOR DE ASIGNACIÓN. 2026-09-25.

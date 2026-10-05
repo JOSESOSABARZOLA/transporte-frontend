@@ -42,6 +42,7 @@
 
 import {
   faArrowLeft,
+  faArrowsRotate,
   faBell,
   faBan,
   faCalendarDays,
@@ -61,6 +62,7 @@ import {
   faPenToSquare,
   faPlus,
   faRotateLeft,
+  faScaleBalanced,
   faScrewdriverWrench,
   faSquarePlus,
   faSun,
@@ -179,6 +181,13 @@ const ACCIONES = {
   buscar: faMagnifyingGlass,
   check: faCheck,
   atras: faArrowLeft,
+  /** Re-consultar el directorio de Auth en el paso 1 del cajón (botón «Actualizar»). */
+  actualizar: faArrowsRotate,
+  /**
+   * «Ver reparto de carga» (P-01 y cajón de P-02, 2026-10-05): la balanza dice «equilibrio del
+   * trabajo entre el personal». Acompaña al rótulo del botón, nunca lo sustituye (regla 13).
+   */
+  reparto: faScaleBalanced,
 } as const;
 
 /*

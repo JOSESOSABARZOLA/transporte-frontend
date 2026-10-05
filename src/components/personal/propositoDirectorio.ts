@@ -56,7 +56,7 @@ export type PropositoDirectorio = {
 /** P-07. Lo que falta es la ficha de personal: sin ella no se puede convocar a nadie. */
 export const PARA_FICHA: PropositoDirectorio = {
   nombre: "ficha",
-  antetitulo: "Nuevo funcionario · paso 1 de 2",
+  antetitulo: "Nuevo funcionario",
   filtro: "Solo quienes no tienen ficha",
   contador: "sin ficha",
   yaTiene: "Ya tiene ficha",
@@ -82,7 +82,7 @@ export const PARA_FICHA: PropositoDirectorio = {
  */
 export const PARA_CUENTA: PropositoDirectorio = {
   nombre: "cuenta",
-  antetitulo: "Nueva cuenta · paso 1 de 2",
+  antetitulo: "Nueva cuenta",
   filtro: "Solo quienes no tienen cuenta",
   contador: "sin cuenta",
   yaTiene: "Ya tiene cuenta",
