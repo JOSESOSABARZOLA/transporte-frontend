@@ -14,12 +14,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
 import PanelCatalogo from "../components/catalogos/PanelCatalogo.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
 import { PermisosService, type Permiso } from "../services/permisos.service.ts";
 import type { RolDepartamental } from "../config/env.ts";
 import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, type AvisoTexto } from "../utils/errorApi.util.ts";
+import { mensaje } from "../utils/mensaje.ts";
 
 const AdminPermisosPage = () => {
   const { roles, nombreDe } = useCatalogoRoles();
@@ -27,20 +29,19 @@ const AdminPermisosPage = () => {
   const [catalogo, setCatalogo] = useState<Permiso[]>([]);
   const [rol, setRol] = useState<string>("");
   const [otorgados, setOtorgados] = useState<Set<string>>(new Set());
+  /** Lo que el servidor tiene guardado para el rol: contra esto se decide «Sin cambios». */
+  const [guardados, setGuardados] = useState<Set<string>>(new Set());
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  /** El guardado se confirma con un aviso breve (antes, `ModalExito`): la matriz no tiene filas. */
 
   useEffect(() => {
     void (async () => {
       try {
         setCatalogo(await PermisosService.listarPermisos());
       } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        setAviso(avisoDeFallo(fallo));
       } finally {
         setCargando(false);
       }
@@ -52,14 +53,15 @@ const AdminPermisosPage = () => {
     setAviso(null);
     if (!codigo) {
       setOtorgados(new Set());
+      setGuardados(new Set());
       return;
     }
     try {
       const suyos = await PermisosService.permisosDeRol(codigo);
       setOtorgados(new Set(suyos));
+      setGuardados(new Set(suyos));
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      setAviso(avisoDeFallo(fallo));
     }
   }, []);
 
@@ -75,23 +77,28 @@ const AdminPermisosPage = () => {
   const guardar = async (): Promise<void> => {
     if (!rol) return;
     setGuardando(true);
-    setAviso(null);
     try {
       const resultado = await PermisosService.guardarPermisosDeRol(
         rol,
         [...otorgados],
       );
       setOtorgados(new Set(resultado));
-      setExito(
-        `Permisos de ${nombreDe(rol as RolDepartamental)} actualizados. El cambio rige desde la próxima petición.`,
-      );
+      setGuardados(new Set(resultado));
+      // Un HITO (M7): modal de éxito.
+      void mensaje.exito({
+        titulo: `Permisos de ${nombreDe(rol as RolDepartamental)} guardados`,
+        mensaje: "El cambio rige desde la próxima petición.",
+        textoPrincipal: "Aceptar",
+      });
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      void mensaje.errorDe(fallo, { titulo: "No se pudieron guardar los permisos" });
     } finally {
       setGuardando(false);
     }
   };
+
+  const hayCambios =
+    otorgados.size !== guardados.size || [...otorgados].some((codigo) => !guardados.has(codigo));
 
   // Agrupado por módulo, que es como se lee la matriz.
   const porModulo = useMemo(() => {
@@ -107,9 +114,9 @@ const AdminPermisosPage = () => {
   return (
     <div className="flex flex-col gap-4">
       {aviso && (
-        <div className={aviso.clase} role="alert">
-          <span>{aviso.texto}</span>
-        </div>
+        <AvisoEnLinea variante={aviso.variante} titulo="No se pudieron cargar los permisos">
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       <PanelCatalogo
@@ -122,7 +129,7 @@ const AdminPermisosPage = () => {
         procesando={guardando}
       >
         <div className="flex flex-col gap-3 px-1 pt-1">
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             Elija un rol y marque lo que puede hacer. El servidor reescribe su matriz al
             guardar; el acceso deja de estar en el código.
           </p>
@@ -145,18 +152,19 @@ const AdminPermisosPage = () => {
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm sm:ml-auto"
+            <Boton
+              variante="primario"
+              className="sm:ml-auto"
               onClick={() => void guardar()}
-              disabled={!rol || guardando}
+              cargando={guardando}
+              motivoDeshabilitado={!rol ? "Elija un rol." : !hayCambios ? "Sin cambios." : null}
             >
               {guardando ? "Guardando…" : "Guardar permisos"}
-            </button>
+            </Boton>
           </div>
 
           {rol === "" ? (
-            <p className="py-6 text-center text-sm text-base-content/70">
+            <p className="py-6 text-center text-sm text-app-muted">
               Elija un rol para ver y editar sus permisos.
             </p>
           ) : (
@@ -171,7 +179,7 @@ const AdminPermisosPage = () => {
               <div className="flex flex-col gap-3 p-3">
                 {porModulo.map(([modulo, permisos]) => (
                   <fieldset key={modulo} className="flex flex-col gap-1">
-                    <legend className="text-xs font-semibold uppercase tracking-wider text-base-content/70">
+                    <legend className="text-xs font-semibold uppercase tracking-wider text-app-label">
                       {modulo}
                     </legend>
                     <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
@@ -189,7 +197,7 @@ const AdminPermisosPage = () => {
                           />
                           <span className="flex flex-col">
                             <span className="text-sm">{permiso.descripcion}</span>
-                            <span className="text-xs text-base-content/60">
+                            <span className="text-xs text-app-muted">
                               {permiso.codigo}
                             </span>
                           </span>
@@ -203,12 +211,6 @@ const AdminPermisosPage = () => {
           )}
         </div>
       </PanelCatalogo>
-
-      <ModalExito
-        abierto={exito !== null}
-        mensaje={exito ?? ""}
-        onClose={() => setExito(null)}
-      />
     </div>
   );
 };

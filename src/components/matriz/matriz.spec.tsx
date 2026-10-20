@@ -14,6 +14,7 @@
  */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import MatrizConsolidadaPage from "../../pages/MatrizConsolidadaPage.tsx";
 import { DocumentoService } from "../../services/documento.service.ts";
@@ -22,7 +23,13 @@ vi.mock("../../services/documento.service.ts", () => ({
   DocumentoService: { consultarMatriz: vi.fn(), exportarMatriz: vi.fn() },
 }));
 vi.mock("../../services/cuadroDiario.service.ts", () => ({
-  CuadroDiarioService: { cerrar: vi.fn() },
+  CuadroDiarioService: { cerrar: vi.fn(), reabrir: vi.fn() },
+}));
+// Por defecto, la Dirección: tiene `cuadro:cerrar-reabrir`. Cada prueba puede quitárselo.
+const permiso = vi.hoisted(() => ({ reabrir: true }));
+vi.mock("../../hooks/usePermiso.ts", () => ({
+  usePermiso: () => permiso.reabrir,
+  useTieneRol: () => true,
 }));
 import userEvent from "@testing-library/user-event";
 import {
@@ -34,6 +41,7 @@ import {
   vi,
 } from "vitest";
 
+import { CuadroDiarioService } from "../../services/cuadroDiario.service.ts";
 import FiltroFormulario from "./FiltroFormulario.tsx";
 import TablaMatriz from "./TablaMatriz.tsx";
 import type { FilaMatriz, SeccionMatriz } from "../../interfaces/Documento.ts";
@@ -96,6 +104,12 @@ const seccion = (parcial: Partial<SeccionMatriz> = {}): SeccionMatriz => ({
   evidencia: null,
   ...parcial,
 });
+
+/** Dónde dejó la navegación: ruta y consulta. */
+const DestinoOrdenes = () => {
+  const { pathname, search } = useLocation();
+  return <p data-testid="destino">{pathname + search}</p>;
+};
 
 describe("caso 2 · el banner no es solo color", () => {
   it("lleva número y nombre en el texto", () => {
@@ -690,7 +704,7 @@ describe("P-04 abre en la jornada que se está armando", () => {
   it("pide la matriz de mañana, no la de hoy", async () => {
     vi.setSystemTime(new Date(2026, 7, 21, 9, 0));
 
-    render(<MatrizConsolidadaPage />);
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
 
     await vi.waitFor(() =>
       expect(DocumentoService.consultarMatriz).toHaveBeenCalledWith(
@@ -703,7 +717,7 @@ describe("P-04 abre en la jornada que se está armando", () => {
   it("la víspera de fin de mes pide el día uno del mes siguiente", async () => {
     vi.setSystemTime(new Date(2026, 7, 31, 22, 30));
 
-    render(<MatrizConsolidadaPage />);
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
 
     await vi.waitFor(() =>
       expect(DocumentoService.consultarMatriz).toHaveBeenCalledWith(
@@ -715,7 +729,7 @@ describe("P-04 abre en la jornada que se está armando", () => {
   it("es una propuesta: el selector sigue admitiendo otra fecha", async () => {
     vi.setSystemTime(new Date(2026, 7, 21, 9, 0));
 
-    render(<MatrizConsolidadaPage />);
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
     await vi.waitFor(() =>
       expect(DocumentoService.consultarMatriz).toHaveBeenCalled(),
     );
@@ -728,5 +742,227 @@ describe("P-04 abre en la jornada que se está armando", () => {
         "2026-08-13",
       ),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   REABRIR EL CUADRO · 2026-10-08
+
+   El endpoint existía y ninguna pantalla lo llamaba. Con el cuadro cerrado, quien tiene
+   `cuadro:cerrar-reabrir` ve «Reabrir cuadro»; quien no, sigue viendo el botón apagado.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+describe("P-04 reabre un cuadro cerrado", () => {
+  const matrizEn = (estado: "APROBADO" | "CERRADO") => ({
+    cabecera: {
+      ordenTrabajo: "AMC-2026-10-09",
+      fecha: "2026-10-09",
+      fechaNatural: "jueves 9 de octubre de 2026",
+      nroSemana: 41,
+      anioSemana: 2026,
+      estado,
+      totalOperativos: 3,
+      totalAlertas: 0,
+      formulariosSinCarga: 0,
+      flota: null,
+    },
+    secciones: [],
+  });
+
+  beforeEach(() => {
+    permiso.reabrir = true;
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("con el cuadro cerrado ofrece «Reabrir cuadro», confirma y lo reabre", async () => {
+    vi.mocked(DocumentoService.consultarMatriz)
+      .mockResolvedValueOnce(matrizEn("CERRADO"))
+      .mockResolvedValueOnce(matrizEn("APROBADO"));
+    vi.mocked(CuadroDiarioService.reabrir).mockResolvedValue({
+      ordenTrabajo: "AMC-2026-10-09",
+    } as Awaited<ReturnType<typeof CuadroDiarioService.reabrir>>);
+
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Reabrir cuadro" }),
+    );
+    // La confirmación dice lo que la reapertura NO hace.
+    expect(
+      screen.getByText(/órdenes de servicio ya emitidas no se anulan/),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Sí, reabrir" }));
+
+    expect(CuadroDiarioService.reabrir).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
+    expect(
+      await screen.findByText(/Cuadro AMC-2026-10-09 reabierto/),
+    ).toBeInTheDocument();
+    // Vuelto a aprobado, el botón vuelve a ser el de cerrar.
+    expect(
+      await screen.findByRole("button", { name: "Cerrar cuadro" }),
+    ).toBeEnabled();
+  });
+
+  it("sin el permiso, el cuadro cerrado solo muestra el botón apagado", async () => {
+    permiso.reabrir = false;
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizEn("CERRADO"),
+    );
+
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
+
+    expect(
+      await screen.findByRole("button", { name: "Cuadro cerrado" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: "Reabrir cuadro" })).toBeNull();
+  });
+
+  it("con el cuadro sin cerrar no ofrece reabrir", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizEn("APROBADO"),
+    );
+
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
+
+    expect(
+      await screen.findByRole("button", { name: "Cerrar cuadro" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reabrir cuadro" })).toBeNull();
+  });
+
+  it("cerrar el cuadro es un hito: modal de éxito con «Ver órdenes», que lleva a Órdenes de esa fecha", async () => {
+    vi.mocked(DocumentoService.consultarMatriz)
+      .mockResolvedValueOnce(matrizEn("APROBADO"))
+      .mockResolvedValueOnce(matrizEn("CERRADO"));
+    vi.mocked(CuadroDiarioService.cerrar).mockResolvedValue({
+      ordenTrabajo: "AMC-2026-10-09",
+    } as Awaited<ReturnType<typeof CuadroDiarioService.cerrar>>);
+
+    render(
+      <MemoryRouter initialEntries={["/home/cuadro/matriz"]}>
+        <Routes>
+          <Route path="/home/cuadro/matriz" element={<MatrizConsolidadaPage />} />
+          <Route path="/home/cuadro/ordenes" element={<DestinoOrdenes />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Cerrar cuadro" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sí, cerrar" }));
+
+    const exito = await screen.findByRole("alertdialog", {
+      name: "Cuadro AMC-2026-10-09 cerrado",
+    });
+    expect(exito).toHaveTextContent("Ya se pueden emitir las órdenes de servicio.");
+    expect(within(exito).getByRole("button", { name: "Cerrar" })).toBeInTheDocument();
+    await userEvent.click(within(exito).getByRole("button", { name: "Ver órdenes" }));
+
+    expect(await screen.findByTestId("destino")).toHaveTextContent(
+      /^\/home\/cuadro\/ordenes\?fecha=\d{4}-\d{2}-\d{2}$/,
+    );
+  });
+
+  it("si el servidor lo rechaza, muestra su mensaje tal cual", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizEn("CERRADO"),
+    );
+    // Forma en que `httpClient` normaliza el error del servidor.
+    vi.mocked(CuadroDiarioService.reabrir).mockRejectedValue({
+      status: 409,
+      originalError: {
+        response: {
+          data: {
+            statusCode: 409,
+            codigo: "CUADRO_CERRADO",
+            mensaje: "El cuadro del 2026-10-09 no está cerrado.",
+          },
+        },
+      },
+    });
+
+    render(<MatrizConsolidadaPage />, { wrapper: MemoryRouter });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Reabrir cuadro" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sí, reabrir" }));
+
+    // Mensajes estándar (2026-10-16): el error queda en el MISMO modal, con el texto del servidor.
+    const error = await screen.findByRole("alertdialog", { name: "No se pudo reabrir el cuadro" });
+    expect(error).toHaveTextContent(/no está cerrado/);
+  });
+});
+
+/*
+  OBSERVACIONES COMO NOTAS (2026-10-19, plan «notas-jornada-matriz»): las mismas tarjetas que Mis
+  operativos, con la nota «Comparte con X», que lleva a la fila de X dentro de la matriz.
+*/
+describe("las observaciones de la matriz son notas", () => {
+  const COMPARTIDA = {
+    id: "compartida-62",
+    tipo: "COMPARTIDA" as const,
+    texto: "Comparte con OCPMO-001-20-OCT-2026",
+    autor: "De La Guerra Portugal Lider Franklin",
+    fecha: "2026-10-19T14:00:00.000Z",
+    operativoRelacionadoId: 61,
+  };
+  const ESCRITA = {
+    id: "nota-9",
+    tipo: "NOTA" as const,
+    texto: "Pruebas tecnicas 3",
+    autor: "De La Guerra Portugal Lider Franklin",
+    fecha: "2026-10-19T13:30:00.000Z",
+    operativoRelacionadoId: null,
+  };
+
+  it("OCPMO-002 muestra la compartida y su nota; al pulsarla, OCPMO-001 se centra y destella", () => {
+    const centrar = vi.fn();
+    Element.prototype.scrollIntoView = centrar;
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            filas: [
+              fila({ id: 61, identificador: "OCPMO-001-20-OCT-2026", observaciones: [], notas: [] }),
+              fila({
+                id: 62,
+                identificador: "OCPMO-002-20-OCT-2026",
+                observaciones: ["Pruebas tecnicas 3"],
+                notas: [COMPARTIDA, ESCRITA],
+              }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    expect(screen.getByText("Pruebas tecnicas 3").closest(".app-nota")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ir al operativo OCPMO-001-20-OCT-2026/ }));
+    expect(document.querySelector('[data-operativo-id="61"]')).toHaveClass("app-fila-destello");
+    expect(centrar).toHaveBeenCalledWith(expect.objectContaining({ block: "center" }));
+  });
+
+  it("un servidor que solo manda los textos: cada uno es una tarjeta; sin notas, «—»", () => {
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            filas: [
+              fila({ id: 70, identificador: "A-1", observaciones: ["Una", "Dos"] }),
+              fila({ id: 71, identificador: "A-2", observaciones: [] }),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+    expect(screen.getByText("Una").closest(".app-nota")).not.toBe(screen.getByText("Dos").closest(".app-nota"));
+    expect(screen.getAllByText("—").some((nodo) => nodo.classList.contains("text-app-muted"))).toBe(true);
   });
 });

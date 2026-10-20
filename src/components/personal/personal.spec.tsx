@@ -8,9 +8,11 @@
  * Fecha: 2026-08-06
  *
  * LOS CASOS 3 Y 4 SON LA MISMA REGLA VISTA DOS VECES: ninguna información depende solo
- * del color. Una fila atenuada y un distintivo naranja son indistinguibles de lo normal
- * para quien no percibe bien el contraste, y en un maestro de personal confundir activo
- * con inactivo significa convocar a alguien que ya no trabaja aquí.
+ * del color. En un maestro de personal confundir activo con inactivo significa convocar a
+ * alguien que ya no trabaja aquí.
+ *
+ * Ajustado al rediseño del 2026-10-08: cabecera de una fila, correos en una o dos líneas,
+ * estado + «Ausente dd/mm–dd/mm», «Editar»/«Ausencias» visibles y el «⋮» solo con baja/reactivar.
  */
 
 import { render, screen, within } from "@testing-library/react";
@@ -18,19 +20,27 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import TablaPersonal from "./TablaPersonal.tsx";
+import { partirNombre } from "../../interfaces/DirectorioAuth.ts";
 import {
-  partirNombre,
-} from "../../interfaces/DirectorioAuth.ts";
-import { esquemaAusencia } from "../../config/validationSchemas.ts";
-import type { Disponibilidad, Funcionario } from "../../interfaces/Personal.ts";
+  esquemaAusencia,
+  esquemaFuncionario,
+} from "../../config/validationSchemas.ts";
+import type {
+  AusenciaDelMaestro,
+  Funcionario,
+} from "../../interfaces/Personal.ts";
 import {
+  FILTROS_INICIALES,
+  NOMBRE_ESTADO_DISPONIBILIDAD,
   SITUACIONES_DE_AUSENCIA,
-  ausenciaVigente,
+  contarFichasActivas,
+  esCorreoValido,
+  esTelefonoValido,
   filtrarPersonal,
   hayFiltrosDePersonal,
+  rotuloDeDependencia,
+  tieneFichaActiva,
 } from "../../utils/personal.util.ts";
-
-const HOY = "2026-07-31";
 
 const funcionario = (parcial: Partial<Funcionario> = {}): Funcionario => ({
   id: 1,
@@ -48,143 +58,55 @@ const funcionario = (parcial: Partial<Funcionario> = {}): Funcionario => ({
   ...parcial,
 });
 
-const ausencia = (parcial: Partial<Disponibilidad> = {}): Disponibilidad => ({
+const ausencia = (
+  parcial: Partial<AusenciaDelMaestro> = {},
+): AusenciaDelMaestro => ({
   id: 10,
+  funcionarioId: 1,
   estado: "VACACIONES",
-  desde: "2026-07-28",
-  hasta: "2026-08-08",
-  motivo: null,
-  registradoPor: 1,
+  desde: "2026-10-12",
+  hasta: "2026-10-23",
+  momento: "PROXIMA",
   ...parcial,
 });
 
 const propiedades = {
-  hoy: HOY,
   seleccionadoId: null,
   zonales: [{ id: 1, codigo: "CAL", nombre: "Zonal Calderón" }],
-  onSeleccionar: vi.fn(),
+  ausencias: {} as Record<number, AusenciaDelMaestro>,
+  onAusencias: vi.fn(),
   onEditar: vi.fn(),
   onDarDeBaja: vi.fn(),
-  // El banco por omisión administra: es lo que comprobaban las pruebas de M-27.
+  onReactivar: vi.fn(),
   puedeAdministrar: true,
   mensajeVacio: "Sin registros",
 };
 
-describe("caso 3 · la ausencia vigente se lee, no solo se ve", () => {
-  it("el distintivo dice la situación y hasta cuándo", () => {
+/** La fila de datos: la cabecera es UNA sola fila desde el 2026-10-08. */
+const filaDeDatos = () => screen.getAllByRole("row")[1];
+
+describe("la tabla del maestro · cabecera y columnas (2026-10-08)", () => {
+  it("la cabecera es UNA fila, sin los grupos «Área / Zonal» ni «Contacto»", () => {
     render(
       <TablaPersonal
         {...propiedades}
         personal={[funcionario()]}
-        ausencias={{ 1: [ausencia()] }}
       />,
     );
-
-    const distintivo = screen.getByText("Vacaciones hasta el 2026-08-08");
-
-    expect(distintivo.className).toContain("badge-warning");
-  });
-
-  it("el motivo, que puede ser de salud, va en el texto emergente y no en la fila", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{
-          1: [ausencia({ estado: "REPOSO_MEDICO", motivo: "Cirugía programada" })],
-        }}
-      />,
-    );
-
-    expect(
-      screen.getByText("Reposo médico hasta el 2026-08-08"),
-    ).toHaveAttribute("title", "Cirugía programada");
-    // No se imprime en la celda: la fila la puede ver cualquiera que pase por detrás.
-    expect(screen.queryByText("Cirugía programada")).toBeNull();
-  });
-
-  it("sin ausencias consultadas todavía, no se afirma que esté activo", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{}}
-      />,
-    );
-
-    expect(screen.getByText("Consultando…")).toBeInTheDocument();
-    expect(screen.queryByText("Activo")).toBeNull();
-  });
-
-  it("consultadas y sin periodo vigente, dice «Activo»", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{ 1: [] }}
-      />,
-    );
-
-    expect(screen.getByText("Activo")).toBeInTheDocument();
-  });
-});
-
-describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacidad", () => {
-  it("la fila NO se atenúa; el estado lo dice el distintivo «Inactivo» (con fondo)", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario({ activo: false })]}
-        ausencias={{ 1: [] }}
-      />,
-    );
-
-    const fila = screen.getAllByRole("row")[2];
-
-    // Ya no se atenúa la fila (era una señal solo visual); el estado va en el chip.
-    expect(fila.className).not.toContain("opacity-60");
-    expect(within(fila).getByText("Inactivo")).toBeInTheDocument();
-  });
-
-  /**
-   * ANTES ESTE BOTÓN SE DESHABILITABA Y LA FICHA INACTIVA QUEDABA ATASCADA. Desde el
-   * reingreso, la fila desactivada ofrece «Reactivar» en su lugar, no «Dar de baja».
-   */
-  it("la ficha inactiva ofrece «Reactivar», no «Dar de baja» (en el menú «⋯»)", async () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario({ activo: false })]}
-        ausencias={{ 1: [] }}
-        onReactivar={vi.fn()}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
-
-    expect(
-      screen.getByRole("button", { name: "Reactivar" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Dar de baja" })).toBeNull();
-  });
-
-  it("reactivar entrega la ficha, para readmitirla por su identificador", async () => {
-    const reactivar = vi.fn();
-
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario({ activo: false })]}
-        ausencias={{ 1: [] }}
-        onReactivar={reactivar}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Reactivar" }));
-    expect(reactivar).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 1, activo: false }),
-    );
+    const encabezados = screen
+      .getAllByRole("columnheader")
+      .map((th) => th.textContent);
+    expect(encabezados).toEqual([
+      "Cédula",
+      "Apellidos y nombres",
+      "Área",
+      "Zonal",
+      "Contrato",
+      "Teléfono",
+      "Correos",
+      "Estado",
+      "Acciones",
+    ]);
   });
 
   it("la cédula y el teléfono se muestran: es la única pantalla que los tiene", () => {
@@ -192,76 +114,197 @@ describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacid
       <TablaPersonal
         {...propiedades}
         personal={[funcionario()]}
-        ausencias={{ 1: [] }}
       />,
     );
-
     expect(screen.getByText("1712345678")).toBeInTheDocument();
     expect(screen.getByText("0987150000")).toBeInTheDocument();
   });
 
-  it("muestra los dos correos de la ficha, rotulados institucional y personal", () => {
+  it("con correo personal, la celda tiene dos líneas: «Inst.» y «Pers.»", () => {
     render(
       <TablaPersonal
         {...propiedades}
         personal={[funcionario({ correoPersonal: "jess.personal@gmail.com" })]}
-        ausencias={{ 1: [] }}
       />,
     );
-
-    // Los dos correos aparecen, cada uno con su rótulo en palabras (regla 6).
-    expect(
-      screen.getByText("jessica.yunda@quito.gob.ec"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("jess.personal@gmail.com")).toBeInTheDocument();
-    expect(screen.getByText(/Inst\.:/)).toBeInTheDocument();
-    expect(screen.getByText(/Pers\.:/)).toBeInTheDocument();
+    const celda = within(filaDeDatos()).getByText(/jessica\.yunda/).closest("td")!;
+    expect(celda.children).toHaveLength(2);
+    expect(celda).toHaveTextContent("Inst. jessica.yunda@quito.gob.ec");
+    expect(celda).toHaveTextContent("Pers. jess.personal@gmail.com");
   });
 
-  it("cada fila ofrece editar (visible), y ausencias y baja en el menú «⋯»", async () => {
-    const editar = vi.fn();
-
+  it("sin correo personal, una sola línea: ya no se pinta «Pers.: —»", () => {
     render(
       <TablaPersonal
         {...propiedades}
         personal={[funcionario()]}
-        ausencias={{ 1: [] }}
-        onEditar={editar}
       />,
     );
+    const celda = within(filaDeDatos()).getByText(/jessica\.yunda/).closest("td")!;
+    expect(celda.children).toHaveLength(1);
+    expect(celda).not.toHaveTextContent("Pers.");
+  });
 
-    // «Editar» está visible en la fila.
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
-    expect(editar).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+  it("sin zonal ni teléfono, la celda dice «—»", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ telefono: null, zonalId: null })]}
+      />,
+    );
+    expect(within(filaDeDatos()).getAllByText("—")).toHaveLength(2);
+  });
 
-    // Ausencias y Dar de baja viven en el menú «⋯».
-    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
-    expect(
-      screen.getByRole("button", { name: "Ausencias" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Dar de baja" }),
-    ).toBeInTheDocument();
+  it("pinta el NOMBRE de la zonal de la ficha, no su id", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ zonalId: 1 })]}
+      />,
+    );
+    expect(screen.getByText("Zonal Calderón")).toBeInTheDocument();
+  });
+
+  it("el cargo va bajo el nombre solo si existe", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ cargo: null })]}
+      />,
+    );
+    expect(screen.queryByText("Agente de control metropolitano")).toBeNull();
   });
 });
 
-describe("ausenciaVigente · los extremos entran", () => {
-  it("el primer día cuenta", () => {
-    expect(ausenciaVigente([ausencia()], "2026-07-28")).not.toBeNull();
+describe("caso 3 · la ausencia se lee, no solo se ve", () => {
+  it("bajo el estado va «Ausente dd/mm–dd/mm» en ámbar, y la situación en el texto emergente", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        ausencias={{ 1: ausencia({ estado: "REPOSO_MEDICO" }) }}
+      />,
+    );
+    const distintivo = screen.getByText("Ausente 12/10–23/10");
+    expect(distintivo.className).toContain("badge-warning");
+    expect(distintivo).toHaveAttribute(
+      "title",
+      NOMBRE_ESTADO_DISPONIBILIDAD.REPOSO_MEDICO,
+    );
+    // El estado de la ficha sigue diciéndose aparte.
+    expect(screen.getByText("Activo")).toBeInTheDocument();
   });
 
-  it("el último día también: quien está de permiso lo está el día entero", () => {
-    expect(ausenciaVigente([ausencia()], "2026-08-08")).not.toBeNull();
+  it("sin ausencia, solo «Activo»", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+      />,
+    );
+    expect(screen.getByText("Activo")).toBeInTheDocument();
+    expect(screen.queryByText(/Ausente/)).toBeNull();
+  });
+});
+
+describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacidad", () => {
+  it("«Activo» e «Inactivo» comparten estructura y solo cambia la variante", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario(), funcionario({ id: 2, activo: false })]}
+      />,
+    );
+    const activo = screen.getByText("Activo");
+    const inactivo = screen.getByText("Inactivo");
+    const sinVariante = (clase: string) =>
+      clase.replace(/badge-(success|ghost)/, "").trim();
+    expect(sinVariante(activo.className)).toBe(sinVariante(inactivo.className));
+    // La fila no se atenúa: el estado lo dice el chip.
+    expect(screen.getAllByRole("row")[2].className).not.toMatch(/opacity-/);
   });
 
-  it("el día siguiente ya no", () => {
-    expect(ausenciaVigente([ausencia()], "2026-08-09")).toBeNull();
+  it("la ficha inactiva ofrece «Activar» visible, no «Desactivar», y «Ausencias» se apaga con su motivo", async () => {
+    const reactivar = vi.fn();
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario({ activo: false })]}
+        onReactivar={reactivar}
+      />,
+    );
+
+    const ausencias = screen.getByRole("button", { name: /Ausencias de/ });
+    expect(ausencias).toHaveAttribute("aria-disabled", "true");
+    expect(ausencias).toHaveAttribute("title", expect.stringMatching(/actívela primero/));
+    expect(screen.queryByRole("button", { name: /^Desactivar/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Más acciones de/ })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^Activar/ }));
+    expect(reactivar).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, activo: false }),
+    );
+  });
+});
+
+/**
+ * DOS PERFILES EN LA MISMA TABLA (2026-08-27). Lo que no pueden hacer no se pinta, y no se
+ * pinta apagado. Es presentación: quien decide es el servidor.
+ */
+describe("la tabla del maestro distingue quién administra", () => {
+  it("quien administra ve [✎ Editar] [📅 Ausencias] [⊘ Desactivar], en ese orden y sin «⋮»", async () => {
+    const editar = vi.fn();
+    const ausencias = vi.fn();
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        onEditar={editar}
+        onAusencias={ausencias}
+      />,
+    );
+
+    const celda = screen.getAllByRole("cell").at(-1) as HTMLElement;
+    const botones = within(celda).getAllByRole("button");
+    expect(botones.map((b) => b.textContent)).toEqual(["Editar", "Ausencias", "Desactivar"]);
+    expect(botones[0].className).toContain("app-accion-secundaria");
+    expect(botones[1].className).toContain("btn-outline btn-primary");
+    expect(botones[2].className).toContain("btn-error");
+    botones.forEach((boton) => expect(boton.className).toContain("btn-sm"));
+
+    await userEvent.click(botones[0]);
+    expect(editar).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+    await userEvent.click(botones[1]);
+    expect(ausencias).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+    expect(screen.queryByRole("button", { name: /Más acciones de/ })).toBeNull();
   });
 
-  it("una ausencia de un solo día se reconoce", () => {
-    const unDia = ausencia({ desde: "2026-07-31", hasta: "2026-07-31" });
+  it("quien solo consulta no ve «Editar» ni «Desactivar», pero sí «Ausencias»", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        puedeAdministrar={false}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^Editar/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Desactivar/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Ausencias de/ })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+  });
+});
 
-    expect(ausenciaVigente([unDia], HOY)).not.toBeNull();
+describe("la fila recién guardada se resalta", () => {
+  it("la ficha de `resaltadoId` lleva el resalte verde, distinto de la selección", () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[funcionario()]}
+        resaltadoId={1}
+      />,
+    );
+    expect(filaDeDatos().className).toContain("bg-success/10");
+    expect(filaDeDatos()).toHaveAttribute("data-resaltado");
   });
 });
 
@@ -303,10 +346,79 @@ describe("los filtros del maestro", () => {
     ).toHaveLength(1);
   });
 
-  it("sin filtros no se descarta nada", () => {
-    expect(filtrarPersonal(maestro, {})).toHaveLength(2);
-    expect(hayFiltrosDePersonal({ busqueda: "  " })).toBe(false);
-    expect(hayFiltrosDePersonal({ area: "TECNICO" })).toBe(true);
+  it("los filtros iniciales son «solo activos», y no cuentan como filtro aplicado", () => {
+    expect(filtrarPersonal(maestro, FILTROS_INICIALES)).toHaveLength(1);
+    expect(hayFiltrosDePersonal(FILTROS_INICIALES)).toBe(false);
+    expect(hayFiltrosDePersonal({ ...FILTROS_INICIALES, busqueda: "  " })).toBe(
+      false,
+    );
+    // «Todos» sí es un cambio respecto de lo inicial.
+    expect(hayFiltrosDePersonal({ estado: "" })).toBe(true);
+    expect(hayFiltrosDePersonal({ ...FILTROS_INICIALES, area: "TECNICO" })).toBe(
+      true,
+    );
+  });
+});
+
+describe("teléfono y correo · espejo del servidor (2026-10-08)", () => {
+  it("el teléfono es un celular de diez dígitos que empieza por 09", () => {
+    expect(esTelefonoValido("0985144231")).toBe(true);
+    // Se toleran espacios y guiones, como en el servidor.
+    expect(esTelefonoValido("098 514-4231")).toBe(true);
+    expect(esTelefonoValido("02-2445566")).toBe(false);
+    expect(esTelefonoValido("098514423")).toBe(false);
+    expect(esTelefonoValido("1985144231")).toBe(false);
+  });
+
+  it("el correo tiene la forma x@y.z", () => {
+    expect(esCorreoValido("nombre@correo.com")).toBe(true);
+    expect(esCorreoValido("nombre@correo")).toBe(false);
+    expect(esCorreoValido("nombre correo.com")).toBe(false);
+  });
+
+  it("la ficha los valida solo si se escriben: son opcionales", async () => {
+    const base = {
+      cedula: "1712345678",
+      apellidos: "PEREZ",
+      nombres: "JUAN",
+      area: "OPERATIVOS",
+      tipoContrato: "NOMBRAMIENTO",
+    };
+    await expect(esquemaFuncionario.validate(base)).resolves.toBeTruthy();
+    await expect(
+      esquemaFuncionario.validate({ ...base, telefono: "022445566" }),
+    ).rejects.toThrow(/empiece por 09/);
+    await expect(
+      esquemaFuncionario.validate({ ...base, correoPersonal: "juan@" }),
+    ).rejects.toThrow(/correo válido/);
+  });
+});
+
+describe("«tiene ficha» · un solo criterio para el directorio", () => {
+  const fila = (ficha: { activo: boolean } | null) => ({ ficha });
+
+  it("cuenta como «ya tiene ficha» solo la VIGENTE; la dada de baja no", () => {
+    expect(tieneFichaActiva(fila({ activo: true }))).toBe(true);
+    expect(tieneFichaActiva(fila({ activo: false }))).toBe(false);
+    expect(tieneFichaActiva(fila(null))).toBe(false);
+    expect(
+      contarFichasActivas([
+        fila({ activo: true }),
+        fila({ activo: false }),
+        fila(null),
+        fila({ activo: true }),
+      ]),
+    ).toBe(2);
+  });
+
+  it("el chip de dependencia usa el rótulo corto", () => {
+    expect(rotuloDeDependencia("Dirección Metropolitana de Inspección")).toBe(
+      "Inspección",
+    );
+    expect(
+      rotuloDeDependencia("Dirección Metropolitana de Administrativa Financiera"),
+    ).toBe("Administrativa Financiera");
+    expect(rotuloDeDependencia("DMIP")).toBe("DMIP");
   });
 });
 
@@ -343,62 +455,37 @@ describe("el esquema de la ausencia", () => {
     expect(motivo).toContain("no puede terminar antes de empezar");
   });
 
-  it("admite el mismo día de inicio y fin: es una ausencia de un día", async () => {
-    expect(
-      await motivoDeRechazo({
-        ...VALIDA,
-        desde: "2026-08-01",
-        hasta: "2026-08-01",
-      }),
-    ).toBeNull();
-  });
-
   it("MANTENIMIENTO no se ofrece: es de vehículos, no de personas", () => {
     expect(SITUACIONES_DE_AUSENCIA).not.toContain("MANTENIMIENTO");
-    // Tampoco DISPONIBLE: quien vuelve al servicio **retira** el periodo.
+    // Tampoco DISPONIBLE: quien vuelve al servicio **quita** el periodo.
     expect(SITUACIONES_DE_AUSENCIA).not.toContain("DISPONIBLE");
   });
 
-  it("el solape NO está en el esquema: lo decide el servidor", async () => {
-    // INV-14 depende de los demás periodos de esa persona, incluidos los que otro
-    // administrador acabe de registrar. Llega como 409 y se muestra tal cual.
-    const campos = Object.keys(esquemaAusencia.fields);
-
-    expect(campos).not.toContain("funcionarioId");
-    expect(campos).toEqual(["estado", "desde", "hasta", "motivo"]);
+  it("ofrece las situaciones del negocio, con sus nombres (2026-10-08)", () => {
+    expect(SITUACIONES_DE_AUSENCIA.map((s) => NOMBRE_ESTADO_DISPONIBILIDAD[s])).toEqual([
+      "Vacaciones",
+      "Permiso médico",
+      "Licencia",
+      "Capacitación",
+      "Comisión de servicios",
+      "Calamidad doméstica",
+      "Permiso",
+    ]);
   });
 });
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   EL DIRECTORIO DE AUTH CENTRAL · 2026-08-21
-
-   Lo que se prueba aquí es **una decisión**, no un maquetado: quién puede ser convocado a
-   un operativo y quién no. La ausencia de ficha no produce ningún error hasta el día en
-   que alguien busca a esa persona en el selector de P-01 y no está, así que la pantalla
-   tiene que decirlo con palabras antes.
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 2026-08-24 · EL DIRECTORIO DEJÓ DE SER UNA PESTAÑA Y ES EL PRIMER PASO DEL ALTA.
- *
- * Estas pruebas venían de `TablaDirectorioAuth`, que se retiró al quedarse sin
- * importadores. **No se borraron: se trasladaron**, porque lo que fijan no es el
- * componente sino lo que la pantalla tiene que decir — «Sin ficha: no puede ser
- * convocado», la ficha dada de baja que no se confunde con una vigente, la cédula que
- * falta en Auth, y la sigla de inspector que nunca va sola.
- *
- * Lo nuevo, y lo que más importa: **la salida manual**. `CLAUDE.md` §7 exige que el
- * maestro se siga administrando aunque Auth no responda, y ahora que el alta empieza en
- * el directorio, esa exigencia vive en un solo botón. Si desaparece, la regla se rompe
- * sin que nada falle.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
 describe("partirNombre · Auth guarda el nombre en un solo campo", () => {
   it("las dos primeras palabras son los apellidos", () => {
     expect(partirNombre("PEREZ LOPEZ JUAN CARLOS")).toEqual({
       apellidos: "PEREZ LOPEZ",
       nombres: "JUAN CARLOS",
+    });
+  });
+
+  it("con nombres compuestos, todo lo que sigue a los dos apellidos son nombres", () => {
+    expect(partirNombre("ALMEIDA CADENA CARLOS RAFAEL ARTURO")).toEqual({
+      apellidos: "ALMEIDA CADENA",
+      nombres: "CARLOS RAFAEL ARTURO",
     });
   });
 
@@ -410,138 +497,9 @@ describe("partirNombre · Auth guarda el nombre en un solo campo", () => {
   });
 
   it("ES UNA HEURÍSTICA Y CON APELLIDO COMPUESTO FALLA: por eso es editable", () => {
-    // «DE LA TORRE» son tres palabras. La partición sale mal a propósito y esta prueba
-    // lo deja escrito: quien da de alta lo corrige en el formulario.
     expect(partirNombre("DE LA TORRE PEREZ JUAN")).toEqual({
       apellidos: "DE LA",
       nombres: "TORRE PEREZ JUAN",
     });
-  });
-});
-
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * DOS PERFILES EN LA MISMA TABLA. 2026-08-27.
- *
- * P-07 dejó de ser exclusiva del administrador: los tres roles departamentales entran
- * desde la bandeja del Cuadro a consultar y a anotar ausencias de su gente.
- *
- * LO QUE NO PUEDEN HACER NO SE PINTA, y no se pinta apagado. Un botón deshabilitado
- * insinúa que en otro momento serviría, y a ese perfil no le servirá nunca: el servidor
- * cierra el alta, la edición y la baja con su propio `@Roles` de método.
- *
- * Y conviene no confundirse: **esto no autoriza nada**. Es presentación. Quien decide es
- * el servidor, y tiene sus propias pruebas.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-describe("la tabla del maestro distingue quién administra", () => {
-  it("quien administra ve editar (visible) y ausencias/dar de baja en el menú «⋯»", async () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{ 1: [] }}
-        puedeAdministrar
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
-    expect(
-      screen.getByRole("button", { name: "Dar de baja" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Ausencias" }),
-    ).toBeInTheDocument();
-  });
-
-  /**
-   * ES LA QUE DISCRIMINA. La anterior pasaría con una tabla que ignorase la propiedad;
-   * esta exige que las dos escrituras del maestro desaparezcan y que la de ausencias
-   * **se quede**, que es justo lo que ese perfil sí puede hacer.
-   */
-  it("quien solo consulta no ve editar ni dar de baja, pero sí ausencias (en el menú)", async () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{ 1: [] }}
-        puedeAdministrar={false}
-      />,
-    );
-
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
-
-    await userEvent.click(screen.getByRole("button", { name: /Acciones de/ }));
-    expect(screen.queryByRole("button", { name: "Dar de baja" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Ausencias" }),
-    ).toBeInTheDocument();
-  });
-
-  it("y no los deja apagados: no están en el documento", () => {
-    // Se afirma sobre la ausencia y no sobre `toBeDisabled`, porque son dos diseños
-    // distintos y el elegido fue ocultar.
-    const { container } = render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{ 1: [] }}
-        puedeAdministrar={false}
-      />,
-    );
-
-    expect(container.querySelectorAll("button[disabled]")).toHaveLength(0);
-  });
-});
-
-describe("la tabla muestra la zona que gestiona la persona", () => {
-  it("pinta el NOMBRE de la zonal de la ficha, no su id", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario({ zonalId: 1, area: "OPERATIVOS" })]}
-        ausencias={{ 1: [] }}
-      />,
-    );
-
-    expect(
-      screen.getByRole("columnheader", { name: "Zonal" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Zonal Calderón")).toBeInTheDocument();
-  });
-
-  it("sin zonal (no es DMIP), la columna existe y la persona no muestra ninguna", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario({ zonalId: null })]}
-        ausencias={{ 1: [] }}
-      />,
-    );
-
-    expect(
-      screen.getByRole("columnheader", { name: "Zonal" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Zonal Calderón")).toBeNull();
-  });
-});
-
-describe("la fila recién guardada se resalta", () => {
-  it("la ficha de `resaltadoId` lleva el resalte, distinto de la selección", () => {
-    render(
-      <TablaPersonal
-        {...propiedades}
-        personal={[funcionario()]}
-        ausencias={{ 1: [] }}
-        resaltadoId={1}
-      />,
-    );
-
-    // Con 2 filas de encabezado, la fila de datos es la tercera.
-    const fila = screen.getAllByRole("row")[2];
-    expect(fila.className).toContain("bg-success/10");
   });
 });

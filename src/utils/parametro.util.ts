@@ -45,6 +45,17 @@ const esClaveDeHora = (clave: string): boolean =>
 const PERIODOS_COMPUTO = ["SEMANAL", "QUINCENAL", "MENSUAL"];
 
 /**
+ * Parámetros de la DAF con valor por DÍA DE LA SEMANA (versión consolidada, 2026-10-06): siete
+ * números L,M,X,J,V,S,D, o `SIN_CONFIGURAR` mientras el negocio no los fije.
+ */
+const CLAVES_POR_DIA = ["DAF_MIN_CONDUCTORES_DIA", "DAF_MIN_CONDUCTORES_NOCHE"];
+const AYUDA_POR_DIA = "7 números L,M,X,J,V,S,D o SIN_CONFIGURAR";
+const PATRON_POR_DIA = /^\d+(,\d+){6}$/;
+
+/** Valores de `DAF_PERMITE_NOCHE_A_DIA` (2026-10-06). */
+const VALORES_NOCHE_A_DIA = ["SIN_CONFIGURAR", "SI", "NO"];
+
+/**
  * Motivo por el que el valor no es admisible, o `null` si lo es.
  *
  * Devuelve **el motivo y no un booleano** por la misma razón que en M-24: con un
@@ -82,6 +93,19 @@ export const motivoDeRechazo = (
     case "TEXTO":
       if (esClaveDeHora(parametro.clave) && !PATRON_HORA.test(limpio)) {
         return "La hora se escribe en formato HH:MM, por ejemplo 15:00.";
+      }
+      if (
+        CLAVES_POR_DIA.includes(parametro.clave) &&
+        limpio !== "SIN_CONFIGURAR" &&
+        !PATRON_POR_DIA.test(limpio.replace(/\s+/g, ""))
+      ) {
+        return `${parametro.clave} admite ${AYUDA_POR_DIA}.`;
+      }
+      if (
+        parametro.clave === "DAF_PERMITE_NOCHE_A_DIA" &&
+        !VALORES_NOCHE_A_DIA.includes(limpio)
+      ) {
+        return `${parametro.clave} admite estos valores: ${VALORES_NOCHE_A_DIA.join(", ")}.`;
       }
       if (
         parametro.clave === "PERIODO_COMPUTO_SALIDAS" &&
@@ -132,6 +156,10 @@ export const descripcionDeRango = (parametro: ParametroPolitica): string => {
   if (parametro.clave === "PERIODO_COMPUTO_SALIDAS") {
     return PERIODOS_COMPUTO.join(" · ");
   }
+  if (CLAVES_POR_DIA.includes(parametro.clave)) return AYUDA_POR_DIA;
+  if (parametro.clave === "DAF_PERMITE_NOCHE_A_DIA") {
+    return VALORES_NOCHE_A_DIA.join(" · ");
+  }
   if (parametro.tipo === "BOOLEANO") return "Verdadero o falso";
 
   return "Sin rango definido";
@@ -140,9 +168,28 @@ export const descripcionDeRango = (parametro: ParametroPolitica): string => {
 // ─────────────────────────── Ventanas ───────────────────────────
 
 export const NOMBRE_TIPO_VENTANA: Record<TipoVentana, string> = {
+  DIARIO: "Diario (todos los días)",
+  LABORABLE: "Solo días laborables",
+  SIN_RESTRICCION: "Sin restricción",
+  // Heredados: el servidor ya no los ofrece, pero una ventana antigua podría traerlos.
   SEMANAL: "Semanal",
-  DIARIO: "Diario",
   INTERVALO: "Intervalo",
+};
+
+/** Los tipos que se pueden ELEGIR (2026-10-07), en el orden del selector. */
+export const TIPOS_VENTANA_ELEGIBLES: TipoVentana[] = [
+  "DIARIO",
+  "LABORABLE",
+  "SIN_RESTRICCION",
+];
+
+/** La ayuda bajo el selector de tipo, que cambia según el tipo elegido. */
+export const AYUDA_TIPO_VENTANA: Partial<Record<TipoVentana, string>> = {
+  DIARIO: "Aplica todos los días, incluidos fines de semana.",
+  // Sin calendario de feriados en el sistema (2026-10-07): solo sábado y domingo quedan sin carga.
+  LABORABLE: "Aplica de lunes a viernes; fines de semana sin carga.",
+  SIN_RESTRICCION:
+    "El rol puede cargar a cualquier hora; no se usan horas ni mensaje.",
 };
 
 const DIAS = [
@@ -178,9 +225,12 @@ export const horarioDeVentana = (ventana: VentanaCarga): string => {
     ? `${ventana.diaCierre ? `${nombreDeDia(ventana.diaCierre)} ` : ""}${ventana.horaCierre}`
     : null;
 
-  if (apertura && cierre) return `De ${apertura} a ${cierre}`;
-  if (cierre) return `Hasta ${cierre}, sin hora de apertura`;
-  if (apertura) return `Desde ${apertura}, sin hora de cierre`;
+  // LABORABLE (2026-10-07): el mismo horario, solo de lunes a viernes.
+  const dias = ventana.tipo === "LABORABLE" ? ", de lunes a viernes" : "";
+
+  if (apertura && cierre) return `De ${apertura} a ${cierre}${dias}`;
+  if (cierre) return `Hasta ${cierre}, sin hora de apertura${dias}`;
+  if (apertura) return `Desde ${apertura}, sin hora de cierre${dias}`;
 
   return "Sin horas declaradas";
 };

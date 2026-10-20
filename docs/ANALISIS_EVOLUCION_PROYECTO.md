@@ -704,7 +704,7 @@ npm run prisma:verificar                                           # → correct
 cd ..
 
 # §5 · Auth central
-AUTH=http://172.20.136.127:10004
+AUTH=http://<IP_SERVIDOR_AUTH>:10004
 curl -s -X POST $AUTH/auth -H 'Content-Type: application/json' \
      -d '{"username":"<usuario>","password":"<clave>"}'
 # La colección de Postman reproduce el flujo completo y diagnostica lo que falta:

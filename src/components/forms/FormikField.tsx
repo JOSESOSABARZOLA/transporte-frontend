@@ -38,6 +38,11 @@ interface BaseFieldProps extends FieldProps {
 interface SelectInputProps extends BaseFieldProps {
   options: Array<{ value: number | string; label: string }>;
   onCustomChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  /**
+   * Rótulo de la opción vacía (2026-10-08). Por omisión «Seleccionar...»; un campo OPCIONAL puede
+   * decir qué significa dejarlo vacío —«Sin zonal»— en vez de invitar a elegir.
+   */
+  opcionVacia?: string;
 }
 
 interface CheckboxInputProps extends FieldProps {
@@ -132,7 +137,7 @@ export const CampoEnvoltura: React.FC<EnvolturaProps> = ({
       className="label"
       htmlFor={id}
     >
-      <span className="app-modules-modal-label label-text font-medium">
+      <span className="app-modules-modal-label label-text">
         {label}
         {required && (
           <span
@@ -332,6 +337,7 @@ export const SelectInput: React.FC<SelectInputProps> = ({
   options,
   className = "",
   onCustomChange,
+  opcionVacia = "Seleccionar...",
 }) => {
   const error = errorVisible(form, field.name);
 
@@ -354,7 +360,7 @@ export const SelectInput: React.FC<SelectInputProps> = ({
         disabled={disabled}
         className={clasesDeControl("select", Boolean(error), className)}
       >
-        <option value="">Seleccionar...</option>
+        <option value="">{opcionVacia}</option>
         {options.map((option) => (
           <option
             key={option.value}
@@ -420,7 +426,7 @@ export const CheckboxInput: React.FC<CheckboxInputProps> = ({
         checked={Boolean(field.value)}
         className="checkbox checkbox-primary"
       />
-      <span className="label-text font-semibold ml-2">{label}</span>
+      <span className="label-text ml-2">{label}</span>
     </label>
   </div>
 );
@@ -442,7 +448,7 @@ export const RatioInput: React.FC<RatioInputProps> = ({
         checked={field.value === value}
         className="radio radio-primary"
       />
-      <span className="label-text font-semibold ml-2">{label}</span>
+      <span className="label-text ml-2">{label}</span>
     </label>
   </div>
 );

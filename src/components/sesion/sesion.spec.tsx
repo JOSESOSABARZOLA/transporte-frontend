@@ -28,9 +28,27 @@ import LoginPage from "../../pages/LoginPage.tsx";
 import AuthCallbackPage from "../../pages/AuthCallbackPage.tsx";
 import { UserContext, type EstadoSesion } from "../../context/UserContext.tsx";
 import { UserProvider } from "../../providers/UserProvider.tsx";
-import { rolUser } from "../../config/env.ts";
+import { hayPortal, MENSAJE_SIN_PORTAL, rolUser } from "../../config/env.ts";
 import { permisosDeRoles } from "../../pruebas/permisos.ts";
 import type { User } from "../../interfaces/User.ts";
+
+/**
+ * El portal ya no tiene dirección por omisión (2026-10-16): estas pruebas le dan una de
+ * ejemplo, como haría el `.env` del ambiente. Sin portal, la guarda no navega y lo dice; eso
+ * lo fija «sin portal configurado, no navega y dice qué falta».
+ */
+const { PORTAL_DE_PRUEBA } = vi.hoisted(() => ({
+  PORTAL_DE_PRUEBA: "https://auth.example/login",
+}));
+
+vi.mock("../../config/env.ts", async (original) => {
+  const real = await original<typeof import("../../config/env.ts")>();
+  return {
+    ...real,
+    env: { ...real.env, portalAuthUrl: PORTAL_DE_PRUEBA, logoutAuthUrl: PORTAL_DE_PRUEBA },
+    hayPortal: vi.fn(() => true),
+  };
+});
 
 vi.mock("../../services/sesion.service.ts", async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -114,6 +132,29 @@ describe("Ingreso con Auth central", () => {
 
       expect(irAlPortal).toHaveBeenCalledTimes(1);
       expect(String(irAlPortal.mock.calls[0][0])).toContain("/login");
+    });
+
+    /** Solo posible en `npm run dev`: `vite build` se detiene sin portal. */
+    it("sin portal configurado, no navega y dice qué falta", () => {
+      vi.mocked(hayPortal).mockReturnValue(false);
+      try {
+        render(
+          conSesion(
+            "sinSesion",
+            null,
+            <MemoryRouter>
+              <RutaConSesion>
+                <p>contenido reservado</p>
+              </RutaConSesion>
+            </MemoryRouter>,
+          ),
+        );
+
+        expect(irAlPortal).not.toHaveBeenCalled();
+        expect(screen.getByRole("alert")).toHaveTextContent(MENSAJE_SIN_PORTAL);
+      } finally {
+        vi.mocked(hayPortal).mockReturnValue(true);
+      }
     });
 
     it("con sesión, el rol sigue decidiendo qué se ve", () => {
@@ -213,19 +254,34 @@ describe("Ingreso con Auth central", () => {
       expect(screen.getByText(/No se pudo iniciar sesión/)).toBeInTheDocument();
     });
 
-    /** El mensaje del servidor se muestra tal cual: distingue casos que el funcionario resuelve distinto. */
-    it("muestra el motivo que devuelve el servidor, sin reescribirlo", async () => {
-      vi.mocked(canjearCodigo).mockRejectedValue(
-        new Error(
-          "Su usuario no está dado de alta en el Cuadro de Colores. Solicite el alta al administrador del módulo.",
-        ),
-      );
+    /**
+     * El mensaje del servidor se muestra tal cual: distingue casos que el funcionario resuelve
+     * distinto. El fallo llega como lo normaliza `httpClient`: su `message` es el de axios, en
+     * inglés, y NO debe verse (2026-10-16, mensajes estándar).
+     */
+    it("muestra el motivo que devuelve el servidor, sin reescribirlo, y no el texto de axios", async () => {
+      const fallo = Object.assign(new Error("Request failed with status code 403"), {
+        isHttpClientError: true,
+        status: 403,
+        originalError: {
+          response: {
+            data: {
+              statusCode: 403,
+              codigo: "USUARIO_NO_REGISTRADO",
+              mensaje:
+                "Su usuario no está dado de alta en el Cuadro de Colores. Solicite el alta al administrador del módulo.",
+            },
+          },
+        },
+      });
+      vi.mocked(canjearCodigo).mockRejectedValue(fallo);
 
       montar("?code=abc123");
 
       expect(
         await screen.findByText(/no está dado de alta en el Cuadro de Colores/),
       ).toBeInTheDocument();
+      expect(screen.queryByText(/Request failed/)).toBeNull();
     });
   });
   /**

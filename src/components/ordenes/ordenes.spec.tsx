@@ -32,9 +32,6 @@ vi.mock("../../services/documento.service.ts", () => ({
     verOrdenMemorando: vi.fn(),
     obtenerDatosMemorando: vi.fn(),
     generarMemorandoEditado: vi.fn(),
-    completarDatosPersona: vi.fn(),
-    obtenerConfigCuadro: vi.fn(),
-    guardarConfigCuadro: vi.fn(),
     // La página consulta la plantilla PROPIA para el aviso de datos incompletos (2026-10-05). Por
     // omisión queda pendiente: el aviso no aparece y no interfiere con las demás pruebas.
     obtenerPlantilla: vi.fn(() => new Promise(() => {})),
@@ -257,9 +254,9 @@ describe("casos 1 y 3 · una hoja por persona, y ninguna nombra a las otras", ()
         ordenes={[
           orden("YUNDA JESSICA", {
             faltantes: [
-              falta("Cargo del destinatario", "persona", "cargo"),
+              falta("Dependencia del destinatario", "persona", "dependencia"),
               falta("Número de memorando", "plantilla"),
-              falta("NUT", "cuadro"),
+              falta("Elaborado por", "plantilla", "elaboradoPor"),
             ],
           }),
         ]}
@@ -269,14 +266,13 @@ describe("casos 1 y 3 · una hoja por persona, y ninguna nombra a las otras", ()
     // El chip del estado (no el aviso, que también dice «Borrador:»).
     expect(screen.getByText(/Borrador · v/)).toBeInTheDocument();
     expect(screen.queryByText(/Vigente/)).toBeNull();
-    // La tarjeta RESUME por quién completa el dato, con los MISMOS cinco orígenes que el visor
-    // (funcionario / plantilla / firmante / cuadro / configuración); el detalle vive en «Ver documento».
-    // Aquí: 1 del funcionario, 1 de la plantilla y 1 del cuadro.
+    // La tarjeta RESUME por quién completa el dato, con los MISMOS cuatro orígenes que el visor
+    // (funcionario / plantilla / firmante / configuración); el detalle vive en «Ver documento».
+    // Aquí: 1 del funcionario y 2 de la plantilla (memorando y la tabla de control, 2026-10-08).
     expect(
-      screen.getByText(
-        /faltan 1 del funcionario, 1 de la plantilla y 1 del cuadro/,
-      ),
+      screen.getByText(/faltan 1 del funcionario y 2 de la plantilla/),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/del cuadro/)).toBeNull();
   });
 
   it("el firmante es su propio grupo, «del firmante» (2026-10-05)", () => {
@@ -285,7 +281,7 @@ describe("casos 1 y 3 · una hoja por persona, y ninguna nombra a las otras", ()
         ordenes={[
           orden("YUNDA JESSICA", {
             faltantes: [
-              falta("Cargo del destinatario", "persona", "cargo"),
+              falta("Dependencia del destinatario", "persona", "dependencia"),
               // El firmante vive en la plantilla del Director, pero se agrupa aparte.
               falta("Cargo del firmante", "firmante", "firmanteCargo"),
               falta("Dependencia del firmante", "firmante", "firmanteDependencia"),
@@ -345,7 +341,7 @@ describe("casos 1 y 3 · una hoja por persona, y ninguna nombra a las otras", ()
 
   it("si falta conductor o placa, «Asignar transporte» ENLAZA a transporte (RN-40), no edita aquí", () => {
     // RN-40: conductor y placa son los dos campos de la DAF. La tarjeta no los escribe; cuando
-    // faltan, ofrece un enlace a «Asignación de transporte», donde la DAF los completa.
+    // faltan, ofrece un enlace a «Planificar el día», donde la DAF los completa.
     render(
       <MemoryRouter>
         <VistaPreviaOrden
@@ -389,29 +385,26 @@ describe("E21 · el aviso de borrador agrupa los faltantes por quién los comple
   const borradorConTodo = () =>
     orden("YUNDA JESSICA", {
       faltantes: [
-        falta("Cargo del destinatario", "persona", "cargo"),
-        falta("NUT", "cuadro", "nut"),
-        // El firmante y los demás datos generales se completan en la plantilla (origen 'plantilla').
+        falta("Dependencia del destinatario", "persona", "dependencia"),
+        // El firmante, los demás datos generales y la tabla de control se completan en la plantilla.
         falta("Número de memorando", "plantilla", "numeroMemorando"),
+        falta("Siglas de la unidad", "plantilla", "siglasUnidad"),
       ],
     });
 
   const abrirVisor = async (
     ordenBorrador: OrdenServicio,
-    onRecargar = vi.fn(),
     onEditarPlantilla = vi.fn(),
   ) => {
     render(
       <MemoryRouter>
         <VistaPreviaOrden
           ordenes={[ordenBorrador]}
-          onRecargar={onRecargar}
           onEditarPlantilla={onEditarPlantilla}
         />
       </MemoryRouter>,
     );
     await userEvent.click(screen.getByRole("button", { name: "Ver documento" }));
-    return onRecargar;
   };
 
   beforeEach(() => {
@@ -424,12 +417,15 @@ describe("E21 · el aviso de borrador agrupa los faltantes por quién los comple
 
     const cajon = screen.getByRole("dialog");
     expect(within(cajon).getByText(/faltan 3 datos/)).toBeInTheDocument();
+    // «Completar datos» (el cargo en línea) se retiró el 2026-10-08: el cargo sale de la ficha y,
+    // sin dato, va en blanco. El grupo del funcionario se muestra, sin acción.
     expect(
-      within(cajon).getByRole("button", { name: "Completar datos" }),
-    ).toBeInTheDocument();
+      within(cajon).queryByRole("button", { name: "Completar datos" }),
+    ).toBeNull();
+    // El grupo «Cuadro» (NUT y «elaborado por» del día) se retiró el 2026-10-08.
     expect(
-      within(cajon).getByRole("button", { name: "Completar cuadro" }),
-    ).toBeInTheDocument();
+      within(cajon).queryByRole("button", { name: "Completar cuadro" }),
+    ).toBeNull();
     // Los datos generales de la plantilla (dirección, memorando, designado y FIRMANTE) se completan
     // en el editor de la plantilla: su grupo ofrece «Completar en la plantilla», no un formulario.
     expect(
@@ -472,71 +468,6 @@ describe("E21 · el aviso de borrador agrupa los faltantes por quién los comple
     expect(onEditarPlantilla).toHaveBeenCalled();
   });
 
-  it("«Completar datos» envía el cargo del destinatario y pide recargar la lista", async () => {
-    vi.mocked(DocumentoService.completarDatosPersona).mockResolvedValue();
-    const onRecargar = await abrirVisor(
-      orden("YUNDA JESSICA", {
-        faltantes: [falta("Cargo del destinatario", "persona", "cargo")],
-      }),
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Completar datos" }),
-    );
-    await userEvent.type(
-      screen.getByLabelText("Cargo del destinatario"),
-      "Agente de control",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Guardar" }));
-
-    await vi.waitFor(() =>
-      expect(DocumentoService.completarDatosPersona).toHaveBeenCalledWith(
-        "OS-ICNECU-001-31-JUL-2026-1-1",
-        "Agente de control",
-      ),
-    );
-    expect(onRecargar).toHaveBeenCalled();
-  });
-
-  it("«Completar cuadro» precarga los datos del día, los guarda y recarga", async () => {
-    vi.mocked(DocumentoService.obtenerConfigCuadro).mockResolvedValue({
-      nut: null,
-      elaboradoPor: null,
-    });
-    vi.mocked(DocumentoService.guardarConfigCuadro).mockResolvedValue({
-      nut: "N-1",
-      elaboradoPor: null,
-    });
-    const onRecargar = await abrirVisor(
-      orden("YUNDA JESSICA", {
-        faltantes: [falta("NUT", "cuadro", "nut")],
-      }),
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Completar cuadro" }),
-    );
-    await vi.waitFor(() =>
-      expect(DocumentoService.obtenerConfigCuadro).toHaveBeenCalledWith(
-        "2026-07-31",
-      ),
-    );
-    // El número de memorando salió de la config del cuadro: ahora es un dato general de la plantilla.
-    expect(screen.queryByLabelText("Número de memorando")).toBeNull();
-    await userEvent.type(screen.getByLabelText("NUT"), "N-1");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Guardar cuadro" }),
-    );
-
-    await vi.waitFor(() =>
-      expect(DocumentoService.guardarConfigCuadro).toHaveBeenCalledWith(
-        "2026-07-31",
-        { nut: "N-1", elaboradoPor: null },
-      ),
-    );
-    expect(onRecargar).toHaveBeenCalled();
-  });
-
   it("descargar un BORRADOR pide confirmación: no es un documento válido (E22)", async () => {
     vi.mocked(DocumentoService.verOrdenMemorando).mockResolvedValue(
       new Blob(["%PDF-"], { type: "application/pdf" }),
@@ -554,7 +485,7 @@ describe("E21 · el aviso de borrador agrupa los faltantes por quién los comple
     );
 
     expect(
-      screen.getByText(/Este documento es un borrador/),
+      screen.getByText(/¿Descargar el borrador?/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Sí, descargar" }),
@@ -582,7 +513,7 @@ describe("caso 4 · el botón deshabilitado siempre dice por qué", () => {
 
   it("con el cuadro sin cerrar, el motivo es otro", () => {
     expect(motivoParaNoEmitir(emisible(["YUNDA JESSICA"]), false)).toContain(
-      "todavía no está cerrado",
+      "Disponible cuando el cuadro esté cerrado",
     );
   });
 
@@ -685,7 +616,7 @@ describe("caso 6 · P-06 entrega la orden en el teléfono", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Descargando…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Descargando…" })).toHaveAttribute("aria-disabled", "true");
   });
 });
 
@@ -847,7 +778,7 @@ describe("P-05 abre en la jornada que se está armando", () => {
   it("pide la matriz de mañana, que es la que se acaba de consolidar", async () => {
     vi.setSystemTime(new Date(2026, 7, 21, 16, 45));
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     await vi.waitFor(() =>
       expect(DocumentoService.consultarMatriz).toHaveBeenCalledWith(
@@ -864,7 +795,7 @@ describe("P-05 abre en la jornada que se está armando", () => {
     // Quito —UTC−5—, y se sumaría dos. Es la hora a la que se emiten las órdenes.
     vi.setSystemTime(new Date(2026, 7, 21, 23, 40));
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     await vi.waitFor(() =>
       expect(DocumentoService.consultarMatriz).toHaveBeenCalledWith(
@@ -960,7 +891,7 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
     );
     vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([]);
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     // Dos pendientes (los que tienen personal); el sin personal no es emisible.
     const boton = await screen.findByRole("button", {
@@ -987,12 +918,12 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
     // La orden emitida nace en BORRADOR: le faltan datos (no consume número).
     vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([
       orden("YUNDA JESSICA", {
-        faltantes: [falta("Cargo del destinatario", "persona")],
+        faltantes: [falta("Dependencia del destinatario", "persona")],
         numeroOrden: null,
       }),
     ]);
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
     await userEvent.click(
       await screen.findByRole("button", { name: /Emitir pendientes \(1\)/ }),
     );
@@ -1000,11 +931,34 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
       await screen.findByRole("button", { name: "Sí, emitir pendientes" }),
     );
 
-    expect(
-      await screen.findByText(
-        /1 hoja quedó en borrador por datos faltantes/,
+    // Emitir es un HITO (M7): modal de éxito, que dice también lo que quedó en borrador.
+    const exito = await screen.findByRole("alertdialog", { name: "Órdenes emitidas" });
+    expect(exito).toHaveTextContent(/1 hoja quedó en borrador por datos faltantes/);
+    expect(within(exito).getByRole("button", { name: "Aceptar" })).toBeInTheDocument();
+  });
+
+  it("fila tipo (estándar de botones): «Revisar y emitir» primario sm con su motivo y «+ Adicional» acento", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizDeLaJornada(
+        [fila(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"])],
+        "BORRADOR",
       ),
-    ).toBeInTheDocument();
+    );
+
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
+
+    const revisar = await screen.findByRole("button", { name: "Revisar y emitir" });
+    expect(revisar).toHaveClass("btn", "btn-primary", "btn-sm");
+    // Apagado con aria-disabled, para que el motivo se vea al pasar el mouse.
+    expect(revisar).toHaveAttribute("aria-disabled", "true");
+    expect(revisar.getAttribute("title")).toContain("Disponible cuando el cuadro esté cerrado");
+
+    const adicional = screen.getByRole("button", { name: "Adicional" });
+    expect(adicional).toHaveClass("btn", "btn-outline", "btn-primary", "btn-sm");
+    // El orden: la acción propia de la pantalla y después el «+ Adicional».
+    expect(
+      revisar.compareDocumentPosition(adicional) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("no se ofrece «Emitir pendientes» mientras el cuadro no esté cerrado", async () => {
@@ -1015,7 +969,7 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
       ),
     );
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     // La fila ya está, pero sin cierre no hay nada emisible: el botón se oculta (N=0).
     await screen.findByText("OCPMO-001-22-AGO-2026");
@@ -1037,7 +991,7 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
         id === 2 ? Promise.reject(new Error("boom")) : Promise.resolve([]),
     );
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     await userEvent.click(
       await screen.findByRole("button", { name: /Emitir pendientes/ }),
@@ -1045,6 +999,11 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Sí, emitir pendientes" }),
     );
+
+    // La emisión PARCIAL es una advertencia, no un error: lo emitido quedó emitido.
+    const parcial = await screen.findByRole("alertdialog", { name: "Emisión parcial" });
+    expect(parcial).toHaveTextContent("Se emitieron 1 de 2 operativos");
+    await userEvent.click(within(parcial).getByRole("button", { name: "Entendido" }));
 
     // Aparece el panel con la orden no generada del operativo que falló.
     await screen.findByText("Órdenes no generadas (1)");
@@ -1144,7 +1103,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
         Promise.resolve(id === 1 ? [orden("YUNDA JESSICA")] : []),
     );
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     expect(await screen.findByText("Vigentes 1/1")).toBeInTheDocument();
     expect(screen.getByText("Pendiente · 1 hoja")).toBeInTheDocument();
@@ -1162,7 +1121,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
       [],
     );
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     await userEvent.click(
       await screen.findByRole("button", { name: "Revisar y emitir" }),
@@ -1181,7 +1140,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
       orden("YUNDA JESSICA"),
     ]);
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     // Ya emitida → el botón de la fila dice «Ver órdenes».
     await userEvent.click(
@@ -1209,7 +1168,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
       orden("YUNDA JESSICA"),
     ]);
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
     await screen.findByText("Vigentes 1/1");
     const antes = vi.mocked(DocumentoService.consultarOrdenesDeOperativo).mock
       .calls.length;
@@ -1237,7 +1196,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
       (id: number) => Promise.resolve(id === 1 ? [orden("YUNDA JESSICA")] : []),
     );
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     // Se espera al estado FINAL: antes de llegar las órdenes, ambos operativos cuentan como pendientes.
     await screen.findByText("Vigentes 1/1");
@@ -1266,12 +1225,15 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
         firmante: "Lider Franklin",
         firmanteCargo: "",
         firmanteDependencia: "",
+        accion: "Elaborado por",
+        elaboradoPor: "",
+        siglasUnidad: "",
       },
       version: 1,
       directorId: 14,
     });
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     expect(
       await screen.findByText(
@@ -1291,7 +1253,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
       }),
     ]);
 
-    render(<OrdenesServicioPage />);
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
     await userEvent.click(
       await screen.findByRole("button", { name: "Ver órdenes" }),
     );
@@ -1299,7 +1261,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
     const reemitir = await screen.findByRole("button", {
       name: "Reemitir órdenes",
     });
-    expect(reemitir).toBeDisabled();
+    expect(reemitir).toHaveAttribute("aria-disabled", "true");
     expect(reemitir).toHaveAttribute(
       "title",
       "Estas órdenes las generó Lider De La Guerra Portugal: solo él puede reemitirlas.",
@@ -1320,15 +1282,14 @@ describe("plantilla por Director · orden AJENA y los cinco orígenes (2026-10-0
       esPropia: false,
       directorNombre: "Lider De La Guerra Portugal",
       faltantes: [
-        falta("Cargo del destinatario", "persona", "cargo"),
+        falta("Dependencia del destinatario", "persona", "dependencia"),
         falta("Número de memorando", "plantilla", "numeroMemorando"),
         falta("Cargo del firmante", "firmante", "firmanteCargo"),
-        falta("NUT", "cuadro", "nut"),
         falta("Siglas de la unidad", "configuracion", "siglasUnidad"),
       ],
     });
 
-  it("la tarjeta dice «Generada por …», es de solo lectura y resume los 5 orígenes", () => {
+  it("la tarjeta dice «Generada por …», es de solo lectura y resume los 4 orígenes", () => {
     render(
       <MemoryRouter>
         <VistaPreviaOrden ordenes={[ajena()]} />
@@ -1341,7 +1302,7 @@ describe("plantilla por Director · orden AJENA y los cinco orígenes (2026-10-0
     expect(screen.getByText(/solo lectura/)).toBeInTheDocument();
     expect(
       screen.getByText(
-        /faltan 1 del funcionario, 1 de la plantilla, 1 del firmante, 1 del cuadro y 1 de configuración/,
+        /faltan 1 del funcionario, 1 de la plantilla, 1 del firmante y 1 de configuración/,
       ),
     ).toBeInTheDocument();
     // Solo lectura: no ofrece «Asignar transporte» aunque falten conductor o placa.
@@ -1357,12 +1318,11 @@ describe("plantilla por Director · orden AJENA y los cinco orígenes (2026-10-0
     await userEvent.click(screen.getByRole("button", { name: "Ver documento" }));
     const cajon = screen.getByRole("dialog");
 
-    // Los cinco grupos, con sus títulos.
+    // Los cuatro grupos, con sus títulos (el de «Cuadro» se retiró el 2026-10-08).
     for (const grupo of [
       "Datos del funcionario:",
       "Datos generales de la plantilla:",
       "Firmante:",
-      "Cuadro:",
       "Configuración:",
     ]) {
       expect(within(cajon).getByText(grupo)).toBeInTheDocument();
@@ -1376,7 +1336,6 @@ describe("plantilla por Director · orden AJENA y los cinco orígenes (2026-10-0
       ).length,
     ).toBeGreaterThan(0);
     expect(within(cajon).queryByRole("button", { name: "Completar datos" })).toBeNull();
-    expect(within(cajon).queryByRole("button", { name: "Completar cuadro" })).toBeNull();
   });
 
   it("una orden PROPIA sí ofrece «Completar en la plantilla» en datos generales y firmante", async () => {
@@ -1394,11 +1353,9 @@ describe("plantilla por Director · orden AJENA y los cinco orígenes (2026-10-0
     expect(
       within(cajon).getAllByRole("button", { name: "Completar en la plantilla" }),
     ).toHaveLength(2);
+    // Ni siquiera una orden propia ofrece ya «Completar datos» (cargo desde la ficha, 2026-10-08).
     expect(
-      within(cajon).getByRole("button", { name: "Completar datos" }),
-    ).toBeInTheDocument();
-    expect(
-      within(cajon).getByRole("button", { name: "Completar cuadro" }),
-    ).toBeInTheDocument();
+      within(cajon).queryByRole("button", { name: "Completar datos" }),
+    ).toBeNull();
   });
 });

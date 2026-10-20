@@ -9,7 +9,6 @@
  */
 
 import type { RolDepartamental } from "../config/env";
-import type { ModalType } from "./Modal";
 
 /**
  * Usuario resuelto por UserContext. Mientras el microservicio de Active Directory
@@ -36,7 +35,7 @@ export interface User {
  */
 export interface UserActions {
   actiId: number;
-  actiName: ModalType;
+  actiName: string;
   actiLabel: string;
   actiContext: string;
   actiIconName: string;

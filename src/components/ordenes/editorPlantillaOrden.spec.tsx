@@ -62,6 +62,10 @@ const DATOS_GENERALES: DatosGeneralesPlantilla = {
   firmante: "",
   firmanteCargo: "Director Metropolitano",
   firmanteDependencia: "Dirección Metropolitana de Inspección",
+  // Tabla de control (2026-10-08): completa, para que el chip no la cuente como faltante.
+  accion: "Elaborado por",
+  elaboradoPor: "Jose Sosa",
+  siglasUnidad: "DMI",
 };
 
 const pintar = () => render(<EditorPlantillaOrden onVolver={vi.fn()} />);
@@ -134,6 +138,31 @@ describe("EditorPlantillaOrden", () => {
     await userEvent.click(screen.getByRole("button", { name: "Nombre" }));
 
     expect(textarea.value).toContain("{{nombre}}");
+  });
+
+  it("ofrece los datos del trámite de Inspección como tokens insertables (2026-10-07)", async () => {
+    pintar();
+    await screen.findByText("Insertar dato");
+
+    const textarea = screen.getByDisplayValue(
+      "Texto inicial.",
+    ) as HTMLTextAreaElement;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Trámite de Inspección" }),
+    );
+
+    expect(textarea.value).toContain("{{tramiteCodigo}}");
+    for (const nombre of [
+      "N.º SITRA del trámite",
+      "Predio del trámite",
+      "Zonal del trámite",
+      "Materia del trámite",
+    ]) {
+      expect(screen.getByRole("button", { name: nombre })).toBeInTheDocument();
+    }
   });
 
   it("eliminar muestra «Deshacer» (sin modal) y restaura el apartado", async () => {
@@ -221,7 +250,7 @@ describe("EditorPlantillaOrden", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Guardar plantilla" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     // Sin plantilla cargada no se previsualiza nada.
     expect(DocumentoService.previsualizarPlantilla).not.toHaveBeenCalled();
 
@@ -332,6 +361,68 @@ describe("EditorPlantillaOrden", () => {
       expect.any(Array),
       expect.objectContaining({ numeroMemorando: "MEMO-NUEVO-1" }),
     );
+  });
+
+  it("muestra «Tabla de control» con su ayuda y los tres datos de la plantilla (2026-10-08)", async () => {
+    pintar();
+    await screen.findByText("Insertar dato");
+
+    expect(screen.getByText("Tabla de control")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Se imprime al final de cada orden. La fecha se completa sola.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Acción/)).toHaveValue("Elaborado por");
+    expect(screen.getByLabelText(/^Elaborado por/)).toHaveValue("Jose Sosa");
+    expect(screen.getByLabelText(/^Siglas Unidad/)).toHaveValue("DMI");
+  });
+
+  it("las siglas se escriben en mayúsculas, hasta 20, y viajan al guardar con la tabla de control", async () => {
+    pintar();
+    await screen.findByText("Insertar dato");
+
+    const siglas = screen.getByLabelText(/^Siglas Unidad/);
+    await userEvent.clear(siglas);
+    await userEvent.type(siglas, "dmi-amc-quito-direccion");
+    expect(siglas).toHaveValue("DMI-AMC-QUITO-DIRECC");
+
+    const elaborado = screen.getByLabelText(/^Elaborado por/);
+    await userEvent.clear(elaborado);
+    await userEvent.type(elaborado, "Ana Simbaña");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar plantilla" }),
+    );
+
+    expect(DocumentoService.guardarPlantilla).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        accion: "Elaborado por",
+        elaboradoPor: "Ana Simbaña",
+        siglasUnidad: "DMI-AMC-QUITO-DIRECC",
+      }),
+    );
+  });
+
+  it("sin quién elabora ni siglas, el chip los cuenta aunque la plantilla no los cite", async () => {
+    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce({
+      apartados: PLANTILLA.map((a) => ({ ...a })),
+      datosGenerales: { ...DATOS_GENERALES, elaboradoPor: "", siglasUnidad: "" },
+    });
+    pintar();
+    await screen.findByText("Insertar dato");
+
+    const chip = screen.getByText(/datos generales sin completar/);
+    expect(chip).toHaveTextContent("Elaborado por");
+    expect(chip).toHaveTextContent("Siglas de la unidad");
+  });
+
+  it("ya no ofrece el NUT como dato insertable", async () => {
+    pintar();
+    await screen.findByText("Insertar dato");
+
+    expect(screen.queryByRole("button", { name: "NUT" })).toBeNull();
   });
 
   it("al abrir, el foco va al título (gestión de foco de la vista a pantalla completa, E15)", async () => {

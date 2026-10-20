@@ -9,21 +9,6 @@
   color: #f8fbff !important;
 }
 
-[data-theme="light"] .app-modules-panel-action {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #ffffff !important;
-  box-shadow: none !important;
-}
-
-[data-theme="light"] .app-modules-panel-action:hover,
-[data-theme="light"] .app-modules-panel-action:focus,
-[data-theme="light"] .app-modules-panel-action:focus-visible {
-  border-color: rgba(255, 255, 255, 0.24) !important;
-  background: rgba(255, 255, 255, 0.14) !important;
-  color: #ffffff !important;
-}
-
 [data-theme="light"] .app-modules-row-action {
   color: #1b77bb !important;
 }
@@ -138,8 +123,8 @@
 }
 
 [data-theme="light"] .app-modules-step-label {
-  color: #90a0bd;
-  opacity: 0.92;
+  /* Rótulo de paso: texto secundario con su token (2026-10-08), sin opacidad. */
+  color: var(--app-text-muted);
 }
 
 [data-theme="light"] .app-modules-step-line {
@@ -177,8 +162,7 @@
 }
 
 [data-theme="light"] .app-modules-step.is-complete .app-modules-step-label {
-  color: #4e648d;
-  opacity: 0.86;
+  color: var(--app-text-muted);
 }
 
 [data-theme="light"] .app-modules-step.is-pending .app-modules-step-dot {
@@ -186,7 +170,7 @@
 }
 
 [data-theme="light"] .app-modules-step.is-pending .app-modules-step-label {
-  color: #8fa0be;
+  color: var(--app-text-muted);
 }
 
 [data-theme="light"] .app-modules-modal-close {

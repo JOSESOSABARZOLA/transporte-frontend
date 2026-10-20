@@ -1,0 +1,48 @@
+/*
+  App: Cuadro de Colores
+  Módulo: Cuadro de Colores
+  Feature: Sistema visual
+  Archivo: tipografia.css
+  Responsabilidad: Las utilidades de texto semánticas y la corrección única de daisyUI en
+                   etiquetas y encabezados de tabla.
+  Desarrollador: Jose Sosa
+  Fecha: 2026-10-08
+
+  ═══════════════════════════════════════════════════════════════════════════════
+  POR QUÉ EXISTE. daisyUI 5 pinta `.label`, `.fieldset-legend` y el `thead` de `.table`
+  al 60 % del color del texto. Sobre el fondo claro eso da 3,6:1 —por debajo de AA— y
+  las etiquetas («Personal asignado», «Zonales») y los encabezados («Identificador»,
+  «Horario») se veían transparentes. Además había más de 240 grises sueltos
+  (`text-base-content/70`, `/60`…), cada pantalla con el suyo.
+
+  Se corrige AQUÍ, una sola vez, y todas las pantallas lo heredan. Los tokens viven en
+  `foundation/design-tokens.css`; la guía, en `docs/estilos.md`.
+
+  SIN `!important`. Estas reglas no van en ninguna capa (`@layer`), y daisyUI 5 emite
+  sus componentes dentro de capas: una regla sin capa gana a cualquier regla en capa sea
+  cual sea su especificidad. Comprobado sobre el CSS compilado.
+  ═══════════════════════════════════════════════════════════════════════════════
+*/
+
+/* ── Utilidades semánticas. Funcionan con variantes (`hover:`, `md:`…) por ser @utility. ── */
+
+/* Títulos, valores y encabezados de tabla. */
+@utility text-app-strong {
+  color: var(--app-text-strong);
+}
+
+/* Etiquetas de campos: color pleno y peso 600. */
+@utility text-app-label {
+  color: var(--app-text-label);
+  font-weight: 600;
+}
+
+/* Ayudas, textos secundarios, estados vacíos y filas inactivas (≥ 5,6:1). */
+@utility text-app-muted {
+  color: var(--app-text-muted);
+}
+
+/* SOLO controles deshabilitados: único caso permitido por debajo de 4,5:1. */
+@utility text-app-disabled {
+  color: var(--app-text-disabled);
+}

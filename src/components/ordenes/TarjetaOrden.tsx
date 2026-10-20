@@ -23,6 +23,7 @@
 import type { FC } from "react";
 
 import CamposDeLaOrden from "./CamposDeLaOrden.tsx";
+import Boton from "../common/Boton.tsx";
 import type { OrdenServicio } from "../../interfaces/Documento.ts";
 
 type TarjetaOrdenProps = {
@@ -48,21 +49,22 @@ const TarjetaOrden: FC<TarjetaOrdenProps> = ({
       </span>
     </header>
 
-    <p className="mb-3 text-sm text-base-content/70">
+    <p className="mb-3 text-sm text-app-muted">
       Jornada del {orden.fechaJornada}
     </p>
 
     <CamposDeLaOrden dato={orden.datoAislado} />
 
     <div className="mt-4">
-      <button
-        type="button"
-        className="btn btn-primary btn-sm w-full"
+      <Boton
+        variante="primario"
+        tamano="sm"
+        className="w-full"
         onClick={() => onDescargar(orden.codigo)}
-        disabled={descargando}
+        cargando={descargando}
       >
         {descargando ? "Descargando…" : "Descargar PDF"}
-      </button>
+      </Boton>
     </div>
   </article>
 );

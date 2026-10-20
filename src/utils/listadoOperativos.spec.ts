@@ -19,10 +19,12 @@ import {
   COLUMNAS_FILTRABLES,
   COLUMNAS_LISTADO,
   COLUMNAS_SESION,
+  cabeceraDeFecha,
   coincideConFiltros,
   filtrarOperativos,
   hayFiltrosActivos,
   paginar,
+  rangoPaginas,
   valorDeColumna,
 } from "./listadoOperativos.util";
 import type { Operativo } from "../interfaces/Operativo";
@@ -80,10 +82,17 @@ const operativo = (parcial: Partial<Operativo> = {}): Operativo =>
   }) as Operativo;
 
 describe("valorDeColumna · lo que se ve es lo que se filtra", () => {
-  it("el formulario se lee como en el cuadro: número y nombre", () => {
+  // Compacto en la celda (2026-10-19), pero el filtro busca por número, código o nombre.
+  it("el formulario se filtra por número, código o nombre", () => {
     expect(valorDeColumna(operativo(), "formulario")).toBe(
-      "8. Inspecciones Técnicas y Generales",
+      "8 · IG · Inspecciones Técnicas y Generales",
     );
+    const filtrar = (texto: string) =>
+      coincideConFiltros(operativo(), { formulario: texto } as Parameters<typeof coincideConFiltros>[1]);
+    expect(filtrar("8")).toBe(true);
+    expect(filtrar("ig")).toBe(true);
+    expect(filtrar("inspecciones tecnicas")).toBe(true);
+    expect(filtrar("PMO")).toBe(false);
   });
 
   it("el personal se enumera por nombre", () => {
@@ -188,5 +197,68 @@ describe("paginar", () => {
     expect(vacia.totalPaginas).toBe(1);
     expect(vacia.total).toBe(0);
     expect(vacia.filas).toEqual([]);
+  });
+});
+
+describe("columna «Transporte» (2026-10-07)", () => {
+  it("dice el tipo con el mismo nombre que en todo el sistema, y «· Exclusivo» si aplica", () => {
+    expect(valorDeColumna(operativo({ tipoTransporte: "SOLO_INICIO" }), "transporte")).toBe(
+      "Solo dejar",
+    );
+    expect(
+      valorDeColumna(
+        operativo({ tipoTransporte: "INICIO_Y_FIN", esMacrooperativo: true }),
+        "transporte",
+      ),
+    ).toBe("Dejar y retirar · Exclusivo");
+    expect(valorDeColumna(operativo({ tipoTransporte: "PROPIOS_MEDIOS" }), "transporte")).toBe(
+      "Propios medios",
+    );
+  });
+});
+
+describe("cabecera de un día en P-02 con varios días (2026-10-13)", () => {
+  it("dice el día de la semana, la fecha y cuántos operativos tiene", () => {
+    expect(cabeceraDeFecha("2026-10-14", 3)).toBe("Miércoles 14/10/2026 · 3 operativos");
+    expect(cabeceraDeFecha("2026-10-13", 1)).toBe("Martes 13/10/2026 · 1 operativo");
+    // El 1 de enero de 2027 es viernes: el día no depende de la zona del navegador.
+    expect(cabeceraDeFecha("2027-01-01", 2)).toBe("Viernes 01/01/2027 · 2 operativos");
+  });
+});
+
+describe("columnas de P-01 (2026-10-13)", () => {
+  it("Transporte y Observaciones se filtran, y el conductor no", () => {
+    expect(COLUMNAS_FILTRABLES).toContain("transporte");
+    expect(COLUMNAS_FILTRABLES).toContain("observaciones");
+    expect(COLUMNAS_FILTRABLES).not.toContain("conductor");
+    for (const columna of COLUMNAS_SESION) {
+      expect([...COLUMNAS_LISTADO, "transporte", "observaciones"]).toContain(columna);
+    }
+  });
+
+  it("Observaciones es la última columna de P-01 y, desde el 2026-10-19, también de P-02", () => {
+    expect(COLUMNAS_SESION.at(-1)).toBe("observaciones");
+    expect(COLUMNAS_LISTADO.at(-1)).toBe("observaciones");
+  });
+});
+
+describe("rangoPaginas (paginador numerado, 2026-10-15)", () => {
+  it("hasta siete páginas, todas; sin registros, una", () => {
+    expect(rangoPaginas(1, 2)).toEqual([1, 2]);
+    expect(rangoPaginas(3, 7)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(rangoPaginas(1, 0)).toEqual([1]);
+  });
+
+  it("con muchas, siempre siete casillas: primera, última, la actual con sus vecinas y la elipsis", () => {
+    expect(rangoPaginas(5, 12)).toEqual([1, "…", 4, 5, 6, "…", 12]);
+    expect(rangoPaginas(1, 12)).toEqual([1, 2, 3, 4, 5, "…", 12]);
+    expect(rangoPaginas(4, 12)).toEqual([1, 2, 3, 4, 5, "…", 12]);
+    expect(rangoPaginas(12, 12)).toEqual([1, "…", 8, 9, 10, 11, 12]);
+    expect(rangoPaginas(9, 12)).toEqual([1, "…", 8, 9, 10, 11, 12]);
+  });
+
+  it("una página fuera de rango se acota", () => {
+    expect(rangoPaginas(40, 12)).toEqual(rangoPaginas(12, 12));
+    expect(rangoPaginas(0, 12)).toEqual(rangoPaginas(1, 12));
   });
 });

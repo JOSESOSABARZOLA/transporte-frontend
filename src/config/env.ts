@@ -9,7 +9,6 @@
  */
 
 const API_BASE_URL_POR_DEFECTO = "http://localhost:3003";
-const PORTAL_AUTH_POR_DEFECTO = "http://172.20.136.127:10006/login";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -20,8 +19,11 @@ const PORTAL_AUTH_POR_DEFECTO = "http://172.20.136.127:10006/login";
  * Auth —vacíos por omisión, para no volver a codificar la dirección en el fuente— eso
  * dejó `portalAuthUrl` en `""` y la URL de ingreso quedó en `?redirectUri=…`.
  *
- * SE COMPROBÓ CONSTRUYENDO, no razonando: con `VITE_AUTH_PORTAL_URL=` el paquete sale
- * sin ninguna dirección del portal; sin la variable, sale con la correcta.
+ * EL PORTAL YA NO TIENE DIRECCIÓN POR OMISIÓN (2026-10-16). Era la IP del servidor de
+ * Auth escrita en el fuente, y en un repositorio visible no se versionan IP. Lo que evita
+ * que vuelva el fallo de arriba es ahora `vite.config.ts`: `vite build` SE DETIENE si
+ * `VITE_AUTH_PORTAL_URL` falta o va vacía. En `npm run dev`, sin ella, la aplicación no
+ * navega a una URL rota: dice qué falta (`hayPortal`, `AvisoSinPortal`).
  *
  * NO SE USA EN `apiBaseUrl`, Y ES DELIBERADO: ahí la cadena vacía **sí** es un valor.
  * Significa «pide a tu propio origen», que es como funciona dentro de Docker con el
@@ -33,13 +35,23 @@ const oPorDefecto = (valor: string | undefined, respaldo: string): string =>
   valor && valor.trim() !== "" ? valor : respaldo;
 
 export const env = {
-  /** Base de la API. El prefijo /api/v1 lo agrega httpClient. */
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? API_BASE_URL_POR_DEFECTO,
-  /** Portal visual de Auth central, sin parámetros. Use `urlDelPortal()` para navegar. */
-  portalAuthUrl: oPorDefecto(
-    import.meta.env.VITE_AUTH_PORTAL_URL,
-    PORTAL_AUTH_POR_DEFECTO,
-  ),
+  /**
+   * Base de la API. El prefijo /api/v1 lo agrega httpClient.
+   *
+   * SIN DECLARAR, `localhost:3003` SOLO EN `npm run dev` (2026-10-16). Los servidores nuevos
+   * compilan con `npm run build` fuera del `Dockerfile` (guía «builds-frontends» del Gateway),
+   * donde la variable puede faltar: antes, un paquete así llamaba a `localhost:3003` desde el
+   * navegador de cada usuario. Ahora un build sin la variable pide al propio origen, igual que
+   * con la cadena vacía. Y NUNCA `/api`: httpClient ya agrega `/api/v1`.
+   */
+  apiBaseUrl:
+    import.meta.env.VITE_API_BASE_URL ??
+    (import.meta.env.DEV ? API_BASE_URL_POR_DEFECTO : ""),
+  /**
+   * Portal visual de Auth central, sin parámetros. Use `urlDelPortal()` para navegar.
+   * Vacío si no se configuró: compruébelo con `hayPortal()` antes de navegar.
+   */
+  portalAuthUrl: oPorDefecto(import.meta.env.VITE_AUTH_PORTAL_URL, ""),
   /**
    * Código de este módulo en Auth central. Es el mismo valor que el backend usa como
    * `JWT_AUDIENCE`: el contrato lo nombra de dos formas.
@@ -55,9 +67,24 @@ export const env = {
    */
   logoutAuthUrl: oPorDefecto(
     import.meta.env.VITE_AUTH_LOGOUT_URL,
-    oPorDefecto(import.meta.env.VITE_AUTH_PORTAL_URL, PORTAL_AUTH_POR_DEFECTO),
+    oPorDefecto(import.meta.env.VITE_AUTH_PORTAL_URL, ""),
   ),
 } as const;
+
+/** Lo que la aplicación dice cuando se construyó o se arrancó sin portal de Auth. */
+export const MENSAJE_SIN_PORTAL =
+  "Falta configurar la dirección del portal de Auth (VITE_AUTH_PORTAL_URL).";
+
+/** ¿Hay portal de Auth al que enviar a quien llega sin sesión? */
+export const hayPortal = (): boolean => env.portalAuthUrl !== "";
+
+// `npm run dev` sin portal: la pantalla ya lo dice, y la consola dice dónde ponerlo.
+// Las pruebas (modo `test`) no la necesitan y no deben llenar la salida de avisos.
+if (import.meta.env.DEV && import.meta.env.MODE !== "test" && !hayPortal()) {
+  console.warn(
+    `${MENSAJE_SIN_PORTAL} Defínala en .env o .env.development.local (ver .env.example).`,
+  );
+}
 
 /** Rol del módulo, tal como lo nombra el servidor. */
 export type RolDepartamental =

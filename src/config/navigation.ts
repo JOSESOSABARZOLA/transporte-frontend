@@ -29,6 +29,19 @@ export type NavigationItem = {
    */
   requiredRoles?: string[];
   defaultOpen?: boolean;
+  /**
+   * Divisor fino ANTES de este ítem dentro de su grupo (2026-10-08). Sustituye a los encabezados
+   * de sección «Uso diario» / «Configuración» de «Transporte · DAF»: ningún otro submenú tiene
+   * títulos de grupo, y el menú sigue un solo patrón. Solo se pinta si hay un ítem visible antes.
+   */
+  divisorAntes?: boolean;
+  /** Solo en grupos. Sus enlaces llevan `?fecha=` de la fecha de trabajo compartida de la DAF. */
+  conFechaDaf?: boolean;
+  /**
+   * Solo en hijos de un grupo `conFechaDaf` (2026-10-15): su enlace NO lleva `?fecha=`. Es el
+   * maestro de «Flota y garajes», que no depende de ninguna jornada.
+   */
+  sinFechaDaf?: boolean;
 };
 
 /**
@@ -66,28 +79,6 @@ export const shellNavigationItems: NavigationItem[] = [
         requiredPermissions: ["jornada:ver"],
       },
       {
-        id: "cuadro-transporte",
-        label: "Asignación de transporte",
-        path: "cuadro/transporte",
-        icon: "transporte",
-        requiredPermissions: ["transporte:asignar"],
-      },
-      {
-        id: "cuadro-jornada-conductores",
-        label: "Jornada de los conductores",
-        path: "cuadro/jornada-conductores",
-        icon: "jornadaConductores",
-        requiredPermissions: ["transporte:jornada:ver"],
-      },
-      {
-        id: "cuadro-capacidad",
-        label: "Capacidad de flota",
-        path: "cuadro/capacidad",
-        icon: "capacidad",
-        // Pantalla operativa solo de la DAF (ver la nota en routes.tsx): permiso solo-DAF.
-        requiredPermissions: ["transporte:asignar"],
-      },
-      {
         id: "cuadro-matriz",
         label: "Matriz Consolidada",
         path: "cuadro/matriz",
@@ -101,6 +92,58 @@ export const shellNavigationItems: NavigationItem[] = [
         icon: "ordenes",
         requiredPermissions: ["ordenes:gestionar"],
         requiredRoles: ["DIRECTOR"],
+      },
+    ],
+  },
+  /*
+   * TRANSPORTE · DAF (2026-10-06). Todo lo de la DAF en un solo grupo, en el orden en que se usa:
+   * lo de cada día arriba y la configuración abajo. Las rutas NO cambian (siguen bajo `cuadro/` y
+   * `administracion/`): solo cambia dónde se ofrecen. Los permisos son los mismos de cada ruta.
+   */
+  {
+    id: "transporte-daf",
+    label: "Transporte · DAF",
+    path: "transporte-daf",
+    icon: "transporteDaf",
+    defaultOpen: false,
+    conFechaDaf: true,
+    children: [
+      {
+        id: "cuadro-transporte",
+        label: "Planificar el día",
+        path: "cuadro/transporte",
+        icon: "transporte",
+        requiredPermissions: ["transporte:asignar"],
+      },
+      {
+        id: "administracion-turnos-conductores",
+        label: "Turnos del mes",
+        path: "administracion/turnos-conductores",
+        icon: "turnosConductores",
+        requiredPermissions: ["flota:administrar"],
+      },
+      {
+        id: "administracion-mantenimiento",
+        label: "Mantenimiento",
+        path: "administracion/mantenimiento",
+        icon: "mantenimiento",
+        requiredPermissions: ["flota:mantenimiento"],
+      },
+      {
+        id: "administracion-flota",
+        label: "Flota y garajes",
+        path: "administracion/flota",
+        icon: "flota",
+        divisorAntes: true,
+        sinFechaDaf: true,
+        requiredPermissions: ["flota:administrar"],
+      },
+      {
+        id: "administracion-traslados",
+        label: "Traslados entre zonales",
+        path: "administracion/traslados",
+        icon: "traslados",
+        requiredPermissions: ["flota:administrar"],
       },
     ],
   },
@@ -164,18 +207,12 @@ export const shellNavigationItems: NavigationItem[] = [
         requiredPermissions: ["permisos:administrar"],
       },
       {
-        id: "administracion-flota",
-        label: "Conductores y vehículos",
-        path: "administracion/flota",
-        icon: "flota",
-        requiredPermissions: ["flota:administrar"],
-      },
-      {
-        id: "administracion-mantenimiento",
-        label: "Mantenimiento de vehículos",
-        path: "administracion/mantenimiento",
-        icon: "mantenimiento",
-        requiredPermissions: ["flota:mantenimiento"],
+        // Versión consolidada (2026-10-06). El mismo permiso que la ruta: hoy solo ADMINISTRADOR.
+        id: "administracion-carga-inicial",
+        label: "Carga inicial",
+        path: "administracion/carga-inicial",
+        icon: "cargaInicial",
+        requiredPermissions: ["carga-inicial:administrar"],
       },
     ],
   },

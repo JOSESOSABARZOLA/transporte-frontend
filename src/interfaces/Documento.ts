@@ -22,7 +22,7 @@
 
 import type { Alerta } from "./Alerta";
 import type { EstadoCuadro } from "./CuadroDiario";
-import type { EstadoTransporte } from "./Operativo";
+import type { EstadoTransporte, NotaOperativo } from "./Operativo";
 
 /** Fila de la matriz: las nueve columnas más observaciones. */
 export interface FilaMatriz {
@@ -71,6 +71,13 @@ export interface FilaMatriz {
   placa: string | null;
   /** Notas del operativo (bitácora, 2026-09-09): los textos, en orden. La matriz las pinta separadas. */
   observaciones: string[];
+  /**
+   * Las notas como tarjetas (2026-10-19, plan «notas-jornada-matriz»): las escritas (`NOTA`) y la
+   * de compartir unidad (`COMPARTIDA`), de la más reciente a la más antigua. En la Jornada, una
+   * COMPARTIDA hacia un formulario que el rol no ve llega sin identificador ni
+   * `operativoRelacionadoId` (RN-48). Un servidor anterior no la manda.
+   */
+  notas?: NotaOperativo[];
   estadoTransporte: EstadoTransporte;
   esNocturno: boolean;
   alertas: Alerta[];
@@ -144,15 +151,11 @@ export type EstadoOrden = "VIGENTE" | "BORRADOR" | "REEMPLAZADA";
  *  · `plantilla`: datos generales de la plantilla del Director que generó la orden (dirección
  *     responsable, número y fecha del memorando, funcionario designado).
  *  · `firmante`: nombre, cargo y dependencia del firmante, también en la plantilla del Director.
- *  · `cuadro`: datos del DÍA (NUT y «elaborado por»).
- *  · `configuracion`: parámetros institucionales (siglas de la unidad).
+ *  · `configuracion`: parámetros institucionales (solo el respaldo de órdenes antiguas).
+ * La tabla de control —«elaborado por» y siglas— es de la plantilla desde el 2026-10-08; el origen
+ * `cuadro` (datos del DÍA: NUT y «elaborado por») se retiró ese día.
  */
-export type OrigenFaltante =
-  | "persona"
-  | "plantilla"
-  | "firmante"
-  | "cuadro"
-  | "configuracion";
+export type OrigenFaltante = "persona" | "plantilla" | "firmante" | "configuracion";
 
 /** Un dato obligatorio sin completar (D15/D16): su token, su etiqueta legible y su origen. */
 export interface Faltante {
@@ -243,6 +246,13 @@ export interface DatosGeneralesPlantilla {
   firmante: string;
   firmanteCargo: string;
   firmanteDependencia: string;
+  /**
+   * TABLA DE CONTROL del final de cada orden (2026-10-08): «<accion>: <elaboradoPor>» y las siglas de
+   * la unidad (mayúsculas, máx. 20). La fecha la pone el servidor (la de emisión).
+   */
+  accion: string;
+  elaboradoPor: string;
+  siglasUnidad: string;
 }
 
 /** La plantilla completa que viaja por `GET`/`PUT /plantilla-orden`: apartados + datos generales. */
@@ -280,7 +290,8 @@ export interface DatosMemorando {
   direccionResponsable: string;
   operativos: OperativoDeMemorando[];
   firmante: { nombre: string; cargo: string; dependencia: string };
-  nut: string;
+  /** Tabla de control (2026-10-08): de la plantilla del Director que generó la orden. */
+  accion: string;
   elaboradoPor: string;
   siglasUnidad: string;
   apartados: Apartado[];
@@ -290,13 +301,9 @@ export interface DatosMemorando {
 export interface EditablesMemorando {
   numeroMemorando?: string;
   numeroOrden?: string;
-  nut?: string;
-  paraCargo?: string;
   paraDependencia?: string;
   direccionResponsable?: string;
   firmanteNombre?: string;
   firmanteCargo?: string;
   firmanteDependencia?: string;
-  elaboradoPor?: string;
-  siglasUnidad?: string;
 }

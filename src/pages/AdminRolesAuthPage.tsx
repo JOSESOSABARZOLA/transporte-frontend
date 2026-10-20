@@ -29,15 +29,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
+import MensajeModal from "../components/common/MensajeModal.tsx";
 import ModalRolAuth from "../components/administracion/ModalRolAuth.tsx";
 import TablaRolesAuth from "../components/administracion/TablaRolesAuth.tsx";
 import type { RolDepartamental } from "../config/env.ts";
 import type { RolAuth } from "../interfaces/RolAuth.ts";
 import { RolesAuthService } from "../services/rolesAuth.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
+import { toast } from "../utils/mensaje.ts";
 
 /** Estado del modal: cerrado, alta, o edición de una fila concreta. */
 type Edicion = { modo: "alta" } | { modo: "edicion"; rolAuth: RolAuth } | null;
@@ -58,10 +60,15 @@ const AdminRolesAuthPage = () => {
 
   const [porRetirar, setPorRetirar] = useState<RolAuth | null>(null);
 
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  /** Lo guardado se confirma con un aviso breve y la fila resaltada (antes, `ModalExito`). */
+  const [resaltadoId, setResaltadoId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (resaltadoId === null) return undefined;
+    const quitar = window.setTimeout(() => setResaltadoId(null), 4000);
+    return () => window.clearTimeout(quitar);
+  }, [resaltadoId]);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -72,10 +79,9 @@ const AdminRolesAuthPage = () => {
       setSinCorrespondencia(panorama.sinCorrespondencia);
       setAviso(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
       setRoles([]);
       setSinCorrespondencia([]);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      setAviso(avisoDeFallo(fallo));
     } finally {
       setCargando(false);
     }
@@ -104,7 +110,7 @@ const AdminRolesAuthPage = () => {
             nombreAuth: datos.nombreAuth,
             rol: datos.rol,
           });
-          setExito(
+          toast.exito(
             `El rol ${datos.idAuth} de Auth quedó registrado como ${nombreDe(datos.rol)}. ` +
               "Quien entre con él recibirá ese perfil desde el próximo ingreso.",
           );
@@ -114,12 +120,15 @@ const AdminRolesAuthPage = () => {
             rol: datos.rol,
             activo: datos.activo,
           });
-          setExito(
+          toast.exito(
             `La correspondencia ${edicion.rolAuth.idAuth} quedó guardada. ` +
               "Rige desde el próximo ingreso de quien la tenga.",
           );
         }
 
+        setResaltadoId(
+          edicion.modo === "alta" ? datos.idAuth : edicion.rolAuth.idAuth,
+        );
         setEdicion(null);
         // Se recarga entera y no se parchea la fila: el panorama incluye los huecos, y
         // un alta puede cerrar uno.
@@ -130,27 +139,19 @@ const AdminRolesAuthPage = () => {
         setGuardando(false);
       }
     },
-    [cargar, edicion],
+    [cargar, edicion, nombreDe],
   );
 
   const retirar = useCallback(async () => {
     if (!porRetirar) return;
 
-    setGuardando(true);
-
-    try {
-      const resultado = await RolesAuthService.desactivar(porRetirar.idAuth);
-      setPorRetirar(null);
-      // El servidor redacta el aviso, y distingue si era la última vía de ese rol.
-      setExito(resultado.mensaje);
-      await cargar();
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setPorRetirar(null);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-    } finally {
-      setGuardando(false);
-    }
+    // Si el servidor lo rechaza, lanza: el error queda en el modal de la confirmación.
+    const resultado = await RolesAuthService.desactivar(porRetirar.idAuth);
+    setPorRetirar(null);
+    // El servidor redacta el aviso, y distingue si era la última vía de ese rol.
+    toast.exito(resultado.mensaje);
+    setResaltadoId(porRetirar.idAuth);
+    await cargar();
   }, [cargar, porRetirar]);
 
   return (
@@ -169,32 +170,31 @@ const AdminRolesAuthPage = () => {
       </header>
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudieron cargar los roles"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       {/* Los huecos. Color Y palabra: la regla 6 vale también aquí. */}
       {sinCorrespondencia.length > 0 && (
-        <div
-          className="alert alert-warning"
-          role="status"
+        <AvisoEnLinea
+          variante="advertencia"
+          titulo={`Sin rol en Auth central: ${sinCorrespondencia.map((rol) => nombreDe(rol)).join(", ")}`}
         >
-          <div className="flex flex-col gap-1">
-            <span className="font-semibold">
-              Sin rol en Auth central:{" "}
-              {sinCorrespondencia.map((rol) => nombreDe(rol)).join(", ")}
-            </span>
-            <span className="text-xs">
-              Nadie puede entrar con esos perfiles: sin un rol de Transporte en
-              Auth, esa persona no puede elegir el módulo en el portal. Debe
-              crearse allí y registrarse aquí.
-            </span>
-          </div>
-        </div>
+          <span className="text-xs">
+            Nadie puede entrar con esos perfiles: sin un rol de Transporte en
+            Auth, esa persona no puede elegir el módulo en el portal. Debe
+            crearse allí y registrarse aquí.
+          </span>
+        </AvisoEnLinea>
       )}
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
@@ -206,22 +206,23 @@ const AdminRolesAuthPage = () => {
             <span className="badge badge-ghost badge-sm">
               {cargando ? "Cargando…" : `${roles.length} registradas`}
             </span>
-            <button
-              type="button"
-              className="btn btn-primary btn-xs"
+            <Boton
+              variante="primario"
+              tamano="sm"
+              enBarraOscura
               onClick={() => {
                 setEdicion({ modo: "alta" });
                 setAvisoModal(null);
               }}
-              disabled={cargando || guardando}
+              deshabilitado={cargando || guardando}
             >
-              Registrar rol
-            </button>
+              + Nuevo rol
+            </Boton>
           </div>
         </div>
 
         <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             Retirar una correspondencia no la borra: se conserva porque explica
             por qué una cuenta dada de alta en su día recibió el rol que recibió.
             Varias filas pueden apuntar al mismo rol del cuadro, si Auth divide
@@ -238,6 +239,7 @@ const AdminRolesAuthPage = () => {
               setAvisoModal(null);
             }}
             onDesactivar={setPorRetirar}
+            resaltadoId={resaltadoId}
           />
         </div>
       </div>
@@ -256,24 +258,17 @@ const AdminRolesAuthPage = () => {
       )}
 
       {porRetirar && (
-        <ModalConfirmacion
-          abierto
-          titulo="Retirar la correspondencia"
+        <MensajeModal
+          variante="peligro"
+          titulo={`¿Retirar el rol ${porRetirar.idAuth}?`}
           mensaje={
             `El rol ${porRetirar.idAuth} de Auth dejará de dar acceso como ` +
             `${nombreDe(porRetirar.rol)}. La fila se conserva y puede volver a activarse.`
           }
-          procesando={guardando}
-          onConfirmar={() => void retirar()}
-          onCancelar={() => setPorRetirar(null)}
-        />
-      )}
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
+          textoPrincipal="Sí, retirar"
+          tituloError="No se pudo retirar el rol"
+          onPrincipal={retirar}
+          onSecundario={() => setPorRetirar(null)}
         />
       )}
     </section>

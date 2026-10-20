@@ -3,45 +3,70 @@
  * Módulo: Cuadro de Colores
  * Feature: Catálogos del cuadro
  * Archivo: AdminCatalogosCuadroPage.tsx
- * Responsabilidad: Pantalla P-08. Administrar los tres catálogos, formulario por formulario.
+ * Responsabilidad: Pantalla P-08. Administrar áreas, zonales, puntos, tipos e instituciones de
+ *                  cada formulario.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-06
  *
  * ═══════════════════════════════════════════════════════════════════════════════
- * ES LA PANTALLA QUE DESBLOQUEA PV-01.
- *
- * El filtrado en cascada de P-01 —formulario → zonal → punto— no funciona con datos
- * reales porque la matriz de correspondencia zonal ↔ punto nunca se entregó. Aquí es
- * donde se carga: cada punto se da de alta **dentro de una zonal y de un formulario**, que
- * son las dos coordenadas que la cascada necesita.
- *
- * Mientras el Product Owner no entregue la matriz, esta pantalla permite construirla a
- * mano; cuando la entregue, será donde se verifique.
+ * ES LA PANTALLA QUE DESBLOQUEA PV-01: aquí se carga la matriz zonal ↔ punto, formulario por
+ * formulario, que la cascada del registro necesita.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * SE LEE POR EL ENDPOINT OPERATIVO, QUE SOLO DEVUELVE LO ACTIVO. La administración no
- * tiene `GET` propio: `GET /formularios/:codigo/catalogos` filtra `activo: true`. La
- * consecuencia es que **un valor desactivado no se vuelve a listar y no se puede
- * reactivar desde aquí**, aunque el `PUT` lo admita. Registrado como PV-36.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * REDISEÑO DEL 2026-10-12.
+ *
+ *   · CABECERA con el selector del formulario que se configura (`SelectorFormularioCabecera`, con
+ *     su color). Si las áreas tienen cambios sin guardar, se pregunta antes de cambiar.
+ *   · ÁREAS en una barra plegable (`PanelAreasFormulario`).
+ *   · TRES PESTAÑAS (tablist de daisyUI `tabs tabs-border`), cada una con el número de activos y la
+ *     misma barra: buscar, Todos | Activos | Inactivos, contador y alta (`BarraCatalogo`).
+ *   · ZONALES EN ACORDEÓN (`AcordeonZonales`). Las abiertas las guarda ESTA página: «Expandir /
+ *     Contraer todo», la búsqueda que abre las que coinciden y que se recuerden al cambiar de
+ *     pestaña o de formulario. Por omisión, abierta solo la primera.
+ *   · CREAR Y EDITAR EN UN CAJÓN (`DrawerValorCatalogo`); `MensajeModal` solo confirma.
+ *   · «ELIMINAR» llega apagado con su motivo desde el servidor (`puedeEliminar`), y el banner que
+ *     decía «los valores no se eliminan» —falso desde el 2026-09-24— pasa a una nota al pie.
+ *   · Avisos breves (`toast`, `utils/mensaje.ts`) y resaltado de lo recién guardado durante `MS_RESALTADO`.
+ *
+ * AJUSTES DEL 2026-10-13: el interruptor «Solo zonales con puntos en este formulario» (encendido
+ * por omisión) con un único resumen «N zonales sin puntos en este formulario · Ver / Ocultarlas»;
+ * el contador dice «N zonales con puntos · X de Y puntos activos» mientras filtra.
+ *
+ * CADA FORMULARIO TIENE SU CONFIGURACIÓN PROPIA (2026-10-13). Al elegir un formulario se cargan
+ * SOLO sus áreas, zonales, puntos, tipos e instituciones; nada se comparte, copia ni vincula entre
+ * formularios, y un cambio en uno nunca toca a otro. Al cambiar de formulario se limpia la búsqueda
+ * y se cierran los acordeones. Todo se lee y se escribe por `/administracion/catalogos/:codigo/…`:
+ * `GET :codigo` (con los desactivados y sus usos), `GET :codigo/zonales` y
+ * `GET :codigo/zonas-disponibles` (las zonas de la ciudad que una zonal nueva puede tomar).
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Field } from "formik";
-
-import ModalCatalogo from "../components/catalogos/ModalCatalogo.tsx";
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
-import PanelPuntosEncuentro from "../components/catalogos/PanelPuntosEncuentro.tsx";
-import SelectorFormularioAdmin from "../components/catalogos/SelectorFormularioAdmin.tsx";
-import TablaCatalogo from "../components/catalogos/TablaCatalogo.tsx";
-import { SelectInput, TextInput } from "../components/forms/FormikField.tsx";
 import {
-  esquemaInstitucion,
-  esquemaPunto,
-  esquemaTipoControl,
-  esquemaZonal,
-} from "../config/validationSchemas.ts";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import AcordeonZonales, {
+  type Resaltado,
+} from "../components/catalogos/AcordeonZonales.tsx";
+import BarraCatalogo from "../components/catalogos/BarraCatalogo.tsx";
+import DrawerValorCatalogo, {
+  type EdicionCatalogo,
+  type TipoCatalogo,
+  type ValoresCatalogo,
+} from "../components/catalogos/DrawerValorCatalogo.tsx";
 import PanelAreasFormulario from "../components/catalogos/PanelAreasFormulario.tsx";
+import SelectorFormularioCabecera from "../components/catalogos/SelectorFormularioCabecera.tsx";
+import TablaValoresCatalogo from "../components/catalogos/TablaValoresCatalogo.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
+import Iconos from "../components/common/Iconos.tsx";
+import MensajeModal from "../components/common/MensajeModal.tsx";
+import Pestanas from "../components/common/Pestanas.tsx";
 import { useCatalogosFormulario } from "../hooks/useCatalogosFormulario.ts";
 import { useFormulariosPermitidos } from "../hooks/useFormulariosPermitidos.ts";
 import type {
@@ -50,30 +75,50 @@ import type {
   PuntoEncuentro,
   TipoControl,
   Zonal,
+  ZonalAdmin,
 } from "../interfaces/Formulario.ts";
 import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import {
+  clave,
+  contadorPuntos,
+  estaActivo,
+  formularioPedido,
+  leerPedidoCatalogos,
+  pasaEstado,
+  textoSinPuntos,
+  tienePuntos,
+  zonalesQueCoinciden,
+  type FiltroEstado,
+} from "../utils/catalogos.util.ts";
+import { avisoDeFallo, presentarError, varianteDeAviso, type AvisoTexto } from "../utils/errorApi.util.ts";
+import { MS_RESALTADO } from "../utils/listadoOperativos.util.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
 
-/** Qué catálogo se está editando, y sobre qué fila. `null` en `fila` es un alta. */
-type Edicion =
-  | { tipo: "punto"; fila: PuntoEncuentro | null }
-  | { tipo: "tipoControl"; fila: TipoControl | null }
-  | { tipo: "institucion"; fila: Institucion | null }
-  | { tipo: "zonal"; fila: Zonal | null };
+type Pestana = "puntos" | "tipos" | "instituciones";
 
-/** Qué valor se va a desactivar. Lleva su nombre para poder nombrarlo al confirmar. */
-type Baja = {
-  tipo: Edicion["tipo"];
+const PESTANAS: { id: Pestana; titulo: string }[] = [
+  { id: "puntos", titulo: "Puntos de encuentro y zonales" },
+  { id: "tipos", titulo: "Tipos de control" },
+  { id: "instituciones", titulo: "Instituciones participantes" },
+];
+
+const MARCADORES: Record<Pestana, string> = {
+  puntos: "Buscar zonal o punto…",
+  tipos: "Buscar tipo de control…",
+  instituciones: "Buscar sigla o denominación…",
+};
+
+/** Un valor por confirmar (desactivar o eliminar). */
+type Pendiente = {
+  tipo: TipoCatalogo;
   id: number;
   nombre: string;
+  /** Solo la zonal: cuántos puntos activos de este formulario arrastra su baja. */
+  puntosActivos?: number;
 };
 
-const TITULOS: Record<Edicion["tipo"], string> = {
-  punto: "punto de encuentro",
-  tipoControl: "tipo de control",
-  institucion: "institución participante",
-  zonal: "zonal",
-};
+const NOTA_ELIMINAR =
+  "Solo se puede eliminar un valor que nunca se usó en un cuadro. Los que ya se usaron se desactivan: dejan de ofrecerse, pero los cuadros anteriores se siguen leyendo.";
 
 const AdminCatalogosCuadroPage = () => {
   const {
@@ -82,179 +127,269 @@ const AdminCatalogosCuadroPage = () => {
     recargar: recargarFormularios,
   } = useFormulariosPermitidos();
   const [codigo, setCodigo] = useState("");
+  const [codigoPendiente, setCodigoPendiente] = useState<string | null>(null);
+  const [areasSucias, setAreasSucias] = useState(false);
 
-  // `true`: P-08 pide el camino de administración, que trae los desactivados con su
-  // bandera `activo` para poder reactivarlos (PV-36).
   const catalogos = useCatalogosFormulario(codigo || null, true);
+  const recargar = catalogos.recargar;
 
-  const [edicion, setEdicion] = useState<Edicion | null>(null);
+  const [zonales, setZonales] = useState<ZonalAdmin[]>([]);
+  /** Zonas de la ciudad que este formulario aún no tiene: las que admite una zonal nueva. */
+  const [zonasLibres, setZonasLibres] = useState<Zonal[]>([]);
+  const [pestana, setPestana] = useState<Pestana>("puntos");
+  const [busquedas, setBusquedas] = useState<Record<Pestana, string>>({
+    puntos: "",
+    tipos: "",
+    instituciones: "",
+  });
+  const [filtros, setFiltros] = useState<Record<Pestana, FiltroEstado>>({
+    puntos: "activos",
+    tipos: "activos",
+    instituciones: "activos",
+  });
   /**
-   * Zonal en la que se sitúa el alta de un punto. Se fija al agregar desde una zonal
-   * concreta —las que todavía no tienen ninguno—, y en lo demás vale `null`.
+   * «Solo zonales con puntos en este formulario», encendido por omisión: la mayoría de las zonales
+   * no tienen puntos en cada formulario y listarlas todas escondía las que sí. Es estado de la
+   * página, así que se conserva al cambiar de pestaña o de formulario.
    */
-  const [zonalPropuesta, setZonalPropuesta] = useState<number | null>(null);
-  const [baja, setBaja] = useState<Baja | null>(null);
-  /** Baja FÍSICA pendiente de confirmar (2026-09-24). Distinta de `baja` (desactivar). */
-  const [eliminacion, setEliminacion] = useState<Baja | null>(null);
-  const [procesando, setProcesando] = useState(false);
+  const [soloConPuntos, setSoloConPuntos] = useState(true);
+  /**
+   * Zonales abiertas. `null` hasta la primera carga: entonces se abre solo la primera. Al cambiar
+   * de formulario se cierran todas (son otras zonales).
+   */
+  const [abiertas, setAbiertas] = useState<Set<number> | null>(null);
 
-  const [avisoModal, setAvisoModal] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
+  const [edicion, setEdicion] = useState<EdicionCatalogo | null>(null);
+  const [zonalInicial, setZonalInicial] = useState<number | null>(null);
+  const [errorDrawer, setErrorDrawer] = useState<string | null>(null);
+  const [baja, setBaja] = useState<Pendiente | null>(null);
+  const [eliminacion, setEliminacion] = useState<Pendiente | null>(null);
+  const [procesando, setProcesando] = useState(false);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  const [resaltado, setResaltado] = useState<{ tipo: TipoCatalogo; id: number } | null>(
     null,
   );
-  const [exito, setExito] = useState<string | null>(null);
 
-  /** El primero se elige solo: entrar a una pantalla vacía no informa de nada. */
+  /**
+   * `?formulario=…&areas=abierto` (2026-10-13): se lee UNA vez al entrar, desde «Formularios del
+   * cuadro». Se lee de `window.location` y no con el enrutador: la pantalla también se monta sola.
+   */
+  const [pedido] = useState(() => leerPedidoCatalogos(window.location.search));
+
+  /** El pedido por la dirección o, si no, el primero: entrar a una pantalla vacía no informa. */
   useEffect(() => {
-    if (!codigo && formularios.length > 0) setCodigo(formularios[0].codigo);
-  }, [formularios, codigo]);
+    if (!codigo && formularios.length > 0) {
+      setCodigo(formularioPedido(pedido.formulario, formularios) ?? formularios[0].codigo);
+    }
+  }, [formularios, codigo, pedido]);
 
   const formulario = useMemo(
     () => formularios.find((candidato) => candidato.codigo === codigo),
     [formularios, codigo],
   );
-
   /**
-   * EL CATÁLOGO DE ZONALES ENTERO, NO EL DEL FORMULARIO.
-   *
-   * Desde que cada formulario ofrece solo las zonales donde tiene puntos, la lista que
-   * viaja con los catálogos ya no sirve aquí: esta pantalla existe precisamente para
-   * sembrar la zonal que todavía no tiene ninguno, y esa es la que aquella lista omite.
-   * Se pide aparte porque el catálogo de zonales no depende del formulario elegido, e
-   * **incluye las inactivas** (`incluirInactivas`), porque desde el 2026-09-04 las zonales
-   * se administran desde aquí —crear, renombrar, desactivar y reactivar—.
+   * El formulario cuyas zonales se están mostrando. Una respuesta que llega tarde, de un formulario
+   * que ya se dejó, no pinta sus zonales sobre las del nuevo.
    */
-  const [zonales, setZonales] = useState<Zonal[]>([]);
+  const codigoVigente = useRef(codigo);
+  useEffect(() => {
+    codigoVigente.current = codigo;
+  }, [codigo]);
 
-  /**
-   * `incluirInactivas`: P-08 necesita ver también las zonales desactivadas para poder
-   * reactivarlas, igual que hace con los demás catálogos por el camino de administración.
-   */
   const cargarZonales = useCallback(async () => {
+    if (!codigo) return;
     try {
-      setZonales(await CatalogoCuadroService.listarZonales(true));
-    } catch {
-      setZonales([]);
+      const [lista, libres] = await Promise.all([
+        CatalogoCuadroService.listarZonalesAdmin(codigo),
+        CatalogoCuadroService.zonasDisponibles(codigo),
+      ]);
+      if (codigoVigente.current !== codigo) return;
+      setZonales(lista);
+      setZonasLibres(libres);
+      // Primera carga: abierta solo la primera zonal.
+      setAbiertas((antes) => antes ?? new Set(lista.length > 0 ? [lista[0].id] : []));
+    } catch (fallo: unknown) {
+      if (codigoVigente.current !== codigo) return;
+      setAviso(avisoDeFallo(fallo));
     }
-  }, []);
+  }, [codigo]);
 
   useEffect(() => {
     void cargarZonales();
   }, [cargarZonales]);
-  const recargar = catalogos.recargar;
 
-  const abrirAlta = useCallback((tipo: Edicion["tipo"]) => {
-    setEdicion({ tipo, fila: null } as Edicion);
-    setAvisoModal(null);
-  }, []);
+  // El resaltado se apaga solo.
+  useEffect(() => {
+    if (!resaltado) return;
+    const espera = window.setTimeout(() => setResaltado(null), MS_RESALTADO);
+    return () => window.clearTimeout(espera);
+  }, [resaltado]);
 
-  /** El alta de un punto puede nacer situada en una zonal. Ver `PanelPuntosEncuentro`. */
-  const abrirAltaPunto = useCallback((zonalId: number | null) => {
-    setZonalPropuesta(zonalId);
-    setEdicion({ tipo: "punto", fila: null });
-    setAvisoModal(null);
+  const puntos = useMemo(() => catalogos.catalogos?.puntos ?? [], [catalogos.catalogos]);
+  const tiposControl = useMemo(
+    () => catalogos.catalogos?.tiposControl ?? [],
+    [catalogos.catalogos],
+  );
+  const instituciones = useMemo(
+    () => catalogos.catalogos?.instituciones ?? [],
+    [catalogos.catalogos],
+  );
+
+  const existentes = useMemo(
+    () => ({ zonales, puntos, tiposControl, instituciones }),
+    [zonales, puntos, tiposControl, instituciones],
+  );
+
+  // ─── Formulario: cambiar, con confirmación si hay áreas sin guardar ───
+  /**
+   * Otro formulario es otra configuración: lo cargado del anterior se descarta, la búsqueda se
+   * limpia y los acordeones se cierran. Las zonales del nuevo llegan con `cargarZonales`.
+   */
+  const cambiarFormulario = (nuevo: string) => {
+    if (nuevo === codigo) return;
+    setCodigo(nuevo);
+    setZonales([]);
+    setZonasLibres([]);
+    setBusquedas({ puntos: "", tipos: "", instituciones: "" });
+    setAbiertas(new Set());
+    setAviso(null);
+  };
+
+  const pedirFormulario = (nuevo: string) => {
+    if (nuevo === codigo) return;
+    if (areasSucias) setCodigoPendiente(nuevo);
+    else cambiarFormulario(nuevo);
+  };
+
+  // ─── Acordeón ───
+  const zonalesConPuntos = useMemo(
+    () => zonales.filter((zonal) => tienePuntos(zonal.id, puntos)),
+    [zonales, puntos],
+  );
+  const zonalesListadas = soloConPuntos ? zonalesConPuntos : zonales;
+  const cuantasSinPuntos = zonales.length - zonalesConPuntos.length;
+
+  const abiertasEfectivas = useMemo(() => {
+    const base = new Set(abiertas ?? []);
+    if (busquedas.puntos.trim()) {
+      for (const id of zonalesQueCoinciden(zonales, puntos, busquedas.puntos)) base.add(id);
+    }
+    return base;
+  }, [abiertas, busquedas.puntos, zonales, puntos]);
+
+  // Se parte de lo que SE VE (incluidas las que abrió la búsqueda), para que cerrar funcione.
+  const alternarZonal = (id: number) => {
+    const siguiente = new Set(abiertasEfectivas);
+    if (siguiente.has(id)) siguiente.delete(id);
+    else siguiente.add(id);
+    setAbiertas(siguiente);
+  };
+
+  const abrirZonal = (id: number) =>
+    setAbiertas((antes) => new Set([...(antes ?? []), id]));
+
+  // ─── Alta y edición ───
+  const abrir = (nueva: EdicionCatalogo, zonal: number | null = null) => {
+    setZonalInicial(zonal);
+    setErrorDrawer(null);
+    setEdicion(nueva);
+  };
+
+  const cerrarDrawer = useCallback(() => {
+    setEdicion(null);
+    setErrorDrawer(null);
   }, []);
 
   const guardar = useCallback(
-    async (valores: Record<string, unknown>) => {
-      if (!edicion) return;
-
-      // La zonal es GLOBAL, no del formulario: no necesita `formulario` ni delimitación, y
-      // recarga la lista de zonales —no los catálogos del formulario— al terminar.
-      if (edicion.tipo === "zonal") {
-        setProcesando(true);
-        setAvisoModal(null);
-        try {
-          const nombre = String(valores.nombre);
-          if (edicion.fila) {
-            await CatalogoCuadroService.actualizarZonal(edicion.fila.id, {
-              nombre,
-            });
-          } else {
-            await CatalogoCuadroService.crearZonal({ nombre });
-          }
-          setExito(
-            edicion.fila
-              ? "Se actualizó la zonal."
-              : `Se agregó la zonal «${nombre}».`,
-          );
-          setEdicion(null);
-          await cargarZonales();
-        } catch (fallo: unknown) {
-          setAvisoModal(presentarError(fallo).mensaje);
-        } finally {
-          setProcesando(false);
-        }
-        return;
-      }
-
-      if (!formulario) return;
-
+    async (valores: ValoresCatalogo, agregarOtro: boolean): Promise<boolean> => {
+      if (!edicion || !formulario) return false;
+      const codigoForm = formulario.codigo;
       setProcesando(true);
-      setAvisoModal(null);
-
+      setErrorDrawer(null);
       try {
-        if (edicion.tipo === "punto") {
-          const datos = {
-            nombre: String(valores.nombre),
-            zonalId: Number(valores.zonalId),
-          };
+        let mensaje = "";
 
+        if (edicion.tipo === "zonal") {
           if (edicion.fila) {
-            await CatalogoCuadroService.actualizarPunto(edicion.fila.id, datos);
+            await CatalogoCuadroService.actualizarZonal(codigoForm, edicion.fila.id, {
+              nombre: valores.nombre,
+            });
+            setResaltado({ tipo: "zonal", id: edicion.fila.id });
+            mensaje = "Zonal actualizada.";
           } else {
-            // El punto PERTENECE al formulario que se está administrando (2026-09-29).
-            await CatalogoCuadroService.crearPunto({
-              ...datos,
-              formularioId: formulario.id,
+            const creada = await CatalogoCuadroService.crearZonal(codigoForm, {
+              zonaId: valores.zonaId ?? 0,
+              nombre: valores.nombre,
             });
+            setResaltado({ tipo: "zonal", id: creada.id });
+            abrirZonal(creada.id);
+            // Nace sin puntos: con el interruptor encendido no se vería la que se acaba de crear.
+            setSoloConPuntos(false);
+            mensaje = `Zonal «${valores.nombre}» creada.`;
           }
-        } else if (edicion.tipo === "tipoControl") {
-          // El tipo de control pertenece a UN formulario (2026-09-07): no se delimita a
-          // varios como el punto o la institución. Al crear va el formulario que se
-          // administra; al corregir solo cambian el nombre y el estado.
-          const nombre = String(valores.nombre);
-
-          if (edicion.fila) {
-            await CatalogoCuadroService.actualizarTipoControl(edicion.fila.id, {
-              nombre,
-            });
-          } else {
-            await CatalogoCuadroService.crearTipoControl({
-              nombre,
-              formularioId: formulario.id,
-            });
-          }
+          await cargarZonales();
         } else {
-          const datos = {
-            sigla: String(valores.sigla),
-            nombre: String(valores.nombre),
-          };
-
-          if (edicion.fila) {
-            await CatalogoCuadroService.actualizarInstitucion(
-              edicion.fila.id,
-              datos,
-            );
+          if (edicion.tipo === "punto") {
+            const zonalId = valores.zonalId ?? 0;
+            let idPunto: number;
+            if (edicion.fila) {
+              idPunto = edicion.fila.id;
+              await CatalogoCuadroService.actualizarPunto(codigoForm, idPunto, {
+                nombre: valores.nombre,
+                zonalId,
+              });
+              mensaje = "Punto de encuentro actualizado.";
+            } else {
+              const creado = await CatalogoCuadroService.crearPunto(codigoForm, {
+                nombre: valores.nombre,
+                zonalId,
+              });
+              idPunto = creado.id;
+              mensaje = `Punto «${valores.nombre}» agregado.`;
+            }
+            abrirZonal(zonalId);
+            setResaltado({ tipo: "punto", id: idPunto });
+            await cargarZonales();
+          } else if (edicion.tipo === "tipoControl") {
+            let idTipo: number;
+            if (edicion.fila) {
+              idTipo = edicion.fila.id;
+              await CatalogoCuadroService.actualizarTipoControl(codigoForm, idTipo, {
+                nombre: valores.nombre,
+              });
+              mensaje = "Tipo de control actualizado.";
+            } else {
+              const creado = await CatalogoCuadroService.crearTipoControl(codigoForm, {
+                nombre: valores.nombre,
+              });
+              idTipo = creado.id;
+              mensaje = `Tipo de control «${valores.nombre}» agregado.`;
+            }
+            setResaltado({ tipo: "tipoControl", id: idTipo });
           } else {
-            await CatalogoCuadroService.crearInstitucion({
-              ...datos,
-              formularioId: formulario.id,
-            });
+            let idInst: number;
+            const datos = { sigla: valores.sigla, nombre: valores.nombre };
+            if (edicion.fila) {
+              idInst = edicion.fila.id;
+              await CatalogoCuadroService.actualizarInstitucion(codigoForm, idInst, datos);
+              mensaje = "Institución actualizada.";
+            } else {
+              const creada = await CatalogoCuadroService.crearInstitucion(codigoForm, datos);
+              idInst = creada.id;
+              mensaje = `Institución «${valores.sigla}» agregada.`;
+            }
+            setResaltado({ tipo: "institucion", id: idInst });
           }
+          recargar();
         }
 
-        setExito(
-          edicion.fila
-            ? `Se actualizó el ${TITULOS[edicion.tipo]}.`
-            : `Se agregó el ${TITULOS[edicion.tipo]} al formulario ${formulario.numero}. ${formulario.nombre}.`,
-        );
-        setEdicion(null);
-        recargar();
+        toast.exito(mensaje);
+        if (!agregarOtro) setEdicion(null);
+        return true;
       } catch (fallo: unknown) {
-        // Caso 3: el nombre duplicado llega del servidor nombrando el valor que ya
-        // existe. Se muestra dentro del modal, sin perder lo escrito.
-        setAvisoModal(presentarError(fallo).mensaje);
+        // El duplicado (409) y los demás rechazos se muestran en el cajón, sin perder lo escrito.
+        setErrorDrawer(presentarError(fallo).mensaje);
+        return false;
       } finally {
         setProcesando(false);
       }
@@ -262,143 +397,82 @@ const AdminCatalogosCuadroPage = () => {
     [edicion, formulario, recargar, cargarZonales],
   );
 
+  // ─── Desactivar, activar, eliminar ───
   const desactivar = useCallback(async () => {
-    if (!baja) return;
+    if (!baja || !codigo) return;
+    // Si el servidor lo rechaza, lanza: el error queda en el modal de la confirmación.
+    const resultado =
+      baja.tipo === "punto"
+        ? await CatalogoCuadroService.desactivarPunto(codigo, baja.id)
+        : baja.tipo === "tipoControl"
+          ? await CatalogoCuadroService.desactivarTipoControl(codigo, baja.id)
+          : baja.tipo === "institucion"
+            ? await CatalogoCuadroService.desactivarInstitucion(codigo, baja.id)
+            : await CatalogoCuadroService.desactivarZonal(codigo, baja.id);
+    setBaja(null);
+    // El servidor redacta cuántos operativos anteriores lo usan: se dice tal cual (regla 7).
+    toast.exito(resultado.mensaje);
+    if (baja.tipo === "zonal" || baja.tipo === "punto") await cargarZonales();
+    recargar();
+  }, [baja, codigo, recargar, cargarZonales]);
 
-    setProcesando(true);
-    setAviso(null);
-
-    try {
-      const resultado =
-        baja.tipo === "punto"
-          ? await CatalogoCuadroService.desactivarPunto(baja.id)
-          : baja.tipo === "tipoControl"
-            ? await CatalogoCuadroService.desactivarTipoControl(baja.id)
-            : baja.tipo === "institucion"
-              ? await CatalogoCuadroService.desactivarInstitucion(baja.id)
-              : await CatalogoCuadroService.desactivarZonal(baja.id);
-
-      setBaja(null);
-      // Caso 2: el servidor redacta cuántos operativos anteriores usan el valor. Es lo
-      // que convierte el aviso en una explicación en lugar de en una negativa.
-      setExito(resultado.mensaje);
-      // La zonal se relee de su propia lista. Y como su baja ARRASTRA la de sus puntos de
-      // encuentro, se recargan también los catálogos del formulario para reflejarlo.
-      if (baja.tipo === "zonal") {
-        await cargarZonales();
-        recargar();
-      } else {
-        recargar();
-      }
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setBaja(null);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-    } finally {
-      setProcesando(false);
-    }
-  }, [baja, recargar, cargarZonales]);
-
-  /**
-   * BAJA FÍSICA (eliminar), 2026-09-24. Borra la fila, y SOLO si nunca se usó (y la zonal,
-   * si no tiene puntos): el servidor lo hace cumplir y, si está en uso, responde con el
-   * motivo, que se muestra tal cual (regla 7). Es irreversible, por eso pasa por confirmación.
-   */
   const eliminar = useCallback(async () => {
-    if (!eliminacion) return;
+    if (!eliminacion || !codigo) return;
+    // Si falla (409 CATALOGO_EN_USO), lanza: el motivo del servidor, tal cual, en el mismo modal.
+    const resultado =
+      eliminacion.tipo === "punto"
+        ? await CatalogoCuadroService.eliminarPunto(codigo, eliminacion.id)
+        : eliminacion.tipo === "tipoControl"
+          ? await CatalogoCuadroService.eliminarTipoControl(codigo, eliminacion.id)
+          : eliminacion.tipo === "institucion"
+            ? await CatalogoCuadroService.eliminarInstitucion(codigo, eliminacion.id)
+            : await CatalogoCuadroService.eliminarZonal(codigo, eliminacion.id);
+    setEliminacion(null);
+    toast.exito(resultado.mensaje);
+    if (eliminacion.tipo === "zonal" || eliminacion.tipo === "punto") await cargarZonales();
+    recargar();
+  }, [eliminacion, codigo, recargar, cargarZonales]);
 
-    setProcesando(true);
-    setAviso(null);
-
-    try {
-      const resultado =
-        eliminacion.tipo === "punto"
-          ? await CatalogoCuadroService.eliminarPunto(eliminacion.id)
-          : eliminacion.tipo === "tipoControl"
-            ? await CatalogoCuadroService.eliminarTipoControl(eliminacion.id)
-            : eliminacion.tipo === "institucion"
-              ? await CatalogoCuadroService.eliminarInstitucion(eliminacion.id)
-              : await CatalogoCuadroService.eliminarZonal(eliminacion.id);
-
-      setEliminacion(null);
-      setExito(resultado.mensaje);
-      if (eliminacion.tipo === "zonal") {
-        await cargarZonales();
-        recargar();
-      } else {
-        recargar();
-      }
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setEliminacion(null);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-    } finally {
-      setProcesando(false);
-    }
-  }, [eliminacion, recargar, cargarZonales]);
-
-  /**
-   * PV-36. Reactivar un valor desactivado. Es un `PUT` con `activo: true` de los que ya
-   * existen —el servidor lo aceptaba desde siempre; lo que faltaba era poder VER el valor
-   * retirado para pulsarlo, que es lo que abre el camino de administración—.
-   *
-   * No pide confirmación: reactivar es reversible y no destruye nada. La baja sí la pide,
-   * porque advierte de la irreversibilidad histórica.
-   */
+  /** Reactivar: reversible y sin destruir nada, así que no pide confirmación (PV-36). */
   const activar = useCallback(
-    async (tipo: Edicion["tipo"], id: number, nombre: string) => {
+    async (tipo: TipoCatalogo, id: number, nombre: string) => {
+      if (!codigo) return;
       setProcesando(true);
-      setAviso(null);
       try {
-        if (tipo === "punto") {
-          await CatalogoCuadroService.actualizarPunto(id, { activo: true });
-        } else if (tipo === "tipoControl") {
-          await CatalogoCuadroService.actualizarTipoControl(id, { activo: true });
-        } else if (tipo === "institucion") {
-          await CatalogoCuadroService.actualizarInstitucion(id, { activo: true });
-        } else {
-          await CatalogoCuadroService.actualizarZonal(id, { activo: true });
-        }
-        setExito(`«${nombre}» vuelve a ofrecerse al registrar operativos.`);
-        if (tipo === "zonal") await cargarZonales();
-        else recargar();
+        if (tipo === "punto")
+          await CatalogoCuadroService.actualizarPunto(codigo, id, { activo: true });
+        else if (tipo === "tipoControl")
+          await CatalogoCuadroService.actualizarTipoControl(codigo, id, { activo: true });
+        else if (tipo === "institucion")
+          await CatalogoCuadroService.actualizarInstitucion(codigo, id, { activo: true });
+        else await CatalogoCuadroService.actualizarZonal(codigo, id, { activo: true });
+        toast.exito(`«${nombre}» vuelve a ofrecerse al registrar operativos.`);
+        setResaltado({ tipo, id });
+        if (tipo === "zonal" || tipo === "punto") await cargarZonales();
+        recargar();
       } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        void mensaje.errorDe(fallo, { titulo: `No se pudo activar «${nombre}»` });
       } finally {
         setProcesando(false);
       }
     },
-    [recargar, cargarZonales],
+    [codigo, recargar, cargarZonales],
   );
 
   /**
-   * Guarda el conjunto de áreas admitidas del formulario.
-   *
-   * RECARGA LOS FORMULARIOS Y NO LOS CATÁLOGOS. Las áreas no viajan en
-   * `GET /formularios/:codigo/catalogos` —ese contrato son puntos, tipos e instituciones—
-   * sino en `GET /formularios/permitidos`, que es de donde sale `formulario.areas`.
-   * Recargar el otro dejaría el panel pintando lo de antes.
-   *
-   * EL RECHAZO SE MUESTRA TAL CUAL (regla 7). El servidor nombra los operativos que
-   * impiden retirar un área, y esa lista es justo lo que hace falta para ir a arreglarlos.
+   * Áreas. RECARGA LOS FORMULARIOS: las áreas viajan en `GET /formularios/permitidos`. El rechazo
+   * (operativos con personal de esa área) se muestra tal cual (regla 7).
    */
   const guardarAreas = useCallback(
     async (areas: AreaPersonal[]) => {
       if (!formulario) return;
-
       setProcesando(true);
-      setAviso(null);
-
       try {
         await CatalogoCuadroService.reemplazarAreas(formulario.codigo, areas);
-        setExito(
-          `Las áreas de ${formulario.nombre} quedaron actualizadas. El selector de personal solo ofrecerá gente de esas áreas.`,
-        );
+        toast.exito(`Áreas de ${formulario.numero}. ${formulario.nombre} guardadas.`);
         recargarFormularios();
       } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        void mensaje.errorDe(fallo, { titulo: "No se pudieron guardar las áreas" });
       } finally {
         setProcesando(false);
       }
@@ -406,372 +480,380 @@ const AdminCatalogosCuadroPage = () => {
     [formulario, recargarFormularios],
   );
 
+  const activos: Record<Pestana, number> = {
+    puntos: puntos.filter(estaActivo).length,
+    tipos: tiposControl.filter(estaActivo).length,
+    instituciones: instituciones.filter(estaActivo).length,
+  };
+
+  const busqueda = busquedas[pestana];
+  const filtro = filtros[pestana];
+  const termino = clave(busqueda);
+
+  const tiposVisibles = tiposControl.filter(
+    (tipo) =>
+      pasaEstado(estaActivo(tipo), filtros.tipos) &&
+      (clave(busquedas.tipos) === "" || clave(tipo.nombre).includes(clave(busquedas.tipos))),
+  );
+  const institucionesVisibles = instituciones.filter(
+    (inst) =>
+      pasaEstado(estaActivo(inst), filtros.instituciones) &&
+      (clave(busquedas.instituciones) === "" ||
+        clave(`${inst.sigla} ${inst.nombre}`).includes(clave(busquedas.instituciones))),
+  );
+
+  const contador =
+    pestana === "puntos"
+      ? contadorPuntos(zonalesListadas.length, puntos, soloConPuntos)
+      : pestana === "tipos"
+        ? `${tiposVisibles.length} de ${tiposControl.length}`
+        : `${institucionesVisibles.length} de ${instituciones.length}`;
+
+  const resaltadoZonas: Resaltado =
+    resaltado && (resaltado.tipo === "zonal" || resaltado.tipo === "punto")
+      ? { tipo: resaltado.tipo, id: resaltado.id }
+      : null;
+
   const cargando = catalogos.cargando || cargandoFormularios;
+
+  const todasAbiertas =
+    zonalesListadas.length > 0 &&
+    zonalesListadas.every((zonal) => abiertasEfectivas.has(zonal.id));
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Administración
-        </p>
-        <h1 className="page-heading-title">
-          Catálogos del cuadro
-        </h1>
-        <p className="page-heading-subtitle text-sm">
-          Puntos de encuentro, tipos de control e instituciones de cada
-          formulario. De aquí salen las opciones del registro de operativos.
-        </p>
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-1">
+          <p className="page-heading-kicker font-semibold uppercase">Administración</p>
+          <h1 className="page-heading-title">Catálogos del cuadro</h1>
+          <p className="page-heading-subtitle text-sm">
+            Opciones que verá el registro de operativos de cada formulario.
+          </p>
+        </div>
+        <SelectorFormularioCabecera
+          formularios={formularios}
+          seleccionado={codigo}
+          onSeleccionar={pedirFormulario}
+          deshabilitado={procesando}
+        />
       </header>
 
-      <SelectorFormularioAdmin
-        formularios={formularios}
-        seleccionado={codigo}
-        onSeleccionar={setCodigo}
-        deshabilitado={procesando}
-      />
-
       {catalogos.error && (
-        <div
-          className={`alert ${claseDeAviso(catalogos.error.trato)}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={varianteDeAviso(catalogos.error.trato)}
+          titulo="No se pudieron cargar los catálogos"
+          accion={
+            <Boton tamano="sm" onClick={recargar}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{catalogos.error.mensaje}</span>
-        </div>
+          {catalogos.error.mensaje}
+        </AvisoEnLinea>
       )}
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudieron cargar las zonales"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargarZonales()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
-      {/*
-        RF-058. Se dice antes de que alguien pulse «Desactivar» y se sorprenda, y en una
-        sola línea: la consecuencia completa la vuelve a decir la confirmación, que es
-        donde hace falta.
-      */}
-      <div className="alert alert-info">
-        <span>
-          Los valores no se eliminan: se desactivan, para que los cuadros
-          anteriores que los usaron se sigan pudiendo leer.
-        </span>
-      </div>
-
-      {/*
-        VA EL PRIMERO, y no es orden alfabético: las áreas deciden **quién** puede
-        entrar en un operativo de este formulario, y los otros tres catálogos deciden
-        dónde, de qué y con quién se colabora. Quien viene a configurar un formulario
-        empieza por el personal.
-      */}
       <PanelAreasFormulario
         areas={formulario?.areas ?? []}
         cargando={cargando}
         procesando={procesando}
         onGuardar={(areas) => void guardarAreas(areas)}
+        onCambiosPendientes={setAreasSucias}
+        desplegadoInicial={pedido.areasAbiertas}
       />
 
-      {/*
-        LOS PUNTOS A LA IZQUIERDA, TIPOS E INSTITUCIONES A LA DERECHA. Hasta hoy los
-        cuatro paneles se apilaban y la pantalla era una tira vertical larga; los puntos
-        —con sus diez zonales— empujaban tipos e instituciones muy abajo. En dos columnas
-        (desde `xl`) los tres catálogos se ven a la vez. Por debajo de `xl` se apilan, que
-        es lo correcto en pantallas estrechas.
-      */}
-      <div className="grid items-start gap-6 xl:grid-cols-2">
-        <PanelPuntosEncuentro
-          puntos={catalogos.catalogos?.puntos ?? []}
-          zonales={zonales}
-          cargando={cargando}
-          procesando={procesando}
-          onAgregar={abrirAltaPunto}
-          onEditar={(punto) => {
-            setEdicion({ tipo: "punto", fila: punto });
-            setAvisoModal(null);
-          }}
-          onDesactivar={(punto) =>
-            setBaja({ tipo: "punto", id: punto.id, nombre: punto.nombre })
-          }
-          onActivar={(punto) => void activar("punto", punto.id, punto.nombre)}
-          onEliminar={(punto) =>
-            setEliminacion({ tipo: "punto", id: punto.id, nombre: punto.nombre })
-          }
-          onAgregarZonal={() => {
-            setEdicion({ tipo: "zonal", fila: null });
-            setAvisoModal(null);
-          }}
-          onEditarZonal={(zonal) => {
-            setEdicion({ tipo: "zonal", fila: zonal });
-            setAvisoModal(null);
-          }}
-          onDesactivarZonal={(zonal) =>
-            setBaja({ tipo: "zonal", id: zonal.id, nombre: zonal.nombre })
-          }
-          onActivarZonal={(zonal) => void activar("zonal", zonal.id, zonal.nombre)}
-          onEliminarZonal={(zonal) =>
-            setEliminacion({ tipo: "zonal", id: zonal.id, nombre: zonal.nombre })
-          }
+      <section
+        aria-label="Catálogos del formulario"
+        className="app-shell-surface flex flex-col gap-4 rounded-3xl border border-base-300 bg-base-100 px-4 pt-2 pb-4 shadow-[0_12px_32px_rgba(15,23,42,0.12)] md:px-6"
+      >
+        <Pestanas
+          etiqueta="Catálogo"
+          pestanas={PESTANAS.map((p) => ({
+            id: p.id,
+            titulo: p.titulo,
+            cuenta: activos[p.id],
+            etiquetaCuenta: "activos",
+          }))}
+          activa={pestana}
+          onElegir={setPestana}
         />
 
-        <div className="flex flex-col gap-6">
-          <TablaCatalogo<TipoControl>
-            titulo="Tipos de control"
-            filas={catalogos.catalogos?.tiposControl ?? []}
-            columnas={[
-              {
-                titulo: "Nombre",
-                // El tipo de control pertenece a UN formulario: nunca es «compartido».
-                valor: (tipo) => tipo.nombre,
-              },
-            ]}
-            textoDe={(tipo) => tipo.nombre}
-            cargando={cargando}
-            procesando={procesando}
-            mensajeVacio="Este formulario no tiene tipos de control registrados."
-            onAgregar={() => abrirAlta("tipoControl")}
-            onEditar={(tipo) => {
-              setEdicion({ tipo: "tipoControl", fila: tipo });
-              setAvisoModal(null);
-            }}
-            onDesactivar={(tipo) =>
-              setBaja({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
-            }
-            onActivar={(tipo) => void activar("tipoControl", tipo.id, tipo.nombre)}
-            onEliminar={(tipo) =>
-              setEliminacion({
-                tipo: "tipoControl",
-                id: tipo.id,
-                nombre: tipo.nombre,
-              })
-            }
-          />
-
-          <TablaCatalogo<Institucion>
-            titulo="Instituciones participantes"
-            filas={catalogos.catalogos?.instituciones ?? []}
-            columnas={[
-              {
-                titulo: "Sigla",
-                valor: (institucion) => institucion.sigla,
-              },
-              {
-                titulo: "Denominación",
-                valor: (institucion) => institucion.nombre,
-              },
-            ]}
-            textoDe={(institucion) =>
-              `${institucion.sigla} ${institucion.nombre}`
-            }
-            cargando={cargando}
-            procesando={procesando}
-            mensajeVacio="Este formulario no tiene instituciones participantes."
-            onAgregar={() => abrirAlta("institucion")}
-            onEditar={(institucion) => {
-              setEdicion({ tipo: "institucion", fila: institucion });
-              setAvisoModal(null);
-            }}
-            onDesactivar={(institucion) =>
-              setBaja({
-                tipo: "institucion",
-                id: institucion.id,
-                nombre: `${institucion.sigla} · ${institucion.nombre}`,
-              })
-            }
-            onActivar={(institucion) =>
-              void activar(
-                "institucion",
-                institucion.id,
-                `${institucion.sigla} · ${institucion.nombre}`,
+        <div
+          id={`panel-${pestana}`}
+          role="tabpanel"
+          aria-labelledby={`pestana-${pestana}`}
+          className="flex flex-col gap-4"
+        >
+          <BarraCatalogo
+            id={pestana}
+            marcador={MARCADORES[pestana]}
+            busqueda={busqueda}
+            onBuscar={(texto) => setBusquedas((antes) => ({ ...antes, [pestana]: texto }))}
+            filtro={filtro}
+            onFiltro={(valor) => setFiltros((antes) => ({ ...antes, [pestana]: valor }))}
+            contador={contador}
+            complemento={
+              pestana === "puntos" && (
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-sm"
+                    checked={soloConPuntos}
+                    onChange={(evento) => setSoloConPuntos(evento.target.checked)}
+                  />
+                  <span className="text-app-label max-w-56 text-sm leading-tight">
+                    Solo zonales con puntos en este formulario
+                  </span>
+                </label>
               )
             }
-            onEliminar={(institucion) =>
-              setEliminacion({
-                tipo: "institucion",
-                id: institucion.id,
-                nombre: `${institucion.sigla} · ${institucion.nombre}`,
-              })
-            }
-          />
+          >
+            {pestana === "puntos" && (
+              <>
+                <Boton
+                  onClick={() =>
+                    setAbiertas(
+                      todasAbiertas
+                        ? new Set()
+                        : new Set(zonalesListadas.map((zonal) => zonal.id)),
+                    )
+                  }
+                >
+                  {todasAbiertas ? "Contraer todo" : "Expandir todo"}
+                </Boton>
+                <Boton
+                  variante="acento"
+                  deshabilitado={procesando || !formulario}
+                  onClick={() => abrir({ tipo: "punto", fila: null })}
+                >
+                  + Nuevo punto de encuentro
+                </Boton>
+                <Boton
+                  variante="primario"
+                  deshabilitado={procesando || !formulario}
+                  motivoDeshabilitado={
+                    zonasLibres.length === 0
+                      ? "Este formulario ya tiene una zonal por cada zona de la ciudad."
+                      : null
+                  }
+                  onClick={() => abrir({ tipo: "zonal", fila: null })}
+                >
+                  + Nueva zonal
+                </Boton>
+              </>
+            )}
+            {pestana === "tipos" && (
+              <Boton
+                variante="primario"
+                deshabilitado={procesando || !formulario}
+                onClick={() => abrir({ tipo: "tipoControl", fila: null })}
+              >
+                + Nuevo tipo de control
+              </Boton>
+            )}
+            {pestana === "instituciones" && (
+              <Boton
+                variante="primario"
+                deshabilitado={procesando || !formulario}
+                onClick={() => abrir({ tipo: "institucion", fila: null })}
+              >
+                + Nueva institución
+              </Boton>
+            )}
+          </BarraCatalogo>
+
+          {cargando && !catalogos.catalogos ? (
+            <div
+              className="flex justify-center py-8"
+              role="status"
+            >
+              <span
+                className="loading loading-spinner loading-md"
+                aria-hidden="true"
+              />
+              <span className="sr-only">Cargando catálogos…</span>
+            </div>
+          ) : pestana === "puntos" ? (
+            <div className="flex flex-col gap-2">
+              {cuantasSinPuntos > 0 && (
+                <AvisoEnLinea variante="info">
+                  <span>
+                    {textoSinPuntos(cuantasSinPuntos, soloConPuntos)}
+                    {" · "}
+                    <Boton
+                      variante="enlace"
+                      tamano="sm"
+                      onClick={() => setSoloConPuntos(!soloConPuntos)}
+                    >
+                      {soloConPuntos ? "Ver todas" : "Ocultarlas"}
+                    </Boton>
+                  </span>
+                </AvisoEnLinea>
+              )}
+              <AcordeonZonales
+                zonales={zonalesListadas}
+                puntos={puntos}
+                busqueda={busqueda}
+                filtro={filtro}
+                abiertas={abiertasEfectivas}
+                onAlternar={alternarZonal}
+                resaltado={resaltadoZonas}
+                procesando={procesando}
+                onAgregarPunto={(zonalId) => abrir({ tipo: "punto", fila: null }, zonalId)}
+                onEditarZonal={(zonal) => abrir({ tipo: "zonal", fila: zonal })}
+                onDesactivarZonal={(zonal) =>
+                  setBaja({
+                    tipo: "zonal",
+                    id: zonal.id,
+                    nombre: zonal.nombre,
+                    puntosActivos: zonal.puntosActivos,
+                  })
+                }
+                onActivarZonal={(zonal) => void activar("zonal", zonal.id, zonal.nombre)}
+                onEliminarZonal={(zonal) =>
+                  setEliminacion({ tipo: "zonal", id: zonal.id, nombre: zonal.nombre })
+                }
+                onEditarPunto={(punto: PuntoEncuentro) => abrir({ tipo: "punto", fila: punto })}
+                onDesactivarPunto={(punto) =>
+                  setBaja({ tipo: "punto", id: punto.id, nombre: punto.nombre })
+                }
+                onActivarPunto={(punto) => void activar("punto", punto.id, punto.nombre)}
+                onEliminarPunto={(punto) =>
+                  setEliminacion({ tipo: "punto", id: punto.id, nombre: punto.nombre })
+                }
+              />
+            </div>
+          ) : pestana === "tipos" ? (
+            <TablaValoresCatalogo<TipoControl>
+              etiqueta="Tipos de control"
+              filas={tiposVisibles}
+              columnas={[{ titulo: "Nombre", valor: (tipo) => tipo.nombre, fuerte: true }]}
+              nombreDe={(tipo) => tipo.nombre}
+              mensajeVacio={
+                termino
+                  ? `Ningún tipo de control coincide con «${busqueda.trim()}».`
+                  : "Este formulario no tiene tipos de control con este filtro."
+              }
+              resaltadoId={resaltado?.tipo === "tipoControl" ? resaltado.id : null}
+              procesando={procesando}
+              onEditar={(tipo) => abrir({ tipo: "tipoControl", fila: tipo })}
+              onDesactivar={(tipo) =>
+                setBaja({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
+              }
+              onActivar={(tipo) => void activar("tipoControl", tipo.id, tipo.nombre)}
+              onEliminar={(tipo) =>
+                setEliminacion({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
+              }
+            />
+          ) : (
+            <TablaValoresCatalogo<Institucion>
+              etiqueta="Instituciones participantes"
+              filas={institucionesVisibles}
+              columnas={[
+                { titulo: "Sigla", valor: (inst) => inst.sigla, fuerte: true },
+                { titulo: "Denominación", valor: (inst) => inst.nombre },
+              ]}
+              nombreDe={(inst) => inst.sigla}
+              mensajeVacio={
+                termino
+                  ? `Ninguna institución coincide con «${busqueda.trim()}».`
+                  : "Este formulario no tiene instituciones con este filtro."
+              }
+              resaltadoId={resaltado?.tipo === "institucion" ? resaltado.id : null}
+              procesando={procesando}
+              onEditar={(inst) => abrir({ tipo: "institucion", fila: inst })}
+              onDesactivar={(inst) =>
+                setBaja({ tipo: "institucion", id: inst.id, nombre: `${inst.sigla} · ${inst.nombre}` })
+              }
+              onActivar={(inst) =>
+                void activar("institucion", inst.id, `${inst.sigla} · ${inst.nombre}`)
+              }
+              onEliminar={(inst) =>
+                setEliminacion({
+                  tipo: "institucion",
+                  id: inst.id,
+                  nombre: `${inst.sigla} · ${inst.nombre}`,
+                })
+              }
+            />
+          )}
+
+          <p className="text-app-muted flex items-start gap-2 text-xs">
+            <Iconos nombre="informacion" />
+            <span>{NOTA_ELIMINAR}</span>
+          </p>
         </div>
-      </div>
+      </section>
 
-      {edicion?.tipo === "punto" && (
-        <ModalCatalogo
-          abierto
-          titulo={
-            edicion.fila
-              ? `Editar ${edicion.fila.nombre}`
-              : "Nuevo punto de encuentro"
-          }
-          valoresIniciales={{
-            nombre: edicion.fila?.nombre ?? "",
-            zonalId:
-              edicion.fila?.zonalId ?? zonalPropuesta ?? zonales[0]?.id ?? 0,
-          }}
-          esquema={esquemaPunto}
-          campos={
-            <>
-              <Field
-                name="nombre"
-                component={TextInput}
-                label="Nombre del punto"
-                required
-                placeholder="AMC Matriz"
-              />
-              <Field
-                name="zonalId"
-                component={SelectInput}
-                label="Zonal"
-                required
-                options={zonales.map((zonal) => ({
-                  value: zonal.id,
-                  label: zonal.nombre,
-                }))}
-              />
-            </>
-          }
-          guardando={procesando}
-          aviso={avisoModal}
-          onGuardar={(valores) => void guardar(valores)}
-          onCancelar={() => setEdicion(null)}
-        />
-      )}
+      <DrawerValorCatalogo
+        edicion={edicion}
+        formulario={formulario}
+        zonales={zonales}
+        zonasDisponibles={zonasLibres}
+        zonalInicial={zonalInicial}
+        existentes={existentes}
+        guardando={procesando}
+        errorServidor={errorDrawer}
+        onGuardar={guardar}
+        onCerrar={cerrarDrawer}
+      />
 
-      {edicion?.tipo === "tipoControl" && (
-        <ModalCatalogo
-          abierto
-          titulo={
-            edicion.fila
-              ? `Editar ${edicion.fila.nombre}`
-              : "Nuevo tipo de control"
-          }
-          valoresIniciales={{ nombre: edicion.fila?.nombre ?? "" }}
-          esquema={esquemaTipoControl}
-          campos={
-            // El tipo de control pertenece a UN formulario: sin selector de delimitación.
-            <Field
-              name="nombre"
-              component={TextInput}
-              label="Nombre del tipo de control"
-              required
-              placeholder="Control de ventas"
-            />
-          }
-          guardando={procesando}
-          aviso={avisoModal}
-          onGuardar={(valores) => void guardar(valores)}
-          onCancelar={() => setEdicion(null)}
-        />
-      )}
+      <MensajeModal
+        abierto={codigoPendiente !== null}
+        variante="peligro"
+        titulo="¿Cambiar de formulario?"
+        mensaje="Las áreas de personal tienen cambios sin guardar y se perderán."
+        textoPrincipal="Cambiar y descartar"
+        textoSecundario="Seguir aquí"
+        onPrincipal={() => {
+          if (codigoPendiente) cambiarFormulario(codigoPendiente);
+          setCodigoPendiente(null);
+          setAreasSucias(false);
+        }}
+        onSecundario={() => setCodigoPendiente(null)}
+      />
 
-      {edicion?.tipo === "institucion" && (
-        <ModalCatalogo
-          abierto
-          titulo={
-            edicion.fila
-              ? `Editar ${edicion.fila.sigla}`
-              : "Nueva institución participante"
-          }
-          valoresIniciales={{
-            sigla: edicion.fila?.sigla ?? "",
-            nombre: edicion.fila?.nombre ?? "",
-          }}
-          esquema={esquemaInstitucion}
-          campos={
-            <>
-              <Field
-                name="sigla"
-                component={TextInput}
-                label="Sigla"
-                required
-                placeholder="AMC"
-              />
-              <Field
-                name="nombre"
-                component={TextInput}
-                label="Denominación completa"
-                required
-                placeholder="Agencia Metropolitana de Control"
-              />
-            </>
-          }
-          guardando={procesando}
-          aviso={avisoModal}
-          onGuardar={(valores) => void guardar(valores)}
-          onCancelar={() => setEdicion(null)}
-        />
-      )}
-
-      {edicion?.tipo === "zonal" && (
-        <ModalCatalogo
-          abierto
-          titulo={
-            edicion.fila ? `Editar ${edicion.fila.nombre}` : "Nueva zonal"
-          }
-          valoresIniciales={{ nombre: edicion.fila?.nombre ?? "" }}
-          esquema={esquemaZonal}
-          campos={
-            /*
-              Solo el nombre: el código lo autogenera el servidor. La zonal es transversal
-              a los nueve formularios, así que no lleva selector de delimitación.
-            */
-            <Field
-              name="nombre"
-              component={TextInput}
-              label="Nombre de la zonal"
-              required
-              placeholder="Zonal La Delicia"
-            />
-          }
-          guardando={procesando}
-          aviso={avisoModal}
-          onGuardar={(valores) => void guardar(valores)}
-          onCancelar={() => setEdicion(null)}
-        />
-      )}
-
-      {/* Caso 2: la confirmación dice qué va a pasar de verdad, no «¿está seguro?». */}
-      <ModalConfirmacion
+      {/* La confirmación dice qué pasa de verdad, no «¿está seguro?». */}
+      <MensajeModal
         abierto={baja !== null}
-        titulo="¿Desactivar este valor?"
+        variante="peligro"
+        titulo={baja?.tipo === "zonal" ? `¿Desactivar ${baja.nombre}?` : "¿Desactivar este valor?"}
         mensaje={
-          baja
-            ? `«${baja.nombre}» dejará de ofrecerse al registrar operativos.` +
-              ` NO se elimina: los cuadros anteriores que lo usaron deben seguir pudiéndose leer. Se puede reactivar más tarde desde su lista.`
-            : ""
+          baja?.tipo === "zonal"
+            ? `Sus ${baja.puntosActivos ?? 0} puntos de este formulario dejarán de ofrecerse en el registro. Los demás formularios no cambian, y los cuadros anteriores se siguen leyendo.`
+            : baja
+              ? `«${baja.nombre}» dejará de ofrecerse al registrar operativos. Los cuadros anteriores que lo usaron se siguen leyendo, y puede reactivarlo después.`
+              : ""
         }
-        textoSi="Sí, desactivar"
-        textoNo="Cancelar"
-        procesando={procesando}
-        onConfirmar={() => void desactivar()}
-        onCancelar={() => setBaja(null)}
+        textoPrincipal="Sí, desactivar"
+        tituloError="No se pudo desactivar"
+        onPrincipal={desactivar}
+        onSecundario={() => setBaja(null)}
       />
 
-      {/* Baja FÍSICA: irreversible, y solo procede si nunca se usó. Se advierte con claridad. */}
-      <ModalConfirmacion
+      <MensajeModal
         abierto={eliminacion !== null}
-        titulo="¿Eliminar definitivamente?"
-        mensaje={
-          eliminacion
-            ? `«${eliminacion.nombre}» se BORRARÁ del catálogo y no se podrá recuperar. Solo es posible si nunca se usó en un operativo: si ya se usó, no se borrará y deberá desactivarlo en su lugar.`
-            : ""
-        }
-        textoSi="Sí, eliminar"
-        textoNo="Cancelar"
-        procesando={procesando}
-        onConfirmar={() => void eliminar()}
-        onCancelar={() => setEliminacion(null)}
+        variante="peligro"
+        titulo={eliminacion ? `¿Eliminar «${eliminacion.nombre}»?` : "¿Eliminar?"}
+        mensaje="Nunca se usó en un cuadro, así que se borra definitivamente."
+        textoPrincipal="Sí, eliminar"
+        tituloError="No se pudo eliminar"
+        onPrincipal={eliminar}
+        onSecundario={() => setEliminacion(null)}
       />
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
-        />
-      )}
     </section>
   );
 };

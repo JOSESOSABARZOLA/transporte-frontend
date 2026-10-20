@@ -24,8 +24,9 @@
  * aparece en el mensaje de error obliga a fallar para aprenderlo.
  */
 
-import { useState, type FC } from "react";
+import { useEffect, useState, type FC } from "react";
 
+import Boton from "../common/Boton.tsx";
 import type { ParametroPolitica } from "../../interfaces/Administracion.ts";
 import {
   descripcionDeRango,
@@ -40,6 +41,10 @@ type TablaParametrosProps = {
   /** Rechazos del servidor, por clave. Se muestran tal cual. */
   avisos: Record<string, string>;
   onGuardar: (clave: string, valor: string) => void;
+  /** Avisa qué filas tienen un valor escrito sin guardar (para el aviso al salir). */
+  onCambios?: (clave: string, cambiado: boolean) => void;
+  /** Clave recién guardada: su fila se resalta unos segundos, junto al aviso breve. */
+  resaltada?: string | null;
 };
 
 const TablaParametros: FC<TablaParametrosProps> = ({
@@ -48,16 +53,23 @@ const TablaParametros: FC<TablaParametrosProps> = ({
   guardando,
   avisos,
   onGuardar,
+  onCambios,
+  resaltada = null,
 }) => (
   <div className="overflow-x-auto">
     <table className="table table-sm table-zebra">
       <thead>
-        <tr className="text-xs uppercase tracking-wider text-base-content/70">
+        <tr className="text-xs uppercase tracking-wider text-app-label">
           <th scope="col">Parámetro</th>
           <th scope="col">Valor</th>
           <th scope="col">Rango admisible</th>
           <th scope="col">Última modificación</th>
-          <th scope="col">Acciones</th>
+          <th
+            scope="col"
+            className="text-right"
+          >
+            Acciones
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -65,7 +77,7 @@ const TablaParametros: FC<TablaParametrosProps> = ({
           <tr>
             <td
               colSpan={5}
-              className="px-3 py-6 text-center text-sm text-base-content/70"
+              className="px-3 py-6 text-center text-sm text-app-muted"
             >
               {cargando
                 ? "Cargando los parámetros…"
@@ -79,7 +91,9 @@ const TablaParametros: FC<TablaParametrosProps> = ({
               parametro={parametro}
               guardando={guardando === parametro.clave}
               aviso={avisos[parametro.clave] ?? null}
+              resaltada={resaltada === parametro.clave}
               onGuardar={onGuardar}
+              onCambios={onCambios}
             />
           ))
         )}
@@ -99,21 +113,33 @@ const FilaParametro: FC<{
   parametro: ParametroPolitica;
   guardando: boolean;
   aviso: string | null;
+  resaltada: boolean;
   onGuardar: (clave: string, valor: string) => void;
-}> = ({ parametro, guardando, aviso, onGuardar }) => {
+  onCambios?: (clave: string, cambiado: boolean) => void;
+}> = ({ parametro, guardando, aviso, resaltada, onGuardar, onCambios }) => {
   const [valor, setValor] = useState(parametro.valor);
 
   const motivo = motivoDeRechazo(parametro, valor);
   const cambiado = valor.trim() !== parametro.valor;
 
+  useEffect(() => {
+    onCambios?.(parametro.clave, cambiado);
+  }, [onCambios, parametro.clave, cambiado]);
+
   return (
-    <tr className="hover:bg-primary/5">
+    <tr
+      data-cambiado={cambiado || undefined}
+      data-resaltado={resaltada || undefined}
+      className={
+        cambiado ? "bg-warning/10" : resaltada ? "bg-success/10" : "hover:bg-primary/5"
+      }
+    >
       <td className="px-3 py-2 align-top">
         <span className="block font-mono text-xs font-semibold">
           {parametro.clave}
         </span>
         {/* La descripción la redacta el servidor y nombra la regla que gobierna. */}
-        <span className="block max-w-md text-xs text-base-content/70">
+        <span className="block max-w-md text-xs text-app-muted">
           {parametro.descripcion}
         </span>
       </td>
@@ -136,7 +162,7 @@ const FilaParametro: FC<{
           onChange={(evento) => setValor(evento.target.value)}
         />
         {parametro.unidad && (
-          <span className="ml-2 text-xs text-base-content/70">{parametro.unidad}</span>
+          <span className="ml-2 text-xs text-app-muted">{parametro.unidad}</span>
         )}
 
         {/* Caso 2: el rango se indica en el propio rechazo, antes de enviar nada. */}
@@ -162,7 +188,7 @@ const FilaParametro: FC<{
         Caso 5. La traza completa vive en la auditoría del servidor; aquí se muestra la
         última, que es lo que responde a «¿quién cambió esto?» sin abrir la base.
       */}
-      <td className="px-3 py-2 align-top text-xs text-base-content/70">
+      <td className="px-3 py-2 align-top text-xs text-app-muted">
         {parametro.modificadoPor === null ? (
           "Valor de siembra"
         ) : (
@@ -176,24 +202,33 @@ const FilaParametro: FC<{
       </td>
 
       <td className="px-3 py-2 align-top">
-        <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            className="btn btn-primary btn-xs"
+        {/*
+          Estándar de botones: sin cambios, «Guardar» secundario apagado («Sin cambios»); con un
+          valor escrito, primario. «Descartar» (enlace) solo aparece con cambios, y la fila se
+          resalta con su texto (regla 6).
+        */}
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {cambiado && (
+            <span className="text-xs font-semibold text-app-strong">Cambios sin guardar</span>
+          )}
+          <Boton
+            variante={cambiado ? "primario" : "secundario"}
+            tamano="sm"
             onClick={() => onGuardar(parametro.clave, valor.trim())}
-            disabled={guardando || !cambiado || motivo !== null}
-            title={motivo ?? undefined}
+            cargando={guardando}
+            motivoDeshabilitado={!cambiado ? "Sin cambios" : motivo}
           >
             {guardando ? "Guardando…" : "Guardar"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs"
-            onClick={() => setValor(parametro.valor)}
-            disabled={guardando || !cambiado}
-          >
-            Descartar
-          </button>
+          </Boton>
+          {cambiado && !guardando && (
+            <Boton
+              variante="enlace"
+              tamano="sm"
+              onClick={() => setValor(parametro.valor)}
+            >
+              Descartar
+            </Boton>
+          )}
         </div>
       </td>
     </tr>

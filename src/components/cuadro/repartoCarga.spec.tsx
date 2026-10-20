@@ -86,7 +86,7 @@ describe("RepartoCarga · contenido compartido", () => {
     expect(relleno).not.toBeNull();
     expect(relleno?.style.width).toMatch(/^45\.4/);
     // Color = fatiga AMBAR → `warning`, el MISMO tono que el badge «Carga media».
-    expect(screen.getByText("Carga media").className).toContain("badge-warning");
+    expect(screen.getByText("Carga Media").className).toContain("badge-warning");
   });
 
   it("el color de la barra = la fatiga y coincide con el badge de la persona", () => {
@@ -108,8 +108,8 @@ describe("RepartoCarga · contenido compartido", () => {
     expect(container.querySelector(".absolute.bg-success")).not.toBeNull();
     expect(container.querySelector(".absolute.bg-error")).not.toBeNull();
     // Los badges de la fila usan el mismo tono que la barra.
-    expect(screen.getByText("Carga baja").className).toContain("badge-success");
-    expect(screen.getByText("Carga alta").className).toContain("badge-error");
+    expect(screen.getByText("Carga Baja").className).toContain("badge-success");
+    expect(screen.getByText("Carga Alta").className).toContain("badge-error");
   });
 
   it("pone el estado SIEMPRE en texto: «+X sobre su parte» / «-X bajo su parte»", () => {

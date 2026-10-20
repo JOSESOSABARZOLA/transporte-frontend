@@ -32,8 +32,13 @@ const LAS_DOS: AreaFormulario[] = [
   { area: "TECNICO", esCompartida: false },
 ];
 
-const montar = (areas: AreaFormulario[] = LAS_DOS, procesando = false) => {
+/**
+ * Monta la barra y la DESPLIEGA (arranca plegada desde el rediseño del 2026-10-12): las áreas son
+ * chips con `aria-pressed`.
+ */
+const montar = async (areas: AreaFormulario[] = LAS_DOS, procesando = false) => {
   const onGuardar = vi.fn();
+  const onCambiosPendientes = vi.fn();
 
   render(
     <PanelAreasFormulario
@@ -41,20 +46,27 @@ const montar = (areas: AreaFormulario[] = LAS_DOS, procesando = false) => {
       cargando={false}
       procesando={procesando}
       onGuardar={onGuardar}
+      onCambiosPendientes={onCambiosPendientes}
     />,
   );
+  await userEvent.click(screen.getByRole("button", { name: /Cambiar/ }));
 
-  return { onGuardar };
+  return { onGuardar, onCambiosPendientes };
 };
 
 const casilla = (nombre: string | RegExp) =>
-  screen.getByRole("checkbox", { name: nombre });
+  screen.getByRole("button", { name: nombre, pressed: undefined });
+
+const marcada = (nombre: RegExp) =>
+  expect(casilla(nombre)).toHaveAttribute("aria-pressed", "true");
+const sinMarcar = (nombre: RegExp) =>
+  expect(casilla(nombre)).toHaveAttribute("aria-pressed", "false");
 
 const guardar = () => screen.getByRole("button", { name: /Guardar áreas/ });
 
 describe("las áreas se marcan por su descripción y viajan por su código", () => {
-  it("ofrece las cuatro con el nombre que usa la institución", () => {
-    montar();
+  it("ofrece las cuatro con el nombre que usa la institución", async () => {
+    await montar();
 
     expect(casilla(/Unidad de Operativos/)).toBeInTheDocument();
     expect(casilla(/Personal de Instrucción/)).toBeInTheDocument();
@@ -62,13 +74,13 @@ describe("las áreas se marcan por su descripción y viajan por su código", () 
     expect(casilla(/Inspector General - DMIP/)).toBeInTheDocument();
   });
 
-  it("llegan marcadas las que el formulario admite hoy, y solo esas", () => {
-    montar();
+  it("llegan marcadas las que el formulario admite hoy, y solo esas", async () => {
+    await montar();
 
-    expect(casilla(/Inspector General - DMIP/)).toBeChecked();
-    expect(casilla(/Inspector Técnico - DMIP/)).toBeChecked();
-    expect(casilla(/Unidad de Operativos/)).not.toBeChecked();
-    expect(casilla(/Personal de Instrucción/)).not.toBeChecked();
+    marcada(/Inspector General - DMIP/);
+    marcada(/Inspector Técnico - DMIP/);
+    sinMarcar(/Unidad de Operativos/);
+    sinMarcar(/Personal de Instrucción/);
   });
 
   /**
@@ -77,7 +89,7 @@ describe("las áreas se marcan por su descripción y viajan por su código", () 
    * del enumerado y no la descripción que se marcó.
    */
   it("al guardar se envía el CÓDIGO, no el rótulo que se marcó", async () => {
-    const { onGuardar } = montar();
+    const { onGuardar } = await montar();
 
     await userEvent.click(casilla(/Unidad de Operativos/));
     await userEvent.click(guardar());
@@ -86,7 +98,7 @@ describe("las áreas se marcan por su descripción y viajan por su código", () 
   });
 
   it("desmarcar retira esa área del conjunto que se envía", async () => {
-    const { onGuardar } = montar();
+    const { onGuardar } = await montar();
 
     await userEvent.click(casilla(/Inspector Técnico - DMIP/));
     await userEvent.click(guardar());
@@ -96,32 +108,36 @@ describe("las áreas se marcan por su descripción y viajan por su código", () 
 });
 
 describe("el panel no deja llegar al servidor lo que este va a rechazar", () => {
-  it("sin cambios, no hay nada que guardar", () => {
-    montar();
+  it("sin cambios, no hay nada que guardar", async () => {
+    await montar();
 
-    expect(guardar()).toBeDisabled();
+    expect(guardar()).toHaveAttribute("aria-disabled", "true");
   });
 
   it("sin ninguna marcada el botón se apaga, y dice por qué", async () => {
     // Un botón apagado sin explicación es lo que este sistema evita en todas partes: el
     // servidor rechazaría el conjunto vacío, y aquí se dice antes y con la consecuencia.
-    montar();
+    await montar();
 
     await userEvent.click(casilla(/Inspector General - DMIP/));
     await userEvent.click(casilla(/Inspector Técnico - DMIP/));
 
-    expect(guardar()).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "el selector de personal de este formulario queda vacío",
-    );
+    expect(guardar()).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getByText(/el selector de personal de este formulario queda vacío/),
+    ).toBeInTheDocument();
+    // Y la línea plegada lo dice también.
+    expect(
+      screen.getByText("Ninguna área: el formulario no ofrecerá personal"),
+    ).toBeInTheDocument();
   });
 });
 
 describe("el cupo del departamento invitado se ve antes de retirarlo", () => {
-  it("la marca de compartida se dice con palabras, no con un color", () => {
+  it("la marca de compartida se dice con palabras, no con un color", async () => {
     // PER-06: `esCompartida` es de donde el rol invitado saca su gente. El panel no la
     // edita, pero quien retire esa área tiene que saber qué se lleva por delante.
-    montar([
+    await montar([
       { area: "GENERAL", esCompartida: false },
       { area: "INSTRUCCION", esCompartida: true },
     ]);
@@ -131,9 +147,43 @@ describe("el cupo del departamento invitado se ve antes de retirarlo", () => {
     ).toBeInTheDocument();
   });
 
-  it("y no se pinta sobre un área que no la tiene", () => {
-    montar();
+  it("y no se pinta sobre un área que no la tiene", async () => {
+    await montar();
 
     expect(screen.queryByText("Aporta el departamento invitado")).toBeNull();
+  });
+});
+
+describe("barra plegable (rediseño 2026-10-12)", () => {
+  it("plegada dice en una línea cuántas y cuáles, sin mostrar los chips", () => {
+    render(
+      <PanelAreasFormulario
+        areas={LAS_DOS}
+        cargando={false}
+        procesando={false}
+        onGuardar={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 de 4")).toBeInTheDocument();
+    expect(
+      screen.getByText("Inspector General - DMIP, Inspector Técnico - DMIP"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cambiar/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByRole("button", { name: /Guardar áreas/ })).toBeNull();
+  });
+
+  it("al cambiar algo dice «Cambios sin guardar» y avisa a la página", async () => {
+    const { onCambiosPendientes } = await montar();
+
+    expect(screen.queryByText("Cambios sin guardar")).toBeNull();
+    await userEvent.click(casilla(/Unidad de Operativos/));
+
+    expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
+    expect(onCambiosPendientes).toHaveBeenLastCalledWith(true);
+    expect(guardar()).not.toHaveAttribute("aria-disabled");
   });
 });

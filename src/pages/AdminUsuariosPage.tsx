@@ -27,8 +27,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
+import MensajeModal from "../components/common/MensajeModal.tsx";
 import DrawerFlujoCuenta, {
   type DatosCuenta,
 } from "../components/administracion/DrawerFlujoCuenta.tsx";
@@ -39,8 +40,10 @@ import type { UsuarioCuadro } from "../interfaces/UsuarioCuadro.ts";
 import { PersonalService } from "../services/personal.service.ts";
 import { RolesAuthService } from "../services/rolesAuth.service.ts";
 import { UsuariosCuadroService } from "../services/usuariosCuadro.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
+import { MS_RESALTADO } from "../utils/listadoOperativos.util.ts";
 import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
 
 /** Estado del cajón: cerrado, alta, o edición de una cuenta concreta. */
 type Flujo =
@@ -61,6 +64,14 @@ const AdminUsuariosPage = () => {
   const [avisoModal, setAvisoModal] = useState<string | null>(null);
 
   const [porDesactivar, setPorDesactivar] = useState<UsuarioCuadro | null>(null);
+  const [resaltadoId, setResaltadoId] = useState<number | null>(null);
+
+  // El resaltado de la cuenta recién activada se apaga solo.
+  useEffect(() => {
+    if (resaltadoId === null) return;
+    const espera = window.setTimeout(() => setResaltadoId(null), MS_RESALTADO);
+    return () => window.clearTimeout(espera);
+  }, [resaltadoId]);
 
   /**
    * EL ALTA EMPIEZA EN EL DIRECTORIO DE AUTH, que NO se consulta al entrar sino al pulsar
@@ -100,10 +111,7 @@ const AdminUsuariosPage = () => {
     void cargarDirectorio();
   }, [cargarDirectorio]);
 
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -120,9 +128,8 @@ const AdminUsuariosPage = () => {
       setRolesSinAcceso(panorama?.sinCorrespondencia ?? []);
       setAviso(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
       setUsuarios([]);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      setAviso(avisoDeFallo(fallo));
     } finally {
       setCargando(false);
     }
@@ -148,7 +155,9 @@ const AdminUsuariosPage = () => {
             identificadorAd: datos.identificadorAd,
             funcionarioCedula: datos.funcionarioCedula,
           });
-          setExito(
+          // D3 (cajón estándar, 2026-10-15): aviso breve y fila resaltada, no un modal de éxito.
+          setResaltadoId(creada.id);
+          toast.exito(
             `La cuenta de ${creada.nombre} quedó creada.` +
               (creada.identificadorAd
                 ? " Podrá entrar desde el portal institucional."
@@ -165,7 +174,8 @@ const AdminUsuariosPage = () => {
               activo: datos.activo,
             },
           );
-          setExito(
+          setResaltadoId(actualizada.id);
+          toast.exito(
             `La cuenta de ${actualizada.nombre} quedó guardada. ` +
               "Los cambios rigen desde su próximo ingreso: el perfil viaja en la cookie de sesión.",
           );
@@ -185,26 +195,37 @@ const AdminUsuariosPage = () => {
   const desactivar = useCallback(async () => {
     if (!porDesactivar) return;
 
-    setGuardando(true);
-
-    try {
-      const desactivada = await UsuariosCuadroService.desactivar(
-        porDesactivar.id,
-      );
-      setPorDesactivar(null);
-      setExito(
-        `La cuenta de ${desactivada.nombre} quedó desactivada. ` +
-          "No podrá entrar, y su sesión abierta caerá en el próximo intento.",
-      );
-      await cargar();
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setPorDesactivar(null);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-    } finally {
-      setGuardando(false);
-    }
+    // Si el servidor la rechaza, lanza: el error queda en el modal de la confirmación.
+    const desactivada = await UsuariosCuadroService.desactivar(porDesactivar.id);
+    setPorDesactivar(null);
+    setResaltadoId(desactivada.id);
+    toast.exito(
+      `La cuenta de ${desactivada.nombre} quedó desactivada. ` +
+        "No podrá entrar, y su sesión abierta caerá en el próximo intento.",
+    );
+    await cargar();
   }, [cargar, porDesactivar]);
+
+  /**
+   * ↺ Activar en la fila (estándar de botones). No pide confirmación: devolver el acceso es
+   * reversible y la fila lo dice. El servidor acepta el cuerpo parcial `{ activo: true }`.
+   */
+  const activar = useCallback(
+    async (usuario: UsuarioCuadro) => {
+      setGuardando(true);
+      try {
+        const activada = await UsuariosCuadroService.actualizar(usuario.id, { activo: true });
+        toast.exito(`La cuenta de ${activada.nombre} vuelve a estar activa.`);
+        setResaltadoId(activada.id);
+        await cargar();
+      } catch (fallo: unknown) {
+        void mensaje.errorDe(fallo, { titulo: `No se pudo activar la cuenta de ${usuario.nombre}` });
+      } finally {
+        setGuardando(false);
+      }
+    },
+    [cargar],
+  );
 
   const sinIngreso = usuarios.filter(
     (usuario) => usuario.activo && !usuario.identificadorAd,
@@ -224,25 +245,25 @@ const AdminUsuariosPage = () => {
       </header>
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudieron cargar las cuentas"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       {sinIngreso > 0 && (
-        <div
-          className="alert alert-warning"
-          role="status"
-        >
-          <span>
-            {sinIngreso === 1
-              ? "Hay una cuenta activa sin usuario de Auth central: esa persona no puede entrar."
-              : `Hay ${sinIngreso} cuentas activas sin usuario de Auth central: esas personas no pueden entrar.`}
-          </span>
-        </div>
+        <AvisoEnLinea variante="advertencia">
+          {sinIngreso === 1
+            ? "Hay una cuenta activa sin usuario de Auth central: esa persona no puede entrar."
+            : `Hay ${sinIngreso} cuentas activas sin usuario de Auth central: esas personas no pueden entrar.`}
+        </AvisoEnLinea>
       )}
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
@@ -254,22 +275,23 @@ const AdminUsuariosPage = () => {
             <span className="badge badge-ghost badge-sm">
               {cargando ? "Cargando…" : `${usuarios.length} registradas`}
             </span>
-            <button
-              type="button"
-              className="btn btn-primary btn-xs"
+            <Boton
+              variante="primario"
+              tamano="sm"
+              enBarraOscura
               onClick={abrirAlta}
-              disabled={cargando || guardando}
+              deshabilitado={cargando || guardando}
             >
-              Nueva cuenta
-            </button>
+              + Nueva cuenta
+            </Boton>
           </div>
         </div>
 
         <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             Desactivar una cuenta no la borra: las trazas de auditoría guardan
             quién hizo cada cambio, y borrarla las dejaría apuntando a nadie. Una
-            cuenta desactivada se puede volver a activar desde Editar.
+            cuenta desactivada se vuelve a activar con «Activar», en su fila.
           </p>
 
           <TablaUsuarios
@@ -282,6 +304,8 @@ const AdminUsuariosPage = () => {
               setAvisoModal(null);
             }}
             onDesactivar={setPorDesactivar}
+            onActivar={(usuario) => void activar(usuario)}
+            resaltadoId={resaltadoId}
           />
         </div>
       </div>
@@ -320,24 +344,17 @@ const AdminUsuariosPage = () => {
       />
 
       {porDesactivar && (
-        <ModalConfirmacion
-          abierto
-          titulo="Desactivar la cuenta"
+        <MensajeModal
+          variante="peligro"
+          titulo={`¿Desactivar la cuenta de ${porDesactivar.nombre}?`}
           mensaje={
             `${porDesactivar.nombre} dejará de poder entrar al Cuadro de Colores. ` +
             "La cuenta se conserva y puede volver a activarse."
           }
-          procesando={guardando}
-          onConfirmar={() => void desactivar()}
-          onCancelar={() => setPorDesactivar(null)}
-        />
-      )}
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
+          textoPrincipal="Sí, desactivar"
+          tituloError="No se pudo desactivar la cuenta"
+          onPrincipal={desactivar}
+          onSecundario={() => setPorDesactivar(null)}
         />
       )}
     </section>

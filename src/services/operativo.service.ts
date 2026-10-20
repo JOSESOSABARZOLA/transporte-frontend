@@ -16,10 +16,14 @@ import httpClient from "../api/httpClient";
 import type {
   ActualizarOperativo,
   AsignarPersonal,
+  CoincidenciaTransporte,
+  ConteoFormulario,
   CrearAdicional,
   CrearOperativo,
+  FiltroCoincidencias,
   FiltroOperativos,
   Operativo,
+  RangoConsulta,
   RespuestaPaginada,
   ResultadoBaja,
 } from "../interfaces/Operativo";
@@ -31,6 +35,42 @@ const consultar = async (
   const { data } = await httpClient.get<RespuestaPaginada<Operativo>>(
     "/operativos",
     { params: filtro },
+  );
+  return data;
+};
+
+/**
+ * `GET /operativos/rango` (2026-10-13). Fecha del cuadro vigente y rango máximo de P-02, para
+ * validar el rango Desde–Hasta antes de consultar.
+ */
+const rango = async (): Promise<RangoConsulta> => {
+  const { data } = await httpClient.get<RangoConsulta>("/operativos/rango");
+  return data;
+};
+
+/**
+ * `GET /operativos/conteo?fecha=` (2026-10-16). El «N hoy» de cada formulario permitido, con la
+ * misma visibilidad que el listado (PER-02). Una fecha sin cuadro llega con todo en 0.
+ */
+const conteo = async (fecha: string): Promise<ConteoFormulario[]> => {
+  const { data } = await httpClient.get<ConteoFormulario[]>("/operativos/conteo", {
+    params: { fecha },
+  });
+  return data;
+};
+
+/**
+ * `GET /operativos/coincidencias-transporte` (2026-10-19, compartir unidad). Operativos del PROPIO
+ * ámbito del rol (RN-48) en el mismo punto, día y horario, con transporte DAF. `signal` cancela la
+ * consulta anterior cuando la captura cambia antes de que llegue la respuesta.
+ */
+const coincidenciasTransporte = async (
+  filtro: FiltroCoincidencias,
+  signal?: AbortSignal,
+): Promise<CoincidenciaTransporte[]> => {
+  const { data } = await httpClient.get<CoincidenciaTransporte[]>(
+    "/operativos/coincidencias-transporte",
+    { params: filtro, signal },
   );
   return data;
 };
@@ -164,21 +204,45 @@ const retirarPersonal = async (
  * `PATCH /operativos/:id/personal/:funcionarioId`. Cambia el turno de una persona ya
  * asignada (RN-66). El servidor re-deriva la ventana del operativo y devuelve el operativo
  * con sus alertas al día. Las dos horas son obligatorias.
+ *
+ * Si el nuevo turno mueve la ventana de un operativo con transporte asignado, el servidor responde
+ * 409 `CAMBIO_CON_TRANSPORTE` (2026-10-14): se reenvía con `confirmarLiberacion` tras preguntar
+ * (`useConfirmarLiberacion`).
  */
 const actualizarTurnoPersonal = async (
   id: number,
   funcionarioId: number,
   turno: { horaInicio: string; horaFin: string },
+  confirmarLiberacion = false,
 ): Promise<Operativo> => {
   const { data } = await httpClient.patch<Operativo>(
     `/operativos/${id}/personal/${funcionarioId}`,
-    turno,
+    confirmarLiberacion ? { ...turno, confirmarLiberacion: true } : turno,
+  );
+  return data;
+};
+
+/**
+ * Fija o quita el trámite de Inspección de una persona ya asignada (2026-10-07). `null` lo quita.
+ * El servidor vuelve a preguntar a Inspección antes de guardarlo: aquí solo viaja el código.
+ */
+const fijarTramitePersonal = async (
+  id: number,
+  funcionarioId: number,
+  codigoTramite: string | null,
+): Promise<Operativo> => {
+  const { data } = await httpClient.put<Operativo>(
+    `/operativos/${id}/personal/${funcionarioId}/tramite`,
+    { codigoTramite },
   );
   return data;
 };
 
 export const OperativoService = {
   consultar,
+  rango,
+  conteo,
+  coincidenciasTransporte,
   obtener,
   registrar,
   crearAdicional,
@@ -189,4 +253,5 @@ export const OperativoService = {
   reemplazarPersonal,
   retirarPersonal,
   actualizarTurnoPersonal,
+  fijarTramitePersonal,
 };

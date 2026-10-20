@@ -33,6 +33,7 @@ import type {
   PuntoEncuentro,
   TipoControl,
   Zonal,
+  ZonalAdmin,
 } from "../interfaces/Formulario";
 
 /** `GET /formularios/permitidos`. Los que el rol puede abrir, con su acceso. */
@@ -67,7 +68,6 @@ const obtenerPuntos = async (
   return data;
 };
 
-/** `GET /zonales`. Las once filas: las diez zonales más el ámbito distrital. */
 /**
  * `GET /zonales`. Por omisión solo las vigentes; `incluirInactivas` trae también las
  * desactivadas, que es lo que P-08 necesita para poder reactivarlas.
@@ -109,164 +109,175 @@ const obtenerMiVentana = async (
 // ─────────────────── Administración de catálogos (P-08) ───────────────────
 
 /**
- * `CRUD /administracion/catalogos`. Solo el ADMINISTRADOR.
+ * `CRUD /administracion/catalogos/:codigo/…`. Solo con `catalogos:administrar`.
  *
- * **No hay `GET` de administración**, y eso condiciona P-08: para leer se usa
- * `GET /formularios/:codigo/catalogos`, que devuelve únicamente los valores **activos**.
- * Ver PV-36.
+ * CADA FORMULARIO TIENE SU CONFIGURACIÓN PROPIA (2026-10-13): todo cuelga del código del
+ * formulario que se administra. Un valor de otro formulario responde 404 —para este no existe—,
+ * y ya no hay copias ni vínculos entre formularios.
  *
- * `DELETE` DESACTIVA, NO BORRA (RF-058). La ruta es la que el administrador espera y la
- * respuesta explica qué ocurrió realmente, con cuántos operativos anteriores usan el
- * valor.
+ * `DELETE …/:id` DESACTIVA (RF-058) y responde cuántos operativos anteriores lo usan;
+ * `DELETE …/:id/permanente` BORRA, y solo si nunca se usó en ese formulario (409 si no).
  */
-const crearPunto = async (punto: CrearPunto): Promise<PuntoEncuentro> => {
-  const { data } = await httpClient.post<PuntoEncuentro>(
-    "/administracion/catalogos/puntos",
-    punto,
-  );
+const rutaAdmin = (codigo: string, resto: string) =>
+  `/administracion/catalogos/${encodeURIComponent(codigo)}/${resto}`;
+
+const crearPunto = async (codigo: string, punto: CrearPunto): Promise<PuntoEncuentro> => {
+  const { data } = await httpClient.post<PuntoEncuentro>(rutaAdmin(codigo, "puntos"), punto);
   return data;
 };
 
 const actualizarPunto = async (
+  codigo: string,
   id: number,
   cambios: ActualizarPunto,
 ): Promise<PuntoEncuentro> => {
   const { data } = await httpClient.put<PuntoEncuentro>(
-    `/administracion/catalogos/puntos/${id}`,
+    rutaAdmin(codigo, `puntos/${id}`),
     cambios,
   );
   return data;
 };
 
-const desactivarPunto = async (id: number): Promise<BajaCatalogo> => {
-  const { data } = await httpClient.delete<BajaCatalogo>(
-    `/administracion/catalogos/puntos/${id}`,
-  );
+const desactivarPunto = async (codigo: string, id: number): Promise<BajaCatalogo> => {
+  const { data } = await httpClient.delete<BajaCatalogo>(rutaAdmin(codigo, `puntos/${id}`));
   return data;
 };
 
 /**
- * Alta de zonal. El código lo autogenera el servidor del nombre; aquí solo viaja el
- * nombre. La reactivación es un `PUT` con `activo: true`, como en los demás catálogos.
+ * `GET …/:codigo/zonales`. Las zonales DEL FORMULARIO —vigentes y desactivadas— con su veredicto
+ * de borrado. Su `id` es el de la zona de la ciudad. `listarZonales` sigue sirviendo a personal,
+ * flota y cobertura, que trabajan con las zonas de la ciudad.
  */
-const crearZonal = async (zonal: CrearZonal): Promise<Zonal> => {
-  const { data } = await httpClient.post<Zonal>(
-    "/administracion/catalogos/zonales",
-    zonal,
-  );
+const listarZonalesAdmin = async (codigo: string): Promise<ZonalAdmin[]> => {
+  const { data } = await httpClient.get<ZonalAdmin[]>(rutaAdmin(codigo, "zonales"));
+  return data;
+};
+
+/** `GET …/:codigo/zonas-disponibles`. Las zonas de la ciudad que el formulario aún no tiene. */
+const zonasDisponibles = async (codigo: string): Promise<Zonal[]> => {
+  const { data } = await httpClient.get<Zonal[]>(rutaAdmin(codigo, "zonas-disponibles"));
+  return data;
+};
+
+/**
+ * Alta de una zonal del formulario: la zona de la ciudad y el nombre. La reactivación es un
+ * `PUT` con `activo: true`, como en los demás catálogos.
+ */
+const crearZonal = async (codigo: string, zonal: CrearZonal): Promise<ZonalAdmin> => {
+  const { data } = await httpClient.post<ZonalAdmin>(rutaAdmin(codigo, "zonales"), zonal);
   return data;
 };
 
 const actualizarZonal = async (
-  id: number,
+  codigo: string,
+  zonaId: number,
   cambios: ActualizarZonal,
 ): Promise<Zonal> => {
-  const { data } = await httpClient.put<Zonal>(
-    `/administracion/catalogos/zonales/${id}`,
-    cambios,
-  );
+  const { data } = await httpClient.put<Zonal>(rutaAdmin(codigo, `zonales/${zonaId}`), cambios);
   return data;
 };
 
-const desactivarZonal = async (id: number): Promise<BajaCatalogo> => {
-  const { data } = await httpClient.delete<BajaCatalogo>(
-    `/administracion/catalogos/zonales/${id}`,
-  );
+/** Desactiva la zonal y sus puntos vigentes DE ESTE formulario; los demás no se tocan. */
+const desactivarZonal = async (codigo: string, zonaId: number): Promise<BajaCatalogo> => {
+  const { data } = await httpClient.delete<BajaCatalogo>(rutaAdmin(codigo, `zonales/${zonaId}`));
   return data;
 };
 
 const crearTipoControl = async (
+  codigo: string,
   tipo: CrearTipoControl,
 ): Promise<TipoControl> => {
-  const { data } = await httpClient.post<TipoControl>(
-    "/administracion/catalogos/tipos-control",
-    tipo,
-  );
+  const { data } = await httpClient.post<TipoControl>(rutaAdmin(codigo, "tipos-control"), tipo);
   return data;
 };
 
 const actualizarTipoControl = async (
+  codigo: string,
   id: number,
   cambios: ActualizarTipoControl,
 ): Promise<TipoControl> => {
   const { data } = await httpClient.put<TipoControl>(
-    `/administracion/catalogos/tipos-control/${id}`,
+    rutaAdmin(codigo, `tipos-control/${id}`),
     cambios,
   );
   return data;
 };
 
-const desactivarTipoControl = async (id: number): Promise<BajaCatalogo> => {
+const desactivarTipoControl = async (codigo: string, id: number): Promise<BajaCatalogo> => {
   const { data } = await httpClient.delete<BajaCatalogo>(
-    `/administracion/catalogos/tipos-control/${id}`,
+    rutaAdmin(codigo, `tipos-control/${id}`),
   );
   return data;
 };
 
 const crearInstitucion = async (
+  codigo: string,
   institucion: CrearInstitucion,
 ): Promise<Institucion> => {
   const { data } = await httpClient.post<Institucion>(
-    "/administracion/catalogos/instituciones",
+    rutaAdmin(codigo, "instituciones"),
     institucion,
   );
   return data;
 };
 
 const actualizarInstitucion = async (
+  codigo: string,
   id: number,
   cambios: ActualizarInstitucion,
 ): Promise<Institucion> => {
   const { data } = await httpClient.put<Institucion>(
-    `/administracion/catalogos/instituciones/${id}`,
+    rutaAdmin(codigo, `instituciones/${id}`),
     cambios,
   );
   return data;
 };
 
-const desactivarInstitucion = async (id: number): Promise<BajaCatalogo> => {
+const desactivarInstitucion = async (codigo: string, id: number): Promise<BajaCatalogo> => {
   const { data } = await httpClient.delete<BajaCatalogo>(
-    `/administracion/catalogos/instituciones/${id}`,
+    rutaAdmin(codigo, `instituciones/${id}`),
   );
   return data;
 };
 
 /**
  * BAJA FÍSICA (eliminación definitiva) de un valor de catálogo (2026-09-24). Borra la fila,
- * y SOLO si nunca se usó en un operativo (y, en la zonal, si no tiene puntos): si está en uso,
- * el servidor responde 409 con el motivo, que se muestra tal cual (regla 7). Para lo usado, se
- * desactiva. Cada `eliminar*` pega a `.../:id/permanente`, distinto del `DELETE` que desactiva.
+ * y SOLO si nunca se usó en un operativo de ese formulario (y, en la zonal, si no tiene puntos):
+ * si está en uso, el servidor responde 409 con el motivo, que se muestra tal cual (regla 7). En
+ * la zonal se borra solo la del formulario: la zona de la ciudad queda.
  */
 type EliminacionCatalogo = { id: number; mensaje: string };
 
-const eliminarZonal = async (id: number): Promise<EliminacionCatalogo> => {
+const eliminarZonal = async (codigo: string, zonaId: number): Promise<EliminacionCatalogo> => {
   const { data } = await httpClient.delete<EliminacionCatalogo>(
-    `/administracion/catalogos/zonales/${id}/permanente`,
+    rutaAdmin(codigo, `zonales/${zonaId}/permanente`),
   );
   return data;
 };
 
-const eliminarPunto = async (id: number): Promise<EliminacionCatalogo> => {
+const eliminarPunto = async (codigo: string, id: number): Promise<EliminacionCatalogo> => {
   const { data } = await httpClient.delete<EliminacionCatalogo>(
-    `/administracion/catalogos/puntos/${id}/permanente`,
+    rutaAdmin(codigo, `puntos/${id}/permanente`),
   );
   return data;
 };
 
 const eliminarTipoControl = async (
+  codigo: string,
   id: number,
 ): Promise<EliminacionCatalogo> => {
   const { data } = await httpClient.delete<EliminacionCatalogo>(
-    `/administracion/catalogos/tipos-control/${id}/permanente`,
+    rutaAdmin(codigo, `tipos-control/${id}/permanente`),
   );
   return data;
 };
 
 const eliminarInstitucion = async (
+  codigo: string,
   id: number,
 ): Promise<EliminacionCatalogo> => {
   const { data } = await httpClient.delete<EliminacionCatalogo>(
-    `/administracion/catalogos/instituciones/${id}/permanente`,
+    rutaAdmin(codigo, `instituciones/${id}/permanente`),
   );
   return data;
 };
@@ -315,6 +326,8 @@ export const CatalogoCuadroService = {
   obtenerCatalogosAdmin,
   obtenerPuntos,
   listarZonales,
+  listarZonalesAdmin,
+  zonasDisponibles,
   obtenerMiVentana,
   crearZonal,
   actualizarZonal,

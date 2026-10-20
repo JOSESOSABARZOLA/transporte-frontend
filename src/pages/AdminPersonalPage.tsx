@@ -10,25 +10,39 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * ES LA ÚNICA PANTALLA QUE MUESTRA CÉDULAS Y TELÉFONOS.
  *
- * `FuncionarioResponseDto` es el único contrato del sistema que los devuelve, y su
- * controlador lleva `@Roles(ADMINISTRADOR)`. El resto del módulo trabaja con nombre y
- * área: `PersonaElegibleResponseDto` **no tiene** teléfono, y esa ausencia es lo que
- * impide que se filtre por descuido en una pantalla nueva (RN-34).
+ * `FuncionarioResponseDto` es el único contrato del sistema que los devuelve. El resto del
+ * módulo trabaja con nombre y área: `PersonaElegibleResponseDto` **no tiene** teléfono, y esa
+ * ausencia es lo que impide que se filtre por descuido en una pantalla nueva (RN-34).
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * DAR DE BAJA NO BORRA, Y LA CONFIRMACIÓN LO DICE CON NÚMEROS. El histórico de quién
- * salió en cada operativo depende de la ficha, y la rotación del personal es mensual:
- * quien sale hoy puede reingresar el mes que viene con su historial intacto. La respuesta
- * del servidor trae cuántos operativos conserva, y se muestra.
+ * REDISEÑO DEL 2026-10-08:
+ *   · Abre en «Activos» (selector segmentado Activos | Inactivos | Todos) con un solo contador:
+ *     «N funcionarios · X activos de Y en el maestro». Antes abría con todos y decía «68 de 68»
+ *     aunque 38 fueran bajas. Y es de SUS direcciones; el directorio de Auth mira toda la AMC.
+ *   · 10 por página, como Mis operativos. La columna «Estado» sale de UNA consulta de ausencias de
+ *     todo el maestro (antes, una por fila).
+ *   · Avisos breves abajo a la derecha (`toast`, `utils/mensaje.ts`) en lugar de `ModalExito`, y la fila
+ *     recién creada o editada se resalta en verde `MS_RESALTADO` ms en su página.
+ *   · Baja con su modal centrado (motivo obligatorio) y REACTIVAR también con confirmación.
+ *
+ * DAR DE BAJA NO BORRA. El histórico de quién salió en cada operativo depende de la ficha, y
+ * quien sale hoy puede reingresar con su historial intacto. El servidor dice cuántos operativos
+ * conserva, y se muestra.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import ModalExito from "../components/common/ModalExito.tsx";
 import ModalBajaConMotivo from "../components/personal/ModalBajaConMotivo.tsx";
-import PanelAusencias from "../components/personal/PanelAusencias.tsx";
+import MensajeModal from "../components/common/MensajeModal.tsx";
+import PanelAusencias, {
+  type ValoresAusencia,
+} from "../components/personal/PanelAusencias.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
 import Paginacion from "../components/common/Paginacion.tsx";
+import SelectorSegmentado from "../components/forms/SelectorSegmentado.tsx";
 import DrawerFlujoAlta, {
+  type OrigenAlta,
   type ResultadoGuardado,
 } from "../components/personal/DrawerFlujoAlta.tsx";
 import type { ValoresFichaAlta } from "../components/personal/PasoFichaFuncionario.tsx";
@@ -38,18 +52,20 @@ import type { AreaPersonal, Zonal } from "../interfaces/Formulario.ts";
 import MatrizCobertura from "../components/personal/MatrizCobertura.tsx";
 import type { FilaDirectorio } from "../interfaces/DirectorioAuth.ts";
 import type {
+  AusenciaDelMaestro,
   BajaFuncionario,
   Disponibilidad,
-  EstadoDisponibilidad,
   Funcionario,
   TipoContrato,
 } from "../interfaces/Personal.ts";
 import { PersonalService } from "../services/personal.service.ts";
 import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { DatetimeUtil } from "../utils/datetime.util.ts";
-import { paginar } from "../utils/listadoOperativos.util.ts";
+import { MS_RESALTADO, paginar } from "../utils/listadoOperativos.util.ts";
+import { ausenciaAMostrar, fechaLarga } from "../utils/ausencias.util.ts";
 import {
+  FILTROS_INICIALES,
   NOMBRE_AREA,
   NOMBRE_CONTRATO,
   filtrarPersonal,
@@ -57,75 +73,29 @@ import {
   nombreCompleto,
   type FiltrosPersonal,
 } from "../utils/personal.util.ts";
+import { toast } from "../utils/mensaje.ts";
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * UNA SOLA VISTA, Y EL DIRECTORIO COMO PRIMER PASO DEL ALTA. 2026-08-24.
- *
- * Hasta hoy este panel tenía dos vistas conmutables —«Maestro» y «Directorio de Auth»— y
- * «Nuevo funcionario» abría una ficha en blanco. Se retiró la pestaña a petición expresa:
- * el directorio de Auth **es** la base de usuarios de la institución, así que el alta
- * empieza eligiendo a alguien de allí y no tecleando desde cero lo que ya está escrito.
- *
- * Lo que NO cambia, porque `CLAUDE.md` §7 lo exige: **el maestro sigue administrándose
- * igual aunque Auth no responda**. La ventana del directorio lleva siempre la salida
- * «Crear Funcionario Operativo», y `POST /administracion/personal` no toca Auth por ningún lado.
- *
- * El directorio se sigue pidiendo **solo cuando hace falta** —al abrir la ventana, no al
- * entrar a la pantalla— y se conserva en memoria: la segunda vez la ventana abre sin
- * esperar a Auth, y «Actualizar» es lo que vuelve a preguntar.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+/** Opciones del selector de estado. «Todos» es el valor vacío del filtro. */
+const OPCIONES_ESTADO = [
+  { valor: "activos", nombre: "Activos" },
+  { valor: "inactivos", nombre: "Inactivos" },
+  { valor: "", nombre: "Todos" },
+];
+
+/** Códigos del servidor que dicen «Auth no tiene a esta persona o no responde»: salida manual. */
+const SIN_AUTH = new Set(["PERSONA_NO_ENCONTRADA_EN_AUTH", "AUTH_NO_DISPONIBLE"]);
+
 const AdminPersonalPage = () => {
   /**
-   * ═══════════════════════════════════════════════════════════════════════════════
-   * QUÉ ÁREAS PUEDE DAR DE ALTA QUIEN ESTÁ MIRANDO. 2026-09-01, tarde.
-   *
-   * El negocio repartió el maestro por áreas: el administrador de la DMIP crea «Unidad de
-   * Operativos», «Inspector General» e «Inspector Técnico»; **«Personal de Instrucción» es
-   * solo del DMIT**. El desplegable del formulario se acota con esto.
-   *
-   * ESTE ESTADO SUSTITUYE AL DE DIRECCIONES, que se retiró esa misma mañana al quitar el
-   * campo «Dirección» del formulario. Entonces quedó anotado que haría falta «el día que
-   * esta pantalla se abra a los administradores de área»; ese día es hoy.
-   *
-   * NACE VACÍO Y NO CON LAS CUATRO. Mientras la respuesta no llega no se ofrece ninguna:
-   * una lista completa por omisión haría que un alta rápida cayera en un área ajena si
-   * alguien fuera más rápido que la red, y el servidor la rechazaría con un 403 que quien
-   * captura no sabría explicarse.
-   * ═══════════════════════════════════════════════════════════════════════════════
+   * QUÉ ÁREAS PUEDE DAR DE ALTA QUIEN ESTÁ MIRANDO (2026-09-01). Nace vacío y no con las cuatro:
+   * una lista completa por omisión haría que un alta rápida cayera en un área ajena.
    */
   const [areasQueGestiona, setAreasQueGestiona] = useState<AreaPersonal[]>([]);
-  // Catálogo de zonales para la ficha del personal DMIP (2026-09-21).
   const [zonales, setZonales] = useState<Zonal[]>([]);
 
   /**
-   * ═══════════════════════════════════════════════════════════════════════════════
-   * SI QUIEN MIRA ADMINISTRA EL MAESTRO. Reescrito el 2026-09-02.
-   *
-   * PREGUNTABA POR UN ROL —`rolCodes.includes(ADMINISTRADOR_DMIP)`— Y ERA UN DEFECTO. Al
-   * repartirse el maestro entre dos administradores, el del DMIT entraba a la pantalla y
-   * **no le aparecía «Nuevo funcionario»**: la ruta lo admitía, el servidor le habría
-   * aceptado el alta, y la única que decía que no era esta línea. Un rol quemado en el
-   * navegador que contradecía al servidor.
-   *
-   * AHORA SE DERIVA DEL ALCANCE: quien alcanza al menos un área administra, y qué áreas
-   * alcanza lo dice el servidor contra `t_rol_direccion`. No aparece ningún rol escrito, y
-   * el día que el negocio dé personal a un cuarto administrador esta pantalla se entera
-   * sola.
-   *
-   * ES LA MISMA PREGUNTA QUE YA RESPONDE EL DESPLEGABLE DE ÁREA, y por eso sale del mismo
-   * dato: no puede haber un formulario que ofrezca tres áreas y un botón que diga que no
-   * se administra nada.
-   *
-   * MIENTRAS LA RESPUESTA NO LLEGA ES `false`, y es correcto: pintar el botón antes de
-   * saberlo dejaría abrir un formulario cuyo desplegable de área estaría vacío.
-   *
-   * ESTO NO ES LA AUTORIZACIÓN, ES LA PRESENTACIÓN. Quien decide es el servidor; si
-   * alguien llamara al endpoint a mano recibiría un 403 igualmente. Lo que no puede hacer
-   * no se pinta —y no se pinta apagado—: un botón deshabilitado insinúa que en otro
-   * momento serviría.
-   * ═══════════════════════════════════════════════════════════════════════════════
+   * SI QUIEN MIRA ADMINISTRA EL MAESTRO (2026-09-02): se deriva del alcance que dice el servidor
+   * contra `t_rol_direccion`, no de un rol quemado. Es presentación, no autorización.
    */
   const puedeAdministrar = areasQueGestiona.length > 0;
 
@@ -133,93 +103,88 @@ const AdminPersonalPage = () => {
 
   const [personal, setPersonal] = useState<Funcionario[]>([]);
   const [cargando, setCargando] = useState(true);
-
-  /** Ausencias por funcionario. La clave presente significa «ya consultado». */
-  const [ausencias, setAusencias] = useState<Record<number, Disponibilidad[]>>(
-    {},
+  /** Ausencias en curso y próximas de todo el maestro (una consulta). */
+  const [ausenciasMaestro, setAusenciasMaestro] = useState<AusenciaDelMaestro[]>(
+    [],
   );
 
-  const [filtros, setFiltros] = useState<FiltrosPersonal>({});
+  const [filtros, setFiltros] = useState<FiltrosPersonal>(FILTROS_INICIALES);
   const [pagina, setPagina] = useState(0);
-  // 25 filas por página por defecto (2026-09-30): el maestro es pequeño y se recorre mejor de 25.
-  const [tamanio, setTamanio] = useState(25);
+  // 10 por página, como Mis operativos (2026-10-08).
+  const [tamanio, setTamanio] = useState(10);
 
   /** La ventana del directorio, que es por donde empieza un alta. */
   const [eligiendoDeAuth, setEligiendoDeAuth] = useState(false);
   const [directorio, setDirectorio] = useState<FilaDirectorio[]>([]);
   const [cargandoDirectorio, setCargandoDirectorio] = useState(false);
-  /**
-   * Que Auth no esté es un **estado**, no un error de la petición: el servidor responde
-   * `{ disponible, motivo, personas }` y nunca un 503. Ver `DirectorioAuth.ts`.
-   */
+  /** Que Auth no esté es un ESTADO (`{ disponible, motivo, personas }`), no un error. */
   const [directorioDisponible, setDirectorioDisponible] = useState(true);
   const [motivoDirectorio, setMotivoDirectorio] = useState<string | null>(null);
 
-  // ALTA y EDICIÓN comparten el cajón (`DrawerFlujoAlta`): el alta cuando `eligiendoDeAuth`, la
-  // edición cuando `editando` tiene una ficha. Ya no hay `ModalFuncionario`.
+  // ALTA y EDICIÓN comparten el cajón (`DrawerFlujoAlta`).
   const [editando, setEditando] = useState<Funcionario | null>(null);
   const [enAusencias, setEnAusencias] = useState<Funcionario | null>(null);
+  /** Ausencias de la persona del modal (con motivo y las pasadas). `null` = consultando. */
+  const [ausenciasDe, setAusenciasDe] = useState<Disponibilidad[] | null>(null);
   const [porDarDeBaja, setPorDarDeBaja] = useState<Funcionario | null>(null);
+  const [porReactivar, setPorReactivar] = useState<Funcionario | null>(null);
   const [procesando, setProcesando] = useState(false);
-  // Fila recién guardada/editada, para resaltarla tras navegar a su página (ajuste 4).
   const [resaltadoId, setResaltadoId] = useState<number | null>(null);
 
   const [avisoAusencia, setAvisoAusencia] = useState<string | null>(null);
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  /** Aviso breve, abajo a la derecha. */
 
-  /** Siempre con inactivos: el caso 4 pide mostrarlos atenuados, no esconderlos. */
+  /** Ausencias del maestro. Un fallo no tumba la lista: solo se pierde el distintivo. */
+  const cargarAusenciasMaestro = useCallback(async () => {
+    try {
+      setAusenciasMaestro(await PersonalService.listarAusenciasDelMaestro());
+    } catch {
+      setAusenciasMaestro([]);
+    }
+  }, []);
+
+  /** Siempre con inactivos: el filtro de estado decide qué se ve. */
   const cargar = useCallback(async () => {
     setCargando(true);
 
     try {
-      // Las dos juntas: la pantalla no sirve sin el maestro, y el alta no sirve sin saber
-      // qué áreas puede crear quien mira.
       const [fichas, areas, zonalesDelCatalogo] = await Promise.all([
         PersonalService.listar(true),
         PersonalService.areasQueGestiona(),
-        // Para el campo Zonal de la ficha (personal DMIP). Si falla, el maestro sigue sirviendo.
+        // Para el campo Zonal de la ficha. Si falla, el maestro sigue sirviendo.
         CatalogoCuadroService.listarZonales().catch(() => [] as Zonal[]),
+        cargarAusenciasMaestro(),
       ]);
       setPersonal(fichas);
       setAreasQueGestiona(areas);
       setZonales(zonalesDelCatalogo);
       setAviso(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
       setPersonal([]);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      setAviso(avisoDeFallo(fallo));
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [cargarAusenciasMaestro]);
 
   useEffect(() => {
     void cargar();
   }, [cargar]);
 
   /**
-   * El directorio de Auth. **No se pide al arrancar**, sino al abrir la ventana del alta.
-   *
-   * Cuesta una consulta a otro sistema —hasta cinco segundos de espera máxima—, y quien
-   * entra a corregir un teléfono del maestro no tiene por qué pagarla. Su fallo se anuncia
-   * **dentro de la ventana** y no en el aviso general: el maestro sigue estando bien.
+   * El directorio de Auth: se pide al abrir la ventana del alta, no al entrar. Su fallo se anuncia
+   * DENTRO de la ventana; el maestro sigue estando bien.
    */
   const cargarDirectorio = useCallback(async () => {
     setCargandoDirectorio(true);
 
     try {
-      // Sesión sin token de Auth, Auth caído o ambiente sin `AUTH_API_URL`: el servidor
-      // los distingue, redacta cuál es y **no lanza**. Se muestra tal cual (regla 7).
       const respuesta = await PersonalService.consultarDirectorio();
-
       setDirectorio(respuesta.personas);
       setDirectorioDisponible(respuesta.disponible);
       setMotivoDirectorio(respuesta.motivo);
     } catch (fallo: unknown) {
-      // Aquí solo llegan los fallos que **no** son de Auth: nuestro backend caído, un 403.
       const error = presentarError(fallo);
       setDirectorio([]);
       setDirectorioDisponible(false);
@@ -229,20 +194,12 @@ const AdminPersonalPage = () => {
     }
   }, []);
 
-  /**
-   * Una sola vez por visita: se conserva lo consultado y «Actualizar» vuelve a preguntar.
-   *
-   * Es lo que hace que la ventana abra al instante a partir de la segunda vez, en lugar de
-   * esperar a Auth en cada clic de «Nuevo funcionario».
-   */
+  /** Una sola vez por visita: se conserva lo consultado y «Actualizar» vuelve a preguntar. */
   const directorioPedido = useRef(false);
 
-  /** «Nuevo funcionario»: el alta empieza en el directorio. */
   const abrirDirectorio = useCallback(() => {
     setEligiendoDeAuth(true);
-
     if (directorioPedido.current) return;
-
     directorioPedido.current = true;
     void cargarDirectorio();
   }, [cargarDirectorio]);
@@ -252,25 +209,17 @@ const AdminPersonalPage = () => {
     [personal, filtros],
   );
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════════
-   * LAS ÁREAS DEL DESPLEGABLE SALEN DE LO QUE HAY, NO DEL ENUMERADO. PER-09, 27-AGO.
-   *
-   * Desde que el servidor acota el maestro a la dirección de quien consulta, a un rol
-   * departamental le llega **una sola área**. Seguir ofreciendo las cuatro dejaría tres
-   * opciones que vacían la tabla sin explicar por qué, y quien las pulsara concluiría que
-   * el sistema perdió a su gente.
-   *
-   * Se derivan del maestro **sin filtrar** —`personal`, no `coincidentes`—: si salieran de
-   * lo filtrado, elegir un área dejaría el desplegable con una sola opción y no habría
-   * forma de volver atrás.
-   * ═══════════════════════════════════════════════════════════════════════════════
-   */
+  /** Las áreas del desplegable salen del maestro SIN filtrar (PER-09). */
   const areasPresentes = useMemo(
     () =>
       (Object.keys(NOMBRE_AREA) as AreaPersonal[]).filter((area) =>
         personal.some((funcionario) => funcionario.area === area),
       ),
+    [personal],
+  );
+
+  const activos = useMemo(
+    () => personal.filter((funcionario) => funcionario.activo).length,
     [personal],
   );
 
@@ -283,106 +232,69 @@ const AdminPersonalPage = () => {
     if (pagina0.pagina !== pagina) setPagina(pagina0.pagina);
   }, [pagina0.pagina, pagina]);
 
-  /**
-   * Ausencias de las fichas que están a la vista, y solo de esas.
-   *
-   * El contrato entrega los periodos **por funcionario**: no hay endpoint que devuelva
-   * las de la institución. Pedirlas para las cincuenta y dos fichas del maestro sería
-   * cincuenta y dos peticiones para pintar diez distintivos. Se piden las de la página
-   * actual y se recuerdan, así que paginar hacia atrás no vuelve a preguntar. Ver PV-35.
-   */
-  const visibles = pagina0.filas;
+  /** La ausencia a mostrar de cada ficha: la en curso o, si no, la próxima. */
+  const ausenciaPorFicha = useMemo(() => {
+    const porFicha = new Map<number, AusenciaDelMaestro[]>();
+    for (const ausencia of ausenciasMaestro) {
+      const lista = porFicha.get(ausencia.funcionarioId) ?? [];
+      lista.push(ausencia);
+      porFicha.set(ausencia.funcionarioId, lista);
+    }
+    const resultado: Record<number, AusenciaDelMaestro> = {};
+    for (const [id, lista] of porFicha) {
+      const elegida = ausenciaAMostrar(lista, hoy);
+      if (elegida) resultado[id] = elegida;
+    }
+    return resultado;
+  }, [ausenciasMaestro, hoy]);
 
-  useEffect(() => {
-    const pendientes = visibles.filter(
-      (funcionario) => !(funcionario.id in ausencias),
-    );
-    if (pendientes.length === 0) return;
-
-    let vigente = true;
-
-    void Promise.all(
-      pendientes.map(async (funcionario) => {
-        try {
-          return [
-            funcionario.id,
-            await PersonalService.listarAusencias(funcionario.id),
-          ] as const;
-        } catch {
-          // Un fallo aquí no puede tumbar el maestro: la fila queda sin distintivo de
-          // situación, que es menos malo que una pantalla en blanco.
-          return [funcionario.id, [] as Disponibilidad[]] as const;
-        }
-      }),
-    ).then((resultados) => {
-      if (!vigente) return;
-      setAusencias((actuales) => ({
-        ...actuales,
-        ...Object.fromEntries(resultados),
-      }));
-    });
-
-    return () => {
-      vigente = false;
-    };
-  }, [visibles, ausencias]);
-
-  const refrescarAusencias = useCallback(async (funcionarioId: number) => {
-    const suyas = await PersonalService.listarAusencias(funcionarioId);
-    setAusencias((actuales) => ({ ...actuales, [funcionarioId]: suyas }));
-    return suyas;
-  }, []);
-
-  /** Cierra el cajón (sirva al ALTA o a la EDICIÓN) y descarta su estado. */
   const cerrarCajon = useCallback(() => {
     setEligiendoDeAuth(false);
     setEditando(null);
   }, []);
 
-  /** Valores del cajón a partir de una ficha existente, para editarla. */
-  const aValoresFicha = (funcionario: Funcionario): ValoresFichaAlta => ({
-    cedula: funcionario.cedula,
-    apellidos: funcionario.apellidos,
-    nombres: funcionario.nombres,
-    telefono: funcionario.telefono ?? "",
-    correoInstitucional: funcionario.correoInstitucional ?? "",
-    correoPersonal: funcionario.correoPersonal ?? "",
-    cargo: funcionario.cargo ?? "",
-    area: funcionario.area,
-    tipoContrato: funcionario.tipoContrato,
-    zonalId: funcionario.zonalId != null ? String(funcionario.zonalId) : "",
-  });
-
   /**
-   * Tras guardar/editar (ajuste 4): si los filtros ocultan la ficha, se LIMPIAN para que se vea; se
-   * fija el resaltado y un efecto navega a su página cuando la lista se asiente.
+   * Valores del cajón a partir de la ficha que se edita. MEMOIZADOS: el formulario usa
+   * `enableReinitialize`, y un objeto nuevo en cada render de la página lo reiniciaría.
    */
+  const valoresEdicion = useMemo<ValoresFichaAlta | null>(
+    () =>
+      editando
+        ? {
+            cedula: editando.cedula,
+            apellidos: editando.apellidos,
+            nombres: editando.nombres,
+            telefono: editando.telefono ?? "",
+            correoInstitucional: editando.correoInstitucional ?? "",
+            correoPersonal: editando.correoPersonal ?? "",
+            cargo: editando.cargo ?? "",
+            area: editando.area,
+            tipoContrato: editando.tipoContrato,
+            zonalId: editando.zonalId != null ? String(editando.zonalId) : "",
+          }
+        : null,
+    [editando],
+  );
+
+  /** Tras guardar: si los filtros ocultan la ficha, vuelven a los iniciales; se resalta la fila. */
   const resaltarFicha = useCallback(
     (funcionario: Funcionario) => {
-      if (filtrarPersonal([funcionario], filtros).length === 0) setFiltros({});
+      if (filtrarPersonal([funcionario], filtros).length === 0) {
+        setFiltros(FILTROS_INICIALES);
+      }
       setResaltadoId(funcionario.id);
     },
     [filtros],
   );
 
-  /**
-   * Guardar DESDE EL CAJÓN: crea (alta) o actualiza (edición) según `editando`. Devuelve el
-   * resultado enrutado para que el cajón lo muestre donde toca: éxito (con o sin «crear otro»),
-   * error de cédula al campo, o aviso general. Sin «crear otro», la página abre su `ModalExito`,
-   * refresca y resalta la fila.
-   */
+  /** Crea (alta) o actualiza (edición) desde el cajón y devuelve el resultado enrutado. */
   const guardarDesdeDrawer = useCallback(
     async (
       valores: ValoresFichaAlta,
-      { crearOtro }: { crearOtro: boolean },
+      { crearOtro, origen }: { crearOtro: boolean; origen: OrigenAlta },
     ): Promise<ResultadoGuardado> => {
-      // ZONAL SOLO PARA EL PERSONAL DMIP: para el resto va `undefined` (no se envía).
-      const zonalId =
-        valores.area !== "" &&
-        ["OPERATIVOS", "GENERAL", "TECNICO"].includes(valores.area) &&
-        valores.zonalId !== ""
-          ? Number(valores.zonalId)
-          : undefined;
+      // Vacía va `undefined`: no se envía y el servidor conserva la que hubiera.
+      const zonalId = valores.zonalId !== "" ? Number(valores.zonalId) : undefined;
 
       const datos = {
         apellidos: valores.apellidos,
@@ -397,14 +309,17 @@ const AdminPersonalPage = () => {
       };
 
       try {
-        // `area`/`tipoContrato` ya no son "" aquí: Yup los exige antes de llegar.
+        // Con AUTH el servidor toma el correo institucional de Auth central y descarta el enviado.
         const guardado = editando
           ? await PersonalService.actualizar(editando.id, datos)
-          : await PersonalService.crear({ ...datos, cedula: valores.cedula });
+          : await PersonalService.crear({
+              ...datos,
+              cedula: valores.cedula,
+              origen,
+            });
 
         const nombre = `${valores.apellidos} ${valores.nombres}`;
 
-        // Refresca el maestro (y el directorio si ya se pidió, solo en alta) en paralelo.
         await Promise.all([
           cargar(),
           !editando && directorioPedido.current
@@ -412,45 +327,65 @@ const AdminPersonalPage = () => {
             : Promise.resolve(),
         ]);
 
-        // «Guardar y crear otro» avisa DENTRO del cajón; solo «Guardar» abre el ModalExito.
+        toast.exito(
+          editando
+            ? `Ficha de ${nombre} actualizada.`
+            : `Ficha de ${nombre} creada.`,
+        );
         if (!crearOtro) {
-          setExito(
-            editando
-              ? `Ficha de ${nombre} actualizada.`
-              : `${nombre} se agregó al maestro. Ya se ofrece en los desplegables de personal.`,
-          );
+          setEditando(null);
+          setEligiendoDeAuth(false);
           resaltarFicha(guardado);
         }
 
         return { ok: true, nombre };
       } catch (fallo: unknown) {
-        // Un 409 es la cédula repetida: su mensaje va AL CAMPO cédula (regla 7 + ajuste 6).
         const error = presentarError(fallo);
-        return error.trato === "conflicto"
-          ? { ok: false, errorCedula: error.mensaje }
-          : { ok: false, aviso: error.mensaje };
+        if (error.codigo === "CEDULA_CON_FICHA") {
+          return { ok: false, errorCedula: error.mensaje };
+        }
+        return {
+          ok: false,
+          aviso: error.mensaje,
+          ofrecerManual: SIN_AUTH.has(error.codigo),
+        };
       }
     },
     [editando, cargar, cargarDirectorio, resaltarFicha],
   );
 
-  /** Navega a la página de la fila resaltada cuando la lista se asienta, y la desvanece a los 4 s. */
+  /** Navega a la página de la fila resaltada y la apaga a los `MS_RESALTADO` ms. */
   useEffect(() => {
     if (resaltadoId == null) return;
     const indice = coincidentes.findIndex((f) => f.id === resaltadoId);
     if (indice >= 0) setPagina(Math.floor(indice / tamanio));
-    const temporizador = setTimeout(() => setResaltadoId(null), 4000);
+    const temporizador = setTimeout(() => setResaltadoId(null), MS_RESALTADO);
     return () => clearTimeout(temporizador);
   }, [resaltadoId, coincidentes, tamanio]);
 
+  const abrirAusencias = useCallback(async (funcionario: Funcionario) => {
+    setEnAusencias(funcionario);
+    setAvisoAusencia(null);
+    setAusenciasDe(null);
+    try {
+      setAusenciasDe(await PersonalService.listarAusencias(funcionario.id));
+    } catch (fallo: unknown) {
+      setAusenciasDe([]);
+      setAvisoAusencia(presentarError(fallo).mensaje);
+    }
+  }, []);
+
+  const refrescarAusenciasDe = useCallback(async (funcionarioId: number) => {
+    const [suyas] = await Promise.all([
+      PersonalService.listarAusencias(funcionarioId),
+      cargarAusenciasMaestro(),
+    ]);
+    setAusenciasDe(suyas);
+  }, [cargarAusenciasMaestro]);
+
   const registrarAusencia = useCallback(
-    async (valores: {
-      estado: EstadoDisponibilidad;
-      desde: string;
-      hasta: string;
-      motivo: string;
-    }) => {
-      if (!enAusencias) return;
+    async (valores: ValoresAusencia): Promise<boolean> => {
+      if (!enAusencias) return false;
 
       setProcesando(true);
       setAvisoAusencia(null);
@@ -460,20 +395,22 @@ const AdminPersonalPage = () => {
           estado: valores.estado,
           desde: valores.desde,
           hasta: valores.hasta,
-          motivo: valores.motivo || undefined,
+          motivo: valores.motivo.trim() || undefined,
         });
-        await refrescarAusencias(enAusencias.id);
-        setExito(
-          `Ausencia registrada. ${nombreCompleto(enAusencias)} deja de ofrecerse del ${valores.desde} al ${valores.hasta}.`,
+        await refrescarAusenciasDe(enAusencias.id);
+        toast.exito(
+          `Ausencia registrada: ${nombreCompleto(enAusencias)}, del ${fechaLarga(valores.desde)} al ${fechaLarga(valores.hasta)}.`,
         );
+        return true;
       } catch (fallo: unknown) {
-        // INV-14: el solape lo detecta el servidor, que conoce los demás periodos.
+        // 409 AUSENCIA_SOLAPADA: el servidor conoce también lo que otro acaba de registrar.
         setAvisoAusencia(presentarError(fallo).mensaje);
+        return false;
       } finally {
         setProcesando(false);
       }
     },
-    [enAusencias, refrescarAusencias],
+    [enAusencias, refrescarAusenciasDe],
   );
 
   const retirarAusencia = useCallback(
@@ -485,263 +422,212 @@ const AdminPersonalPage = () => {
 
       try {
         await PersonalService.retirarAusencia(enAusencias.id, periodoId);
-        await refrescarAusencias(enAusencias.id);
+        await refrescarAusenciasDe(enAusencias.id);
+        toast.exito("Ausencia quitada.");
       } catch (fallo: unknown) {
+        // 409 AUSENCIA_PASADA: una ausencia que ya terminó es historial.
         setAvisoAusencia(presentarError(fallo).mensaje);
       } finally {
         setProcesando(false);
       }
     },
-    [enAusencias, refrescarAusencias],
+    [enAusencias, refrescarAusenciasDe],
   );
 
   const darDeBaja = useCallback(
     async (datosBaja: BajaFuncionario) => {
       if (!porDarDeBaja) return;
 
-      setProcesando(true);
-      setAviso(null);
-
-      try {
-        const baja = await PersonalService.desactivar(porDarDeBaja.id, datosBaja);
-        setPorDarDeBaja(null);
-        // El servidor redacta cuántos operativos conserva la ficha. Se muestra tal cual.
-        setExito(baja.mensaje);
-        await cargar();
-      } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        setPorDarDeBaja(null);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-      } finally {
-        setProcesando(false);
-      }
+      // Si el servidor la rechaza, lanza: el error queda en el modal de la baja.
+      const baja = await PersonalService.desactivar(porDarDeBaja.id, datosBaja);
+      setPorDarDeBaja(null);
+      // El servidor redacta cuántos operativos conserva la ficha. Se muestra tal cual.
+      toast.exito(baja.mensaje);
+      await cargar();
     },
     [porDarDeBaja, cargar],
   );
 
-  /**
-   * Reingreso. No pide confirmación —es reversible y no destruye nada—; la baja sí,
-   * porque advierte de que el histórico obliga a conservar la ficha. El servidor
-   * comprueba el alcance, igual que en la baja.
-   */
-  const reactivar = useCallback(
-    async (funcionario: Funcionario) => {
-      setProcesando(true);
-      setAviso(null);
-      try {
-        await PersonalService.reactivar(funcionario.id);
-        setExito(
-          `${funcionario.apellidos} ${funcionario.nombres} vuelve al maestro.`,
-        );
-        await cargar();
-      } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-      } finally {
-        setProcesando(false);
-      }
-    },
-    [cargar],
-  );
+  const reactivar = useCallback(async () => {
+    if (!porReactivar) return;
+    const funcionario = porReactivar;
+    // Si el servidor lo rechaza, lanza: el error queda en el modal de la confirmación.
+    await PersonalService.reactivar(funcionario.id);
+    setPorReactivar(null);
+    toast.exito(`${nombreCompleto(funcionario)} vuelve al maestro.`);
+    await cargar();
+  }, [porReactivar, cargar]);
 
   const filtrando = hayFiltrosDePersonal(filtros);
 
+  const cambiarFiltro = (cambio: Partial<FiltrosPersonal>) => {
+    setFiltros((actuales) => ({ ...actuales, ...cambio }));
+    setPagina(0);
+  };
+
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Administración
-        </p>
-        <h1 className="page-heading-title">
-          Personal y disponibilidad
-        </h1>
-        <p className="page-heading-subtitle text-sm">
-          Maestro de funcionarios de la AMC. Es la única pantalla que muestra
-          cédulas y teléfonos.
-        </p>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <p className="page-heading-kicker font-semibold uppercase">
+            Administración
+          </p>
+          <h1 className="page-heading-title">Personal y disponibilidad</h1>
+          <p className="page-heading-subtitle text-sm">
+            Maestro de funcionarios de la AMC. Es la única pantalla que muestra
+            cédulas y teléfonos.
+          </p>
+        </div>
       </header>
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudo cargar el maestro"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Maestro de personal
-          </h2>
-
+        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-4 md:px-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="badge badge-ghost badge-sm">
-              {cargando
-                ? "Cargando…"
-                : `Mostrando ${coincidentes.length} de ${personal.length}`}
-            </span>
-            {puedeAdministrar && (
-              <button
-                type="button"
-                className="btn btn-sm app-modules-panel-action"
-                onClick={abrirDirectorio}
-              >
-                Nuevo funcionario
-              </button>
-            )}
-          </div>
-        </div>
+            <input
+              type="search"
+              className="input input-bordered input-sm w-full sm:max-w-xs"
+              placeholder="Buscar por cédula, nombre o cargo…"
+              aria-label="Buscar en el maestro"
+              value={filtros.busqueda ?? ""}
+              onChange={(evento) => cambiarFiltro({ busqueda: evento.target.value })}
+            />
 
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="search"
-                className="input input-bordered input-sm w-full sm:max-w-xs"
-                placeholder="Buscar por cédula, nombre o cargo…"
-                aria-label="Buscar en el maestro"
-                value={filtros.busqueda ?? ""}
-                onChange={(evento) => {
-                  setFiltros((actuales) => ({
-                    ...actuales,
-                    busqueda: evento.target.value,
-                  }));
-                  setPagina(0);
-                }}
-              />
-
-              <select
-                className="select select-bordered select-sm"
-                aria-label="Filtrar por área"
-                value={filtros.area ?? ""}
-                onChange={(evento) => {
-                  setFiltros((actuales) => ({
-                    ...actuales,
-                    area: evento.target.value as AreaPersonal | "",
-                  }));
-                  setPagina(0);
-                }}
-              >
-                <option value="">Todas las áreas</option>
-                {areasPresentes.map((area) => (
-                  <option
-                    key={area}
-                    value={area}
-                  >
-                    {NOMBRE_AREA[area]}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className="select select-bordered select-sm"
-                aria-label="Filtrar por contrato"
-                value={filtros.contrato ?? ""}
-                onChange={(evento) => {
-                  setFiltros((actuales) => ({
-                    ...actuales,
-                    contrato: evento.target.value as TipoContrato | "",
-                  }));
-                  setPagina(0);
-                }}
-              >
-                <option value="">Todo contrato</option>
-                {Object.entries(NOMBRE_CONTRATO).map(([valor, nombre]) => (
-                  <option
-                    key={valor}
-                    value={valor}
-                  >
-                    {nombre}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className="select select-bordered select-sm"
-                aria-label="Filtrar por estado"
-                value={filtros.estado ?? ""}
-                onChange={(evento) => {
-                  setFiltros((actuales) => ({
-                    ...actuales,
-                    estado: evento.target.value as "" | "activos" | "inactivos",
-                  }));
-                  setPagina(0);
-                }}
-              >
-                <option value="">Activos e inactivos</option>
-                <option value="activos">Solo activos</option>
-                <option value="inactivos">Solo inactivos</option>
-              </select>
-
-              {/* «Limpiar filtros» solo aparece con filtros activos: sin ellos no limpia nada. */}
-              {filtrando && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    setFiltros({});
-                    setPagina(0);
-                  }}
+            <select
+              className="select select-bordered select-sm"
+              aria-label="Filtrar por área"
+              value={filtros.area ?? ""}
+              onChange={(evento) =>
+                cambiarFiltro({ area: evento.target.value as AreaPersonal | "" })
+              }
+            >
+              <option value="">Todas las áreas</option>
+              {areasPresentes.map((area) => (
+                <option
+                  key={area}
+                  value={area}
                 >
-                  Limpiar filtros
-                </button>
-              )}
-            </div>
+                  {NOMBRE_AREA[area]}
+                </option>
+              ))}
+            </select>
 
-            <TablaPersonal
-              personal={visibles}
-              zonales={zonales}
-              ausencias={ausencias}
-              hoy={hoy}
-              seleccionadoId={enAusencias?.id ?? null}
-              resaltadoId={resaltadoId}
-              onSeleccionar={(funcionario) => {
-                setEnAusencias(funcionario);
-                setAvisoAusencia(null);
-                void refrescarAusencias(funcionario.id);
-              }}
-              onEditar={(funcionario) => setEditando(funcionario)}
-              onDarDeBaja={setPorDarDeBaja}
-              onReactivar={(funcionario) => void reactivar(funcionario)}
-              puedeAdministrar={puedeAdministrar}
-              mensajeVacio={
-                cargando
-                  ? "Cargando el maestro…"
-                  : filtrando
-                    ? "Ningún funcionario coincide con el filtro."
-                    : "El maestro está vacío. Registre el primer funcionario."
+            <select
+              className="select select-bordered select-sm"
+              aria-label="Filtrar por contrato"
+              value={filtros.contrato ?? ""}
+              onChange={(evento) =>
+                cambiarFiltro({ contrato: evento.target.value as TipoContrato | "" })
+              }
+            >
+              <option value="">Todo contrato</option>
+              {Object.entries(NOMBRE_CONTRATO).map(([valor, nombre]) => (
+                <option
+                  key={valor}
+                  value={valor}
+                >
+                  {nombre}
+                </option>
+              ))}
+            </select>
+
+            <SelectorSegmentado
+              id="filtro-estado"
+              etiqueta="Estado"
+              etiquetaOculta
+              opciones={OPCIONES_ESTADO}
+              valor={filtros.estado ?? ""}
+              onCambiar={(valor) =>
+                cambiarFiltro({ estado: valor as "" | "activos" | "inactivos" })
               }
             />
 
-            {coincidentes.length > 0 && (
-              <Paginacion
-                page={pagina0.pagina}
-                pageSize={tamanio}
-                total={pagina0.total}
-                onPage={setPagina}
-                onPageSize={setTamanio}
-                etiqueta="funcionarios"
-              />
+            {/* «Limpiar filtros» solo con filtros distintos de los iniciales. */}
+            {filtrando && (
+              <Boton
+                variante="enlace"
+                tamano="sm"
+                onClick={() => {
+                  setFiltros(FILTROS_INICIALES);
+                  setPagina(0);
+                }}
+              >
+                Limpiar filtros
+              </Boton>
+            )}
+
+            <span
+              className="ml-auto text-sm text-app-muted"
+              role="status"
+              title="«En el maestro» son las fichas de las direcciones que usted administra."
+            >
+              {cargando
+                ? "Cargando…"
+                : `${coincidentes.length} funcionarios · ${activos} activos de ${personal.length} en el maestro`}
+            </span>
+            {/* Estándar de botones (D4): «+ Nuevo» a la derecha de la barra de su tabla. */}
+            {puedeAdministrar && (
+              <Boton
+                variante="primario"
+                onClick={abrirDirectorio}
+              >
+                + Nuevo funcionario
+              </Boton>
+            )}
+          </div>
+
+          <TablaPersonal
+            personal={pagina0.filas}
+            zonales={zonales}
+            ausencias={ausenciaPorFicha}
+            seleccionadoId={enAusencias?.id ?? null}
+            resaltadoId={resaltadoId}
+            onAusencias={(funcionario) => void abrirAusencias(funcionario)}
+            onEditar={(funcionario) => setEditando(funcionario)}
+            onDarDeBaja={setPorDarDeBaja}
+            onReactivar={setPorReactivar}
+            puedeAdministrar={puedeAdministrar}
+            mensajeVacio={
+              cargando
+                ? "Cargando el maestro…"
+                : filtrando
+                  ? "Ningún funcionario coincide con el filtro."
+                  : "No hay funcionarios activos. Registre el primero."
+            }
+          />
+
+          {coincidentes.length > 0 && (
+            <Paginacion
+              page={pagina0.pagina}
+              pageSize={tamanio}
+              total={pagina0.total}
+              onPage={setPagina}
+              onPageSize={setTamanio}
+              etiqueta="funcionarios"
+            />
           )}
         </div>
       </div>
 
-      {/*
-        COBERTURA POR TURNOS · SOLO INSTRUCCIÓN. Se monta únicamente cuando quien entró
-        gestiona el área de Instrucción, así que la vista de Inspección (DMIP) no cambia.
-        Adapta el Excel «COBERTURA POR TURNOS» a la pantalla, reutilizando el maestro.
-      */}
+      {/* COBERTURA POR TURNOS · SOLO INSTRUCCIÓN: se monta si quien entró gestiona esa área. */}
       {areasQueGestiona.includes("INSTRUCCION" as AreaPersonal) && (
-        <MatrizCobertura />
+        <MatrizCobertura onZonaCambiada={() => void cargar()} />
       )}
 
-      {/*
-        EL CAJÓN, compartido por el ALTA (dos pasos: buscar persona → completar ficha) y la
-        EDICIÓN (abre directo en la ficha, sin stepper, cédula en solo lectura). Va aquí y no dentro
-        del panel: es del flujo, no del maestro. P-11 (Cuentas) usa su propio cajón `DrawerFlujoCuenta`
-        sobre los mismos primitivos.
-      */}
+      {/* EL CAJÓN, compartido por el ALTA (dos pasos) y la EDICIÓN (directo en la ficha). */}
       <DrawerFlujoAlta
         abierto={eligiendoDeAuth || editando !== null}
         proposito={PARA_FICHA}
@@ -755,41 +641,49 @@ const AdminPersonalPage = () => {
         zonales={zonales}
         onGuardar={guardarDesdeDrawer}
         edicion={editando !== null}
-        valoresEdicion={editando ? aValoresFicha(editando) : null}
+        valoresEdicion={valoresEdicion}
       />
 
       {enAusencias && (
         <PanelAusencias
           funcionario={enAusencias}
-          ausencias={ausencias[enAusencias.id] ?? []}
-          cargando={!(enAusencias.id in ausencias)}
+          ausencias={ausenciasDe ?? []}
+          cargando={ausenciasDe === null}
           guardando={procesando}
           hoy={hoy}
           aviso={avisoAusencia}
-          onRegistrar={(valores) => void registrarAusencia(valores)}
+          onRegistrar={registrarAusencia}
           onRetirar={(periodoId) => void retirarAusencia(periodoId)}
-          onCerrar={() => setEnAusencias(null)}
+          onCerrar={() => {
+            setEnAusencias(null);
+            setAusenciasDe(null);
+          }}
         />
       )}
 
-      {/* La baja exige un motivo (caso 5 + baja con motivo, 2026-09-30). `key` por ficha remonta el
-          modal con estado limpio en cada apertura. */}
+      {/* La baja exige un motivo. `key` por ficha remonta el modal limpio en cada apertura. */}
       <ModalBajaConMotivo
         key={porDarDeBaja?.id ?? "baja"}
         abierto={porDarDeBaja !== null}
         funcionario={porDarDeBaja}
-        procesando={procesando}
-        onConfirmar={(baja) => void darDeBaja(baja)}
+        onConfirmar={darDeBaja}
         onCancelar={() => setPorDarDeBaja(null)}
       />
 
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
-        />
-      )}
+      {/*
+        Reactivar vuelve a ofrecer a la persona en los desplegables de TODOS los formularios: un
+        clic suelto en la fila no debería bastar para eso (2026-10-08). Advertencia, no peligro.
+      */}
+      <MensajeModal
+        abierto={porReactivar !== null}
+        variante="advertencia"
+        titulo={porReactivar ? `¿Activar a ${nombreCompleto(porReactivar)}?` : ""}
+        mensaje="Volverá a aparecer para asignar a operativos, con su historial intacto."
+        textoPrincipal="Activar"
+        tituloError="No se pudo activar"
+        onPrincipal={reactivar}
+        onSecundario={() => setPorReactivar(null)}
+      />
     </section>
   );
 };

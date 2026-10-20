@@ -101,7 +101,9 @@ export const presentarError = (error: unknown): ErrorPresentado => {
     campos: camposImplicados(cuerpo),
   };
 
-  if (estado === 400) {
+  // 422 (2026-10-16, mensajes estándar): datos que el servidor no puede procesar. Es un error de
+  // la captura, no del servidor: su texto se conserva, como el del 400.
+  if (estado === 400 || estado === 422) {
     return { ...base, trato: "campo", bloquea: false, conservaCaptura: true };
   }
 
@@ -135,21 +137,39 @@ export const presentarError = (error: unknown): ErrorPresentado => {
   };
 };
 
-/** Clase de aviso según el trato. Todas están inventariadas en FASE5 §2.2. */
-export const claseDeAviso = (trato: TratoDeError): string => {
-  const clases: Record<TratoDeError, string> = {
-    campo: "alert-warning",
-    permiso: "alert-warning",
-    conflicto: "alert-error",
-    ventana: "alert-info",
-    generico: "alert-error",
+/** Las cuatro familias de un aviso en línea (`AvisoEnLinea`): las de los mensajes estándar. */
+export type VarianteAviso = "advertencia" | "error" | "exito" | "info";
+
+/** Un aviso de página o de cajón: su texto y su familia. */
+export type AvisoTexto = { texto: string; variante: VarianteAviso };
+
+/**
+ * Familia del aviso en línea según el trato (mensajes estándar, 2026-10-16). Reemplaza a la vieja
+ * `claseDeAviso`, que devolvía una clase de daisyUI.
+ *
+ * El 403 (`permiso`) es un ERROR: «no se permite» no es una advertencia de campo, y en ámbar se
+ * leía como algo que el usuario podía corregir.
+ */
+export const varianteDeAviso = (trato: TratoDeError): VarianteAviso => {
+  const variantes: Record<TratoDeError, VarianteAviso> = {
+    campo: "advertencia",
+    permiso: "error",
+    conflicto: "error",
+    ventana: "info",
+    generico: "error",
   };
 
-  return clases[trato];
+  return variantes[trato];
+};
+
+/** El fallo como aviso en línea: el texto del servidor (regla 7) y su familia. */
+export const avisoDeFallo = (fallo: unknown): AvisoTexto => {
+  const error = presentarError(fallo);
+  return { texto: error.mensaje, variante: varianteDeAviso(error.trato) };
 };
 
 /** Extrae el cuerpo del error de Axios sin recurrir a `any`. */
-const cuerpoDeError = (error: HttpClientError | undefined): ErrorApi | null => {
+export const cuerpoDeError = (error: HttpClientError | undefined): ErrorApi | null => {
   const original = error?.originalError as
     | { response?: { data?: unknown } }
     | undefined;
@@ -199,4 +219,39 @@ export const esCancelacion = (error: unknown): boolean => {
   if (typeof error !== "object" || error === null) return false;
   const { code, name } = error as { code?: unknown; name?: unknown };
   return code === "ERR_CANCELED" || name === "CanceledError" || name === "AbortError";
+};
+
+/**
+ * A QUIÉN SE REFIERE UN RECHAZO DE PERSONAL (2026-10-16, R2): el servidor adjunta
+ * `detalles.funcionarioId` cuando rechaza a una persona concreta (descanso, cruce de horario…). El
+ * registro lo usa para pintar el motivo bajo el horario de esa persona. Sin el dato, `null`.
+ */
+export const funcionarioDelRechazo = (error: unknown): number | null => {
+  const cuerpo = cuerpoDeError(error as HttpClientError);
+  if (!cuerpo || typeof cuerpo.detalles !== "object" || cuerpo.detalles === null) {
+    return null;
+  }
+  const id = (cuerpo.detalles as { funcionarioId?: unknown }).funcionarioId;
+  return typeof id === "number" ? id : null;
+};
+
+/**
+ * Los MOTIVOS que el servidor adjunta a un rechazo de asignación (2026-10-06): un 409
+ * `ASIGNACION_NO_VIABLE` trae en `detalles.motivos` la lista `{ codigo, mensaje }` de la política.
+ * Se devuelven los mensajes tal cual (regla 7); sin motivos, lista vacía.
+ */
+export const motivosDelServidor = (error: unknown): string[] => {
+  const cuerpo = cuerpoDeError(error as HttpClientError);
+  if (!cuerpo || typeof cuerpo.detalles !== "object" || cuerpo.detalles === null) {
+    return [];
+  }
+  const motivos = (cuerpo.detalles as { motivos?: unknown }).motivos;
+  if (!Array.isArray(motivos)) return [];
+  return motivos
+    .map((motivo) =>
+      typeof motivo === "object" && motivo !== null
+        ? (motivo as { mensaje?: unknown }).mensaje
+        : undefined,
+    )
+    .filter((mensaje): mensaje is string => typeof mensaje === "string");
 };

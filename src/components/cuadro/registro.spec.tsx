@@ -17,275 +17,20 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import CamposCalculados from "./CamposCalculados.tsx";
-import FormularioOperativo from "./FormularioOperativo.tsx";
-import SelectorFormulario from "./SelectorFormulario.tsx";
+import FormOperativo from "./FormOperativo.tsx";
 import SelectorPersonal, {
   type PersonaAgregada,
 } from "./SelectorPersonal.tsx";
 import SelectorZonalPunto from "./SelectorZonalPunto.tsx";
-import type {
-  AccesoFormulario,
-  CatalogosFormulario,
-  Formulario,
-} from "../../interfaces/Formulario.ts";
-import type { ValoresOperativo } from "../../utils/valoresOperativo.util.ts";
+import type { CatalogosFormulario } from "../../interfaces/Formulario.ts";
+import {
+  VALORES_INICIALES,
+  type ValoresOperativo,
+} from "../../utils/valoresOperativo.util.ts";
 import { turnoDePrimera } from "../../utils/personal.util.ts";
+import { DESCRIPCION_MACROOPERATIVO } from "../../utils/tipoTransporte.util.ts";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
 import type { CuadroDiario } from "../../interfaces/CuadroDiario.ts";
-
-/**
- * El `acceso` se tipa con `AccesoFormulario`, **no con un literal escrito a mano**.
- *
- * Esta prueba pasaba con `"DUENO"`, un valor que el servidor nunca envía: el objeto de
- * prueba repetía la misma suposición equivocada que el código, así que confirmaba el
- * error en lugar de detectarlo. Los nueve formularios salían deshabilitados en P-01 y
- * ninguna prueba lo dijo. Corregido el 2026-08-07.
- *
- * Y SE CONSTRUYE COMPLETO, SIN `as unknown as`. Esa conversión apagaba al compilador:
- * con ella el objeto llevaba `condicionanteNoct` —campo que el servidor no envía— y
- * nadie protestó. Un `Formulario` de prueba al que le falte o le sobre un campo debe
- * romper la compilación, que es la única comprobación que cubre los campos que ninguna
- * prueba lee.
- */
-const formulario = (
-  numero: number,
-  codigo: string,
-  acceso: AccesoFormulario,
-): Formulario => ({
-  id: numero,
-  numero,
-  codigo,
-  nombre: `FORMULARIO ${numero}`,
-  colorFondo: "#2e7d32",
-  colorAcento: "#000000",
-  colorNombre: "verde",
-  rolDueno: "DMIP_OPERATIVOS",
-  roles: [{ rol: "DMIP_OPERATIVOS", acceso: "ESCRITURA", cupo: null }],
-  politicaVehiculo: "NO_APLICA",
-  condicionanteNocturno: false,
-  esPatrulla: false,
-  capturaLibrePunto: false,
-  capturaLibreTipo: false,
-  orden: numero,
-  areas: [{ area: "OPERATIVOS", esCompartida: false }],
-  acceso,
-});
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 2026-08-24 · SE INVIRTIÓ EL CRITERIO, Y ESTAS PRUEBAS LO DICEN.
- *
- * Hasta hoy fijaban lo contrario: que el formulario ajeno **se muestra deshabilitado con
- * su motivo, en lugar de desaparecer**, siguiendo PER-06 y el mismo criterio con el que
- * se resolvió PV-37 en el selector de personal.
- *
- * Se cambió por decisión expresa, tomada con ese criterio a la vista: una fila de botones
- * apagados se lee como un fallo antes que como una explicación. Solo se pinta lo que el
- * rol puede registrar.
- *
- * NO SE BORRARON: se reescribieron. Una prueba que desaparece no deja constancia de que
- * la decisión se tomó al revés un día, y el próximo que lea `SelectorFormulario` tiene
- * que poder saberlo. Queda anotado como PV-40, pendiente de ratificar.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-describe("caso 1 · el selector ofrece solo los formularios del rol", () => {
-  const formularios = [
-    formulario(1, "OCF", "ESCRITURA"),
-    formulario(2, "PMO", "ESCRITURA"),
-    formulario(6, "ICNECU", "COMPARTIDO"),
-  ];
-
-  it("se pintan los propios y se puede elegir uno", async () => {
-    const elegir = vi.fn();
-    render(
-      <SelectorFormulario
-        formularios={formularios}
-        seleccionado={null}
-        onSeleccionar={elegir}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /FORMULARIO 1/ }));
-    expect(elegir).toHaveBeenCalledWith("OCF");
-  });
-
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════════
-   * EL COMPARTIDO SÍ SE PINTA, DESDE EL 2026-08-25. Y ANTES NO.
-   *
-   * Del 24 al 25 de agosto se ocultó todo lo que no fuera `ESCRITURA`, y eso metió
-   * `COMPARTIDO` en el mismo saco que `LECTURA`. No son lo mismo: en uno el departamento
-   * no pinta nada, en el otro pone gente.
-   *
-   * Se vio en cuanto hubo un caso real: al abrir el formulario 4 al cupo del DMIT, la
-   * patrulla ECU **desapareció de su pantalla**. El sistema le había dado una
-   * participación que no podía ver por ningún lado.
-   * ═══════════════════════════════════════════════════════════════════════════════
-   */
-  it("el compartido se pinta, apagado y diciendo lo que es", () => {
-    render(
-      <SelectorFormulario
-        formularios={formularios}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-      />,
-    );
-
-    const compartido = screen.getByRole("button", { name: /FORMULARIO 6/ });
-
-    expect(compartido).toBeDisabled();
-    expect(compartido).toHaveAttribute(
-      "title",
-      expect.stringContaining("aporta personal"),
-    );
-  });
-
-  /**
-   * El distintivo va **solo** sobre el compartido. El que se retiró el 24-AGO se pintaba
-   * también sobre `LECTURA`, donde ese departamento no aporta a nadie, y ese era su
-   * defecto: decía algo que no era cierto.
-   */
-  it("el distintivo solo lo lleva el que de verdad aporta", () => {
-    render(
-      <SelectorFormulario
-        formularios={[
-          formulario(1, "OCF", "ESCRITURA"),
-          formulario(4, "ECU", "LECTURA"),
-          formulario(6, "ICNECU", "COMPARTIDO"),
-        ]}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getAllByText("Aporta personal")).toHaveLength(1);
-  });
-
-  /**
-   * Sin `onAportar` no hay a dónde llevarlo, y entonces el botón sí se apaga: mejor
-   * constancia muda que un botón que no hace nada al pulsarlo.
-   */
-  it("sin destino al que aportar, el compartido queda apagado", async () => {
-    const elegir = vi.fn();
-    render(
-      <SelectorFormulario
-        formularios={formularios}
-        seleccionado={null}
-        onSeleccionar={elegir}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /FORMULARIO 6/ }));
-    expect(elegir).not.toHaveBeenCalled();
-  });
-
-  /**
-   * `LECTURA` solo llega a las cuentas que llevan además un rol transversal: el servidor
-   * resuelve la **unión** de los roles y a `ADMINISTRADOR` o `DIRECTOR` les devuelve los
-   * nueve. Eran los ocho botones apagados que motivaron este cambio.
-   */
-  it("LECTURA tampoco se pinta", () => {
-    render(
-      <SelectorFormulario
-        formularios={[
-          formulario(1, "OCF", "ESCRITURA"),
-          formulario(4, "ECU", "LECTURA"),
-        ]}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: /FORMULARIO 1/ })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: /FORMULARIO 4/ })).toBeNull();
-  });
-
-  /**
-   * APORTAR SIN REGISTRAR NADA ES UN PERFIL POSIBLE, y no puede quedar en un hueco mudo.
-   * Se ve el formulario al que aporta —para eso volvió— y se dice **dónde** se aporta,
-   * que es P-02 y no esta pantalla.
-   */
-  it("quien solo aporta ve el formulario y qué hacer con él", () => {
-    render(
-      <SelectorFormulario
-        formularios={[
-          formulario(4, "ECU", "LECTURA"),
-          formulario(6, "ICNECU", "COMPARTIDO"),
-        ]}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-        onAportar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText(/aporta personal a los/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /FORMULARIO 6/ })).toBeEnabled();
-    // El de LECTURA sigue sin pintarse: ahí no aporta a nadie.
-    expect(screen.queryByRole("button", { name: /FORMULARIO 4/ })).toBeNull();
-  });
-
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════════
-   * EL BOTÓN NO SE QUEDA EN CONSTANCIA: LLEVA A DONDE SE APORTA.
-   *
-   * Un compartido apagado decía «este formulario existe y usted participa en él», y
-   * dejaba al funcionario adivinando en qué otra pantalla poner a su gente. Se pulsa, y
-   * lleva a P-02 con ese formulario ya filtrado.
-   *
-   * NO LLAMA A `onSeleccionar`, y eso es lo que impide el 403: seleccionar significa «voy
-   * a registrar aquí», y en un compartido el servidor lo rechaza.
-   * ═══════════════════════════════════════════════════════════════════════════════
-   */
-  it("pulsar el compartido lleva a aportar, no a registrar", async () => {
-    const elegir = vi.fn();
-    const aportar = vi.fn();
-    render(
-      <SelectorFormulario
-        formularios={formularios}
-        seleccionado={null}
-        onSeleccionar={elegir}
-        onAportar={aportar}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /FORMULARIO 6/ }));
-
-    expect(aportar).toHaveBeenCalledWith("ICNECU");
-    expect(elegir).not.toHaveBeenCalled();
-  });
-
-  /**
-   * Y si no llega ni uno visible —solo lectura—, se explica en lugar de dejar el hueco
-   * en blanco. Es el criterio del 24-AGO, que en `LECTURA` se mantiene entero.
-   */
-  it("recibir solo formularios de lectura se explica", () => {
-    render(
-      <SelectorFormulario
-        formularios={[formulario(4, "ECU", "LECTURA")]}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText(/no registra operativos en ningún formulario/i),
-    ).toBeInTheDocument();
-  });
-
-  it("un perfil sin formularios recibe una explicación, no una lista vacía", () => {
-    render(
-      <SelectorFormulario
-        formularios={[]}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-      />,
-    );
-
-    expect(
-      screen.getByText(/no registra operativos en ningún formulario/i),
-    ).toBeInTheDocument();
-  });
-});
 
 describe("casos 3, 4 y 5 · la cascada zonal → punto y ADICIONALES", () => {
   const propiedadesBase = {
@@ -528,9 +273,9 @@ describe("casos 3, 4 y 5 · la cascada zonal → punto y ADICIONALES", () => {
       expect(aviso).toHaveTextContent(
         "El administrador puede cargarlos en Catálogos del cuadro.",
       );
-      // Va como aviso, con la misma composición que el rechazo del personal, y no como
+      // Va como aviso en línea (`AvisoEnLinea`, el mismo del rechazo del personal), y no como
       // pie de campo: junto a un desplegable deshabilitado pasaba desapercibido.
-      expect(aviso).toHaveClass("alert");
+      expect(aviso).toHaveAttribute("data-variante", "advertencia");
     });
   });
 
@@ -706,9 +451,9 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
     );
 
     // El texto es la señal (regla 6): «Carga baja/alta» y «Sugerido».
-    expect(screen.getByText("Carga baja")).toBeInTheDocument();
+    expect(screen.getByText("Carga Baja")).toBeInTheDocument();
     expect(screen.getByText("Sugerido")).toBeInTheDocument();
-    expect(screen.getByText("Carga alta")).toBeInTheDocument();
+    expect(screen.getByText("Carga Alta")).toBeInTheDocument();
 
     // El de carga alta es elegible: sigue asignable (no se bloquea por fatiga).
     expect(
@@ -943,7 +688,7 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
     expect(screen.getByText("PERSONA 06")).toBeInTheDocument();
     expect(screen.queryByText("PERSONA 07")).toBeNull();
     // Y aparece el paginador —su botón «siguiente»—, que con seis o menos no estaría.
-    expect(screen.getByRole("button", { name: "›" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Siguiente ›" })).toBeInTheDocument();
   });
 
   it("al pasar de página aparece el séptimo candidato", async () => {
@@ -959,7 +704,7 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "›" }));
+    await userEvent.click(screen.getByRole("button", { name: "Siguiente ›" }));
 
     expect(screen.getByText("PERSONA 07")).toBeInTheDocument();
     expect(screen.queryByText("PERSONA 01")).toBeNull();
@@ -979,7 +724,7 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
     );
 
     expect(screen.getByText("PERSONA 06")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "›" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Siguiente ›" })).toBeNull();
   });
 
   it("al buscar, la caja vuelve a la primera página", async () => {
@@ -996,7 +741,7 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
     );
 
     // Se pasa a la página 2 (donde está el séptimo)…
-    await userEvent.click(screen.getByRole("button", { name: "›" }));
+    await userEvent.click(screen.getByRole("button", { name: "Siguiente ›" }));
     expect(screen.getByText("PERSONA 07")).toBeInTheDocument();
 
     // …y al filtrar a un solo resultado, se vuelve a la primera y se ve.
@@ -1303,7 +1048,7 @@ describe("el selector de personal, para treinta asignaciones", () => {
 
     expect(
       screen.getByRole("button", { name: "Asignar visibles (0)" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
   /**
@@ -1388,6 +1133,8 @@ describe("el selector de personal, para treinta asignaciones", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Quitar todos (2)" }),
     );
+    // Desde el estándar de botones (2026-10-15) también en P-01 pide confirmación.
+    await userEvent.click(screen.getByRole("button", { name: "Quitar todos" }));
 
     expect(onRetirar.mock.calls.map(([id]) => id)).toEqual([1, 2]);
   });
@@ -1653,7 +1400,7 @@ describe("los errores se vinculan con su campo y lo que falta se dice", () => {
     const onGuardar = vi.fn();
 
     render(
-      <FormularioOperativo
+      <FormOperativo
         formularioCodigo="PMO"
         catalogos={catalogos}
         puntos={catalogos.puntos}
@@ -1684,34 +1431,58 @@ describe("los errores se vinculan con su campo y lo que falta se dice", () => {
   const registrar = async () =>
     userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
 
-  it("el resumen NO aparece hasta que se intenta registrar", async () => {
+  /*
+   * EL PIE DEL ALTA DICE QUÉ FALTA DESDE QUE SE ABRE (2026-10-16, R7). Antes el resumen esperaba al
+   * primer intento; ahora el pie azul nombra lo pendiente en gris desde el principio y, tras
+   * intentar, lo mismo en rojo y con la tarjeta marcada. El texto es el mismo: cambia el tono.
+   */
+  const estadoDelPie = () => screen.getByText(/^(Falta: |Listo para registrar)/);
+
+  it("el pie nombra lo que falta desde el principio, y tras intentar lo pone en rojo", async () => {
     montar(EN_BLANCO);
 
-    // Antes de pulsar nada no hay resumen: no se molesta al operador con lo que aún no ha
-    // intentado enviar (regla 14). El «Falta zonal…» colgado desde que se abre era ruido.
-    expect(screen.queryByRole("status")).toBeNull();
+    // Desde RN-66 el horario ya no es un campo del operativo: la lista empieza en la zonal.
+    expect(estadoDelPie()).toHaveTextContent("Falta: zonal, punto de encuentro");
+    expect(estadoDelPie().className).toContain("text-app-muted");
 
-    // Tras el intento fallido sí dice qué falta. Desde RN-66 el horario ya no es un campo
-    // del operativo, así que no encabeza la lista: empieza en la zonal.
     await registrar();
     await vi.waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Falta zonal, punto de encuentro",
-      ),
+      expect(estadoDelPie().className).toContain("--app-msg-error-fg"),
     );
+    expect(estadoDelPie()).toHaveTextContent("Falta: zonal, punto de encuentro");
   });
 
-  it("y cuando no falta nada, lo dice también (tras intentar enviar)", async () => {
+  it("completo, dice que está listo con los efectivos y el transporte", () => {
     montar(COMPLETO);
 
-    // Igual que arriba: nada hasta pulsar. Con todo completo, tras el envío el resumen
-    // confirma que no falta ningún campo.
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(estadoDelPie()).toHaveTextContent(
+      "Listo para registrar · 1 efectivo · Completo",
+    );
+    expect(estadoDelPie()).not.toHaveTextContent("Falta");
+  });
+
+  it("tras intentar, el grupo al que le falta algo se marca y su campo va en rojo", async () => {
+    // En la página la columna derecha no tiene tarjetas (ajustes visuales del 2026-10-16): lo que
+    // falta lo dice el campo (`aria-invalid`, borde rojo por `app-form-operativo`) y el grupo
+    // queda marcado para el pie. El personal sí conserva su tarjeta.
+    montar(EN_BLANCO);
+    const lugar = screen.getByRole("group", { name: "Lugar" });
+    expect(lugar).not.toHaveAttribute("data-con-falta");
 
     await registrar();
-    const resumen = await screen.findByRole("status");
-    expect(resumen).toHaveTextContent("Listo para enviar");
-    expect(resumen).not.toHaveTextContent("Falta");
+    await vi.waitFor(() => expect(lugar).toHaveAttribute("data-con-falta", "true"));
+    expect(screen.getByRole("group", { name: "Control" })).toHaveAttribute(
+      "data-con-falta",
+      "true",
+    );
+    expect(screen.getByRole("combobox", { name: /^Zonales/ })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    // El transporte siempre tiene valor: su grupo no se marca.
+    expect(screen.getByRole("group", { name: "Transporte" })).not.toHaveAttribute(
+      "data-con-falta",
+    );
   });
 
   it("el resumen se lee sin ver el color", async () => {
@@ -1720,9 +1491,9 @@ describe("los errores se vinculan con su campo y lo que falta se dice", () => {
 
     // Regla 6. Lo que informa es el texto; el tono solo lo acompaña. Si alguien
     // sustituyera la frase por un punto rojo, esta prueba caería.
-    const resumen = await screen.findByRole("status");
+    const resumen = estadoDelPie();
     expect(resumen.textContent?.trim().length ?? 0).toBeGreaterThan(10);
-    expect(resumen).toHaveTextContent(/instituciones/);
+    expect(resumen).toHaveTextContent(/institución/);
   });
 
   it("al fallar el envío, el foco va al primer campo inválido", async () => {
@@ -1788,7 +1559,7 @@ describe("los errores se vinculan con su campo y lo que falta se dice", () => {
     await registrar();
 
     await vi.waitFor(() => {
-      expect(screen.getByText(/Falta personal asignado/)).toBeInTheDocument();
+      expect(estadoDelPie()).toHaveTextContent(/^Falta: personal$/);
     });
     expect(onGuardar).not.toHaveBeenCalled();
   });
@@ -1832,12 +1603,13 @@ describe("los errores se vinculan con su campo y lo que falta se dice", () => {
    * Un formulario que rechaza el envío por algo sin marcar exige en silencio.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  it("y la etiqueta del personal lleva su asterisco de obligatorio", () => {
+  it("y la tarjeta del personal lleva su asterisco de obligatorio", () => {
     montar(COMPLETO, false);
 
-    const etiqueta = screen.getByText("Personal asignado").closest("label");
+    // Desde el 2026-10-16 el rótulo es el título de la tarjeta «Personal y horario».
+    const titulo = screen.getByRole("heading", { name: "Personal y horario" });
 
-    expect(within(etiqueta as HTMLElement).getByText("*")).toBeInTheDocument();
+    expect(within(titulo).getByText("*")).toBeInTheDocument();
   });
 });
 
@@ -1893,113 +1665,10 @@ describe("caso 12 · los campos calculados son distintivos, no campos", () => {
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * EL APORTE SE RESUELVE EN ESTA PANTALLA, DESDE EL 2026-08-31.
- *
- * Hasta hoy el clic sobre un formulario compartido NAVEGABA a P-02 con el formulario
- * filtrado. Se retiró por un defecto concreto: el enlace mandaba el **código** —`ECU`— y
- * P-02 filtraba comparando contra el **texto visible** de la columna,
- * `4. PATRULLA ECU DIURNA`. Con la ECU casaba de milagro, porque el código es subcadena
- * del nombre; con la patrulla 6 —código `REACN`, nombre «PATRULLA REACCIÓN NOCTURNA»—
- * **no casaba**, y la pantalla salía en blanco.
- *
- * Estas pruebas fijan la forma nueva: el botón compartido **selecciona**, como cualquier
- * otro, y quien lo monta decide qué hacer con esa selección.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-describe("el formulario compartido se abre aquí, no lleva a otra pantalla", () => {
-  const conAporte = [
-    formulario(1, "OCF", "ESCRITURA"),
-    formulario(4, "ECU", "COMPARTIDO"),
-  ];
-
-  it("al pulsarlo avisa con su código, para abrirlo en esta misma pantalla", async () => {
-    const aportar = vi.fn();
-
-    render(
-      <SelectorFormulario
-        formularios={conAporte}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-        onAportar={aportar}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /FORMULARIO 4/ }));
-
-    expect(aportar).toHaveBeenCalledWith("ECU");
-  });
-
-  /**
-   * LA QUE DE VERDAD DISCRIMINA. Sin esto, el formulario se desplegaría abajo y ningún
-   * botón quedaría marcado arriba: quien mira no sabría cuál abrió.
-   */
-  it("una vez elegido queda marcado como activo, igual que uno propio", () => {
-    render(
-      <SelectorFormulario
-        formularios={conAporte}
-        seleccionado="ECU"
-        onSeleccionar={vi.fn()}
-        onAportar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: /FORMULARIO 4/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-
-  /** Sin `onAportar` no hay a dónde llevarlo, y entonces sí se apaga. */
-  it("sin manejador de aporte el botón queda inerte", () => {
-    render(
-      <SelectorFormulario
-        formularios={conAporte}
-        seleccionado={null}
-        onSeleccionar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: /FORMULARIO 4/ })).toBeDisabled();
-  });
-});
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * UN SOLO FORMULARIO EN MODO APORTE. Corrección del 2026-08-31 por la tarde.
- *
- * La primera versión pintaba el formulario de alta vacío y bloqueado «para que se viera»,
- * y al pulsar «Agregar Personal» aparecía además el del operativo. Quedaban DOS en
- * pantalla, y el vacío no servía para nada: es un formulario de ALTA para algo que este
- * departamento no puede crear —el servidor responde 403— y todos sus campos están en
- * blanco. El útil es el del operativo que ya existe.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-describe("el aporte no pinta un formulario de alta vacío", () => {
-  it("el formulario de alta no aparece cuando el acceso es de aporte", () => {
-    const soloAporte = [formulario(4, "ECU", "COMPARTIDO")];
-
-    render(
-      <SelectorFormulario
-        formularios={soloAporte}
-        seleccionado="ECU"
-        onSeleccionar={vi.fn()}
-        onAportar={vi.fn()}
-      />,
-    );
-
-    // El selector avisa de que ese perfil no registra, y señala dónde sí puede actuar.
-    expect(
-      screen.getByText(/no registra operativos, pero aporta personal/i),
-    ).toBeInTheDocument();
-  });
-});
-
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
  * EL REPORTERO DE VALORES: LA VÍA POR LA QUE P-01 CONSERVA LA CAPTURA. 2026-09-04.
  *
  * Al navegar a otra pantalla React Router desmonta P-01 y su estado se pierde. La página
- * guarda lo tecleado en `sessionStorage` en cada cambio, y `FormularioOperativo` se lo
+ * guarda lo tecleado en `sessionStorage` en cada cambio, y `FormOperativo` se lo
  * cuenta por `onValoresCambian`. Aquí se comprueba ese canal: que avise al montar con lo
  * que hay, que avise al teclear, y que sin la prop no se monte nada.
  *
@@ -2026,7 +1695,7 @@ describe("onValoresCambian conserva la captura de P-01", () => {
     valoresIniciales?: ValoresOperativo,
   ) =>
     render(
-      <FormularioOperativo
+      <FormOperativo
         formularioCodigo="PMO"
         catalogos={catalogos}
         puntos={catalogos.puntos}
@@ -2072,18 +1741,13 @@ describe("onValoresCambian conserva la captura de P-01", () => {
     });
   });
 
-  it("vuelve a avisar cuando se agrega una nota", async () => {
+  it("vuelve a avisar cuando se escribe una observación", async () => {
     const avisar = vi.fn();
     montar(avisar);
 
     const antes = avisar.mock.calls.length;
-    // Las observaciones son notas (2026-09-09): se teclea y se agrega, y eso cambia los
-    // valores del formulario, que es lo que dispara el reportero.
-    await userEvent.type(
-      screen.getByPlaceholderText("Escriba una nota y pulse Agregar"),
-      "hola",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Agregar" }));
+    // Agregar una nota cambia los valores del formulario, que es lo que dispara el reportero.
+    await userEvent.type(screen.getByRole("textbox", { name: "Observaciones" }), "hola{Enter}");
 
     expect(avisar.mock.calls.length).toBeGreaterThan(antes);
     expect(avisar.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -2166,7 +1830,7 @@ describe("cantidad de operativos por persona (formulario 8)", () => {
   ) => {
     const onCambiarCantidadPersona = vi.fn();
     render(
-      <FormularioOperativo
+      <FormOperativo
         formularioCodigo="INSP"
         catalogos={catalogos}
         puntos={catalogos.puntos}
@@ -2206,7 +1870,7 @@ describe("cantidad de operativos por persona (formulario 8)", () => {
     // Al corregir un operativo del 8 no se toca el personal: sus identificadores ya están
     // generados. La «×» de retirar queda deshabilitada; el resto del formulario no.
     render(
-      <FormularioOperativo
+      <FormOperativo
         formularioCodigo="INSP"
         catalogos={catalogos}
         puntos={catalogos.puntos}
@@ -2230,7 +1894,7 @@ describe("cantidad de operativos por persona (formulario 8)", () => {
 
     expect(
       screen.getByRole("button", { name: "Retirar a REDROVÁN LUIS" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
   it("subir la cantidad de una persona avisa con su id y el nuevo valor", () => {
@@ -2304,7 +1968,7 @@ describe("editar el horario por persona (corrección)", () => {
     horaFin: string,
   ) => void) => {
     render(
-      <FormularioOperativo
+      <FormOperativo
         formularioCodigo="PMO"
         catalogos={catalogos}
         puntos={catalogos.puntos}
@@ -2390,7 +2054,7 @@ describe("la zonal de la persona se propone al asignarla en el alta", () => {
     const onZonalesElegidas = vi.fn();
     render(
       // SIN `valoresIniciales`: es el alta pura (P-01), que es donde se propone la zonal.
-      <FormularioOperativo
+      <FormOperativo
         formularioCodigo="PMO"
         catalogos={catalogos}
         puntos={[]}
@@ -2474,7 +2138,7 @@ describe("la zonal de la persona se propone al asignarla en el alta", () => {
    * herencia/edición de turno de arriba). Se retiran «Asignar visibles» y «↵ asigna el primer
    * elegible».
    */
-  it("el alta usa la lista de una columna: «+ Agregar», contador único y nota de borrador", () => {
+  it("el alta usa la tarjeta «Personal y horario»: «+ Agregar», contador único y franja de seleccionados", () => {
     montarAlta({
       id: 1,
       apellidos: "REDROVÁN",
@@ -2489,13 +2153,182 @@ describe("la zonal de la persona se propone al asignarla en el alta", () => {
     expect(
       screen.getByRole("button", { name: "+ Agregar" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Borrador: el personal se registra/),
-    ).toBeInTheDocument();
+    // La nota de borrador se retiró (2026-10-16): el pie del alta ya dice qué falta para registrar.
+    expect(screen.queryByText(/Borrador: el personal se registra/)).toBeNull();
+    expect(screen.getByText("Seleccionados (0)")).toBeInTheDocument();
+    expect(screen.getByText(/^Aún no agrega personal\./)).toBeInTheDocument();
     // Ya no está la bandeja en dos columnas de la vieja alta.
     expect(
       screen.queryByRole("button", { name: /Asignar visibles/ }),
     ).toBeNull();
     expect(screen.queryByText(/asigna el primer elegible/)).toBeNull();
+  });
+});
+
+/**
+ * TRANSPORTE REQUERIDO (2026-10-07). Cada formulario SUGIERE un tipo (`tipoTransportePorDefecto`); los
+ * formularios 1–4 sugieren «Propios medios». Es solo la sugerencia: quien registra decide, y una elección
+ * a mano no la pisa el cambio de formulario. El macrooperativo solo existe si se pide vehículo.
+ */
+describe("«Transporte requerido» sugiere el del formulario", () => {
+  const catalogos: CatalogosFormulario = {
+    zonales: [{ id: 1, codigo: "Z1", nombre: "La Delicia" }],
+    puntos: [],
+    tiposControl: [],
+    instituciones: [],
+    capturaLibrePunto: false,
+    capturaLibreTipo: false,
+    tipoControlMultiple: false,
+    variosPorPersona: false,
+    cantidadPorPersona: false,
+    puntoManual: false,
+  };
+
+  type Sugerido = "PROPIOS_MEDIOS" | "INICIO_Y_FIN" | "COMPLETO" | undefined;
+  const props = (formularioCodigo: string, tipoTransportePorDefecto: Sugerido) => ({
+    formularioCodigo,
+    tipoTransportePorDefecto,
+    catalogos,
+    puntos: [],
+    cargandoPuntos: false,
+    onZonalesElegidas: vi.fn(),
+    candidatos: [],
+    cargandoPersonal: false,
+    personalAgregado: [],
+    onAgregarPersona: vi.fn(),
+    onRetirarPersona: vi.fn(),
+    avisoPersonal: null,
+    bloqueado: false,
+    guardando: false,
+    onGuardar: vi.fn(),
+  });
+  const combo = () => screen.getByRole("combobox", { name: /Transporte requerido/ });
+  const elegir = async (nombre: string) => {
+    await userEvent.click(combo());
+    await userEvent.click(screen.getByRole("option", { name: new RegExp(`^${nombre}`) }));
+  };
+
+  it.each(["OCFIJ", "OCPMO", "LIMPIA", "ECU"])(
+    "el formulario %s (1–4) abre en «Propios medios», sugerido y editable",
+    (codigo) => {
+      render(<FormOperativo {...props(codigo, "PROPIOS_MEDIOS")} />);
+
+      expect(combo()).toHaveTextContent("Propios medios");
+      expect(combo()).toBeEnabled();
+      expect(screen.getByText("· sugerido para este formulario")).toBeInTheDocument();
+    },
+  );
+
+  it("si se elige otro, la etiqueta dice cuál era el sugerido", async () => {
+    render(<FormOperativo {...props("OCFIJ", "PROPIOS_MEDIOS")} />);
+
+    await elegir("Completo");
+
+    expect(combo()).toHaveTextContent("Completo");
+    expect(screen.getByText("· sugerido: Propios medios")).toBeInTheDocument();
+  });
+
+  /*
+   * En P-01 cada formulario guarda SU captura (borrador), y es lo que vuelve al elegirlo otra vez.
+   * Si en ella el transporte se eligió A MANO, la sugerencia del formulario no lo pisa; si no, se
+   * aplica la sugerencia.
+   */
+  it("la sugerencia del formulario no pisa una elección hecha a mano", () => {
+    render(
+      <FormOperativo
+        {...props("OCFIJ", "PROPIOS_MEDIOS")}
+        valoresIniciales={{
+          ...VALORES_INICIALES,
+          formularioCodigo: "OCFIJ",
+          tipoTransporte: "COMPLETO",
+          tipoTransporteManual: true,
+        }}
+      />,
+    );
+
+    expect(combo()).toHaveTextContent("Completo");
+    expect(screen.getByText("· sugerido: Propios medios")).toBeInTheDocument();
+  });
+
+  it("una captura que no eligió el transporte toma la sugerencia del formulario", async () => {
+    render(
+      <FormOperativo
+        {...props("OCFIJ", "PROPIOS_MEDIOS")}
+        valoresIniciales={{
+          ...VALORES_INICIALES,
+          formularioCodigo: "OCFIJ",
+          tipoTransporte: "COMPLETO",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("· sugerido para este formulario")).toBeInTheDocument();
+    expect(combo()).toHaveTextContent("Propios medios");
+  });
+
+  it("«Propios medios» oculta y limpia el macrooperativo", async () => {
+    render(<FormOperativo {...props("INSP", "COMPLETO")} />);
+
+    const casilla = screen.getByRole("checkbox", {
+      name: /Requiere vehículo exclusivo \(macrooperativo\)/,
+    });
+    await userEvent.click(casilla);
+    expect(casilla).toBeChecked();
+
+    await elegir("Propios medios");
+    expect(
+      screen.queryByRole("checkbox", { name: /Requiere vehículo exclusivo/ }),
+    ).not.toBeInTheDocument();
+
+    // Al volver a pedir vehículo, la casilla reaparece LIMPIA.
+    await elegir("Completo");
+    expect(
+      screen.getByRole("checkbox", { name: /Requiere vehículo exclusivo/ }),
+    ).not.toBeChecked();
+  });
+
+  /*
+   * MAQUETACIÓN (2026-10-07; tarjetas desde el 2026-10-16). En jsdom no hay diseño: se fija la
+   * ESTRUCTURA. «Transporte requerido» tiene su propia celda dentro de la tarjeta «Transporte y
+   * observaciones»; Instituciones vive en «Control». Ninguna está dentro de la otra.
+   */
+  it("«Transporte requerido» es una celda propia, en su grupo y fuera del de Instituciones", () => {
+    const { container } = render(
+      <FormOperativo {...props("INSP", "COMPLETO")} />,
+    );
+
+    const transporte = container.querySelector('[data-celda="transporte"]');
+    const instituciones = container.querySelector('[data-celda="instituciones"]');
+    expect(transporte).not.toBeNull();
+    expect(instituciones).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Transporte" }).contains(transporte)).toBe(true);
+    expect(screen.getByRole("group", { name: "Control" }).contains(instituciones)).toBe(true);
+    expect(instituciones?.contains(transporte ?? null)).toBe(false);
+    for (const celda of [transporte, instituciones]) {
+      expect(celda).toHaveClass("w-full");
+      expect(celda).toHaveClass("min-w-0");
+    }
+  });
+
+  it("la casilla del macrooperativo no está en la fila de la etiqueta y explica por «title»", () => {
+    render(<FormOperativo {...props("INSP", "COMPLETO")} />);
+
+    const casilla = screen.getByRole("checkbox", { name: /Requiere vehículo exclusivo/ });
+    const etiqueta = screen.getByText(/^Transporte requerido/).closest(".label");
+    expect(etiqueta?.contains(casilla)).toBe(false);
+    // En la fila del combo.
+    expect(casilla.closest("label")?.parentElement).toBe(combo().parentElement);
+    // La explicación ya no es texto fijo visible: va en `title` y, para el lector, en sr-only.
+    expect(casilla.closest("label")).toHaveAttribute("title", DESCRIPCION_MACROOPERATIVO);
+    expect(casilla).toHaveAccessibleDescription(DESCRIPCION_MACROOPERATIVO);
+    expect(screen.getByText(DESCRIPCION_MACROOPERATIVO)).toHaveClass("sr-only");
+  });
+
+  it("sin sugerencia del formulario, «Completo» y sin rótulo de sugerido", () => {
+    render(<FormOperativo {...props("INSP", undefined)} />);
+
+    expect(combo()).toHaveTextContent("Completo");
+    // Con límites de palabra y no /sugerido/ a secas: «Disponibles · sugeridos primero…» es del personal.
+    expect(screen.queryByText(/\bsugerido\b/)).not.toBeInTheDocument();
   });
 });

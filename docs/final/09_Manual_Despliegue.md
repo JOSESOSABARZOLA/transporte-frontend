@@ -183,7 +183,7 @@ Dos quedaron resueltos el 7 de agosto de 2026 (PV-25 y PV-26); los otros tres si
 | 1 | `.env.prod` con `DB_PASSWORD`, `APP_DB_PASSWORD`, `AUTH_JWT_SECRET` y `SESSION_JWT_SECRET` **distintas entre sí** | ☐ |
 | 1b | `AUTH_COOKIE_SECURE=true` si hay HTTPS; `CORS_ORIGINS` con **el origen real**, no el de otra máquina | ☐ |
 | 1c | La ruta del **módulo 80** en Auth central coincide con ese origen | ☐ |
-| 1d | Si Auth central **no** está en `172.20.136.127`: reconstruir el frontend con `VITE_AUTH_PORTAL_URL`. No basta con ponerlo en el `.env` | ☐ |
+| 1d | Construir el frontend **siempre** con `VITE_AUTH_PORTAL_URL`: desde el 2026-10-16 no hay portal por omisión y sin ella el build falla. No basta con ponerla en el `.env` del servidor | ☐ |
 | 2 | Respaldo de la base anterior | ☐ |
 | 3 | `docker compose build` en la máquina, y `docker save` de las dos imágenes | ☐ |
 | 4 | `docker load` en el servidor | ☐ |

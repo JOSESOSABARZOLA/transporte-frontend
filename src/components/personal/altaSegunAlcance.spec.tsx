@@ -63,7 +63,7 @@ describe("P-07 · quién puede dar de alta", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Nuevo funcionario" }),
+        screen.getByRole("button", { name: "+ Nuevo funcionario" }),
       ).toBeInTheDocument(),
     );
   });
@@ -83,7 +83,7 @@ describe("P-07 · quién puede dar de alta", () => {
     );
 
     expect(
-      screen.queryByRole("button", { name: "Nuevo funcionario" }),
+      screen.queryByRole("button", { name: "+ Nuevo funcionario" }),
     ).toBeNull();
   });
 });

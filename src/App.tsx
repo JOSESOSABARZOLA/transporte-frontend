@@ -6,8 +6,6 @@ import "./App.css";
 import { useRoutes } from "react-router-dom";
 import { routes } from "./config/routes";
 // import { ThemeProvider } from "./providers/ThemeProvider";
-// import { ModalProvider } from "./providers/ModalProvider";
-// import ModalContainer from "./components/modals/ModalContainer";
 import { AppProviders } from "./providers/AppProviders";
 
 function App() {

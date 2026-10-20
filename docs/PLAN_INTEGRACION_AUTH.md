@@ -160,7 +160,7 @@ Hg = (path, code) => {
 sola por subsistema**, y que escribir la nuestra rompería a Instrucción, Resolución y Ejecución.
 **No es así.** La ruta cuelga del módulo, cada uno tiene la suya, y **el Cuadro de Colores no
 necesita subsistema propio**. La unicidad es sobre la **cadena completa**, no sobre el puerto:
-`localhost:5176` y `172.20.136.127:5176` conviven sin conflicto.
+`localhost:5176` y `<IP_SERVIDOR_AUTH>:5176` conviven sin conflicto.
 
 **Y la guía tampoco acierta con `redirectUri` y `module`:** el portal no lee ningún parámetro de
 la URL. El frontend los sigue enviando porque el contrato compartido los pide y no estorban, pero
@@ -173,8 +173,8 @@ la URL. El frontend los sigue enviando porque el contrato compartido los pide y 
 | 74 Resolución | `localhost:5173` |
 | 73 Instrucción | `localhost:5175` |
 | 76 Admin Core | `localhost:5176` |
-| 77 Admin Sorteos | `172.20.136.127:5176` |
-| 75 Ejecución | `172.20.136.127:5177` |
+| 77 Admin Sorteos | `<IP_SERVIDOR_AUTH>:5176` |
+| 75 Ejecución | `<IP_SERVIDOR_AUTH>:5177` |
 | **80 Transporte** | **`localhost:5180`** |
 
 ```bash
@@ -196,7 +196,7 @@ es **contexto seguro**; el precio está en §13.
 
 ### D-2 · La ruta del portal 🟡 · **CERRADO**
 
-> **Confirmado el 2026-08-18: el portal es `http://172.20.136.127:10006/login`** y responde 200.
+> **Confirmado el 2026-08-18: el portal es `http://<IP_SERVIDOR_AUTH>:10006/login`** y responde 200.
 > La API es el **10004**. El otro frontend, el 10003 (`<title>AMC auth</title>`), no es el portal
 > de integración.
 
@@ -211,7 +211,7 @@ Puede que un proxy inverso lo publique en `/login`. **Confirmar por ambiente.**
 
 ### D-3 · Host y puerto del exchange 🟡 · **CERRADO**
 
-> **La guía acertaba.** `http://172.20.136.127:10004/auth/exchange` responde el contrato exacto:
+> **La guía acertaba.** `http://<IP_SERVIDOR_AUTH>:10004/auth/exchange` responde el contrato exacto:
 > `{"statusCode":500,"message":"Código inválido o expirado"}`. Comprobado además que el backend
 > de SIGOC-CCO lo alcanza desde su contenedor.
 >
@@ -307,7 +307,7 @@ if (subsystems.length === 0) throw new Error('Subsistemas no asignados al usuari
 ### D-7 · El Auth desplegado va por detrás del repositorio 🔴 · **NUEVO**
 
 No estaba en la lista porque no se podía saber sin sondear el servidor. Comprobado el
-2026-08-17 contra `172.20.136.127:10004`:
+2026-08-17 contra `<IP_SERVIDOR_AUTH>:10004`:
 
 | | `project_auth/auth` 1.6.5 | Lo desplegado |
 |---|---|---|
@@ -650,7 +650,7 @@ las herramientas con que se había verificado. Merecen quedar escritos porque el
 `crypto.randomUUID is not a function`».
 
 **Causa.** `crypto.randomUUID()` solo existe en **contextos seguros**: HTTPS, o `localhost`. El
-frontend se estaba sirviendo por HTTP desde `172.20.136.73:5180`, y ahí el navegador no expone esa
+frontend se estaba sirviendo por HTTP desde `<IP_EQUIPO_DESARROLLO>:5180`, y ahí el navegador no expone esa
 función.
 
 **Y no era un fallo del ingreso.** `createCorrelationId()` corre en el interceptor de **cada**

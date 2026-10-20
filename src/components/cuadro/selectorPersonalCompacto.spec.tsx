@@ -18,12 +18,13 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 
 import SelectorPersonal, { type PersonaAgregada } from "./SelectorPersonal.tsx";
+import { resumenCajon } from "../../pruebas/resumenCajon.ts";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
 
 /** Dos de Instrucción: la primera ya asignada, la segunda disponible y sugerida. */
@@ -90,8 +91,8 @@ describe("SelectorPersonal · lista compacta (P-02)", () => {
 
     expect(screen.getByText("1 de 2 efectivos")).toBeInTheDocument();
     expect(screen.getByText(/Se guarda al instante/)).toBeInTheDocument();
-    // El distintivo de carga y «Sugerido» salen de los candidatos por id.
-    expect(screen.getByText("Carga baja")).toBeInTheDocument();
+    // El distintivo de carga va en la tarjeta del disponible (BAUTISTA, AMBAR).
+    expect(screen.getByText("Carga Media")).toBeInTheDocument();
   });
 
   it("sin guardado inmediato (adicional) NO promete «Se guarda al instante»", () => {
@@ -125,87 +126,66 @@ describe("SelectorPersonal · lista compacta (P-02)", () => {
 
   it("«Quitar todos» pide confirmación y retira a todos al confirmar", async () => {
     const onRetirar = vi.fn();
-    pintar({ onRetirar });
+    // Con una sola persona basta su «✕»: «Quitar todos» aparece desde dos.
+    pintar({
+      onRetirar,
+      agregadas: [
+        ...AGREGADAS,
+        {
+          funcionarioId: 2,
+          nombre: "BAUTISTA LUIS",
+          telefono: null,
+          horaInicio: "08:00",
+          horaFin: "16:00",
+        },
+      ],
+    });
 
     // Abre la confirmación (no retira todavía).
     await userEvent.click(
-      screen.getByRole("button", { name: "Quitar todos (1)" }),
+      screen.getByRole("button", { name: "Quitar todos (2)" }),
     );
     expect(onRetirar).not.toHaveBeenCalled();
     expect(
-      screen.getByText(/¿Quitar a los 1 asignados\?/),
+      screen.getByText(/¿Quitar a los 2 asignados\?/),
     ).toBeInTheDocument();
 
     // Confirmar retira a cada asignado.
     await userEvent.click(screen.getByRole("button", { name: "Quitar todos" }));
     expect(onRetirar).toHaveBeenCalledWith(1);
+    expect(onRetirar).toHaveBeenCalledWith(2);
   });
 
-  it("«Cambiar turno» despliega las horas y «Guardar turno» las envía", async () => {
-    const usuario = userEvent.setup();
+  it("el horario de cada seleccionado se edita en línea, sin «Cambiar turno»", () => {
     const onCambiarHorario = vi.fn();
     pintar({ onCambiarHorario });
 
-    // Antes de abrir, no hay campos de hora.
-    expect(
-      screen.queryByLabelText("Hora de inicio de YUNDA JESSICA"),
-    ).toBeNull();
-
-    await usuario.click(screen.getByRole("button", { name: "Cambiar turno" }));
-
-    const inicio = screen.getByLabelText("Hora de inicio de YUNDA JESSICA");
+    expect(screen.queryByRole("button", { name: "Cambiar turno" })).toBeNull();
     const fin = screen.getByLabelText("Hora de fin de YUNDA JESSICA");
-    // Arrancan sembrados con el turno actual.
-    expect(inicio).toHaveValue("08:00");
     expect(fin).toHaveValue("16:00");
-
-    await usuario.clear(inicio);
-    await usuario.type(inicio, "14:00");
-    await usuario.clear(fin);
-    await usuario.type(fin, "14:30");
-
-    await usuario.click(screen.getByRole("button", { name: "Guardar turno" }));
-
-    // Una sola llamada al servidor, con las dos horas nuevas.
-    expect(onCambiarHorario).toHaveBeenCalledTimes(1);
-    expect(onCambiarHorario).toHaveBeenCalledWith(1, "14:00", "14:30");
-    // El editor se cierra al guardar.
-    expect(
-      screen.queryByRole("button", { name: "Guardar turno" }),
-    ).toBeNull();
+    fireEvent.change(fin, { target: { value: "14:30" } });
+    expect(onCambiarHorario).toHaveBeenCalledWith(1, "08:00", "14:30");
   });
 
-  it("«Guardar turno» se apaga si falta alguna de las dos horas", async () => {
-    const usuario = userEvent.setup();
-    pintar();
-
-    await usuario.click(screen.getByRole("button", { name: "Cambiar turno" }));
-    await usuario.clear(screen.getByLabelText("Hora de fin de YUNDA JESSICA"));
-
-    expect(screen.getByRole("button", { name: "Guardar turno" })).toBeDisabled();
-  });
-
-  it("«Quitar» retira a la persona", async () => {
+  it("«✕» retira a la persona", async () => {
     const usuario = userEvent.setup();
     const onRetirar = vi.fn();
     pintar({ onRetirar });
 
     await usuario.click(
-      screen.getByRole("button", { name: "Quitar a YUNDA JESSICA" }),
+      screen.getByRole("button", { name: "Retirar a YUNDA JESSICA" }),
     );
 
     expect(onRetirar).toHaveBeenCalledWith(1);
   });
 
-  it("sin `onCambiarHorario` no ofrece cambiar el turno, pero sí quitar", () => {
+  it("sin `onCambiarHorario` no hay campos de hora, pero sí el «✕»", () => {
     pintar({ onCambiarHorario: undefined });
 
-    expect(
-      screen.queryByRole("button", { name: "Cambiar turno" }),
-    ).toBeNull();
+    expect(screen.queryByLabelText("Hora de inicio de YUNDA JESSICA")).toBeNull();
     const lista = screen.getByRole("list");
     expect(
-      within(lista).getByRole("button", { name: "Quitar a YUNDA JESSICA" }),
+      within(lista).getByRole("button", { name: "Retirar a YUNDA JESSICA" }),
     ).toBeInTheDocument();
   });
 
@@ -229,7 +209,7 @@ describe("SelectorPersonal · lista compacta (P-02)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("Cuota justa")).toBeInTheDocument();
     const volver = screen.getByRole("button", {
-      name: "← Volver al operativo",
+      name: "Volver al operativo",
     });
 
     // «← Volver» regresa al selector (reaparece su buscador).
@@ -287,7 +267,7 @@ describe("SelectorPersonal · lista compacta (P-02)", () => {
     expect(boton).toHaveAttribute("aria-expanded", "false");
     // El resumen sale de los mismos datos del reparto: 1 baja (VERDE) y 1 media (AMBAR).
     expect(boton).toHaveAccessibleDescription(
-      "Carga baja: 1; media: 1; alta: 0.",
+      "Carga Baja: 1; Carga Media: 1; Carga Alta: 0.",
     );
 
     await usuario.click(boton);
@@ -295,6 +275,8 @@ describe("SelectorPersonal · lista compacta (P-02)", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Cuota justa")).toBeInTheDocument();
     expect(boton).toHaveAttribute("aria-expanded", "true");
+    // La estructura del cajón estándar (R10): ancho, cabecera, secciones y pie.
+    expect(resumenCajon(screen.getByRole("dialog"))).toMatchSnapshot();
   });
 
   it("al cerrar el reparto (P-01) el foco vuelve al botón «Ver reparto de carga»", async () => {

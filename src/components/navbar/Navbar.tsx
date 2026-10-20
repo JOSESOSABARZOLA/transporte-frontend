@@ -20,11 +20,14 @@ import { useUser } from "../../hooks/useUser";
 type NavbarProps = {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  /** Barra plegada en esta pantalla (Mis operativos bajo 1700 px): el botón dice «Menú». */
+  menuPlegado?: boolean;
 };
 
 export default function Navbar({
   isSidebarOpen,
   onToggleSidebar,
+  menuPlegado = false,
 }: NavbarProps) {
   // Los canales de notificación (NOT-01 a NOT-07) están pendientes de definición del
   // negocio, así que la campana no consulta nada todavía y la lista llega vacía.
@@ -51,12 +54,13 @@ export default function Navbar({
   const isDarkTheme = theme === "dark";
 
   const alertProps = {
-    botonProps: {
+    botonBarra: {
+      label: "Alertas",
+      // excepción D6: botón redondo del armazón (barra superior), con su estilo propio.
       estilos:
         "app-topbar-icon-button btn btn-ghost btn-circle text-primary hover:bg-primary/10 hover:text-primary focus:bg-primary/10 focus:text-primary focus-visible:outline-none active:bg-primary/10 active:text-primary",
       // `as const` para que no se ensanche a `string` al pasar por la variable.
       icono: "notificaciones" as const,
-      deshabilitado: false,
       indicativo: { activo: true, cantidad: totalAlerts },
     },
     menuClassName:
@@ -180,6 +184,7 @@ export default function Navbar({
           <MenuDropdown
             open={isSidebarOpen}
             onToggle={onToggleSidebar}
+            plegado={menuPlegado}
           />
         </div>
         {/* Título del navbar */}

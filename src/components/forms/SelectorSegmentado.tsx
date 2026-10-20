@@ -16,7 +16,12 @@
 
 import type { FC } from "react";
 
-type OpcionSegmentada = { valor: string; nombre: string };
+/**
+ * `motivoDeshabilitado` (2026-10-19, compartir unidad): la opción se MUESTRA apagada con su motivo
+ * en el `title` y no se puede elegir (`aria-disabled`, regla 17: nunca `disabled`, que pierde el
+ * motivo). Sin él, la opción se comporta como siempre.
+ */
+type OpcionSegmentada = { valor: string; nombre: string; motivoDeshabilitado?: string | null };
 
 type SelectorSegmentadoProps = {
   id: string;
@@ -28,6 +33,11 @@ type SelectorSegmentadoProps = {
   onCambiar: (valor: string) => void;
   ayuda?: string;
   error?: string;
+  /**
+   * Rótulo solo para lectores de pantalla (2026-10-08): el filtro «Activos | Inactivos | Todos» de
+   * P-07 se entiende por sus opciones y no lleva rótulo visible; el grupo conserva su nombre.
+   */
+  etiquetaOculta?: boolean;
 };
 
 const SelectorSegmentado: FC<SelectorSegmentadoProps> = ({
@@ -39,12 +49,13 @@ const SelectorSegmentado: FC<SelectorSegmentadoProps> = ({
   onCambiar,
   ayuda,
   error,
+  etiquetaOculta = false,
 }) => {
   const idError = `${id}-error`;
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="label-text font-medium">
+      <span className={etiquetaOculta ? "sr-only" : "label-text"}>
         {etiqueta}
         {obligatorio && (
           <span
@@ -56,13 +67,19 @@ const SelectorSegmentado: FC<SelectorSegmentadoProps> = ({
         )}
       </span>
 
+      {/*
+        UN GRUPO DE VERDAD (2026-10-15): contenedor con borde, opciones del mismo alto (`btn-sm`,
+        sin borde propio), la activa rellena y las demás con paso del cursor. Antes cada opción era
+        un `btn-ghost` suelto y el grupo no se leía como uno. Lo usan Flota, Formularios y Personal.
+      */}
       <div
-        className="join"
+        className="join w-fit rounded-field border border-base-300 bg-base-100"
         role="group"
         aria-label={etiqueta}
       >
         {opciones.map((opcion) => {
           const activa = valor === opcion.valor;
+          const apagada = Boolean(opcion.motivoDeshabilitado);
           return (
             <button
               key={opcion.valor}
@@ -70,8 +87,15 @@ const SelectorSegmentado: FC<SelectorSegmentadoProps> = ({
               aria-pressed={activa}
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? idError : undefined}
-              onClick={() => onCambiar(opcion.valor)}
-              className={`join-item btn btn-sm ${activa ? "btn-primary" : "btn-ghost"}`}
+              aria-disabled={apagada || undefined}
+              title={opcion.motivoDeshabilitado ?? undefined}
+              onClick={() => {
+                if (!apagada) onCambiar(opcion.valor);
+              }}
+              // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
+              className={`join-item btn btn-sm border-0 shadow-none ${
+                activa ? "btn-primary" : "btn-ghost hover:bg-base-200"
+              }${apagada ? " cursor-not-allowed text-app-disabled" : ""}`}
             >
               {opcion.nombre}
             </button>
@@ -80,7 +104,7 @@ const SelectorSegmentado: FC<SelectorSegmentadoProps> = ({
       </div>
 
       {ayuda && !error && (
-        <span className="text-xs text-base-content/70">{ayuda}</span>
+        <span className="text-xs text-app-muted">{ayuda}</span>
       )}
       {error && (
         <span

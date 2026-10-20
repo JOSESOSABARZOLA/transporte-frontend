@@ -10,6 +10,7 @@
 import { type FC } from "react";
 import type { Alert } from "../../interfaces/Alert";
 import BadgePriority from "../common/BadgePriority";
+import Boton from "../common/Boton.tsx";
 
 type AlertListProps = {
   items: Alert[];
@@ -40,7 +41,7 @@ const AlertList: FC<AlertListProps> = ({ items }) => {
               </div>
               <p className="w-full truncate">{item.message}</p>
               <div className="card-actions justify-end">
-                <button className="btn btn-xs btn-info">Ver</button>
+                <Boton variante="enlace" tamano="sm">Ver</Boton>
               </div>
             </div>
           </div>

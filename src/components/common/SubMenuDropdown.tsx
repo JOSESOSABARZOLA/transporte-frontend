@@ -10,24 +10,45 @@
  *                  scroll interno si el menú es más largo que el espacio disponible.
  * Desarrollador: Johan Freire
  * Fecha: 2026-03-19
+ *
+ * DISPARADOR ESTÁNDAR (2026-10-15, estándar de botones): `disparador` pinta el «⋮» de las filas con
+ * `<Boton variante="secundario" tamano="sm">`, 32×32, nombrado por su etiqueta. `botonBarra` queda
+ * para los iconos de la barra superior (alertas), que no son acciones de una pantalla.
+ *
+ * TECLADO (2026-10-13): al abrir, el foco pasa a la primera opción; las flechas, Inicio y Fin
+ * recorren las opciones; Escape y Tab cierran y devuelven el foco al disparador, igual que elegir
+ * una opción. Así el menú de «Más acciones» de Mis operativos se usa sin ratón.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import Boton from "./Boton.tsx";
-import type { NombreIcono } from "./Iconos.tsx";
+import Iconos, { type NombreIcono } from "./Iconos.tsx";
 import UserProfileButton from "./UserProfileButton";
 
+/** Lo que se recorre con las flechas: los botones y enlaces de cada opción. */
+const SELECTOR_OPCION = "li > button, li > a";
+
 type MenuDesplegableProps<T> = {
-  /**
-   * `label` (opcional) da NOMBRE ACCESIBLE al disparador icónico: `Boton` lo pone como `title`, que
-   * es el nombre del control para el lector de pantalla cuando el icono va `aria-hidden`. Sin él, un
-   * «⋯» sin texto no tiene nombre. Se pasa por el spread a `Boton`.
-   */
-  botonProps?: {
+  /** El «⋮» de una fila o tarjeta: botón secundario de 32 px, sin texto. */
+  disparador?: {
+    /** Nombre accesible: «Más acciones de PBA-1235». */
+    etiqueta: string;
+    deshabilitado?: boolean;
+    motivo?: string | null;
+  };
+  /** Icono de la barra superior (alertas): su estilo es el de la barra, no el de una acción. */
+  botonBarra?: {
     estilos: string;
     icono: NombreIcono;
-    deshabilitado: boolean;
     label?: string;
+    indicativo?: { activo: boolean; cantidad: number };
   };
   menuClassName?: string;
   items: T[];
@@ -35,7 +56,8 @@ type MenuDesplegableProps<T> = {
 };
 
 const SubMenuDropdown = <T,>({
-  botonProps,
+  disparador,
+  botonBarra,
   menuClassName,
   items,
   renderItem,
@@ -51,6 +73,37 @@ const SubMenuDropdown = <T,>({
   const menuRef = useRef<HTMLUListElement>(null);
 
   const alternar = () => setAbierto((v) => !v);
+
+  /** El botón que abrió el menú: a él vuelve el foco al cerrar. */
+  const botonDisparador = (): HTMLElement | null =>
+    triggerRef.current?.querySelector<HTMLElement>("button") ?? null;
+  const cerrarYVolver = () => {
+    setAbierto(false);
+    botonDisparador()?.focus();
+  };
+  const opciones = (): HTMLElement[] =>
+    Array.from(menuRef.current?.querySelectorAll<HTMLElement>(SELECTOR_OPCION) ?? []);
+
+  // Al abrir, el foco va a la primera opción: con teclado se sigue sin buscarla.
+  useEffect(() => {
+    if (abierto) menuRef.current?.querySelector<HTMLElement>(SELECTOR_OPCION)?.focus();
+  }, [abierto]);
+
+  const alTeclear = (evento: KeyboardEvent<HTMLUListElement>) => {
+    const lista = opciones();
+    const actual = lista.indexOf(document.activeElement as HTMLElement);
+    const ir = (indice: number) => {
+      evento.preventDefault();
+      lista[(indice + lista.length) % lista.length]?.focus();
+    };
+    if (evento.key === "Escape" || evento.key === "Tab") {
+      evento.preventDefault();
+      cerrarYVolver();
+    } else if (evento.key === "ArrowDown") ir(actual + 1);
+    else if (evento.key === "ArrowUp") ir(actual < 0 ? lista.length - 1 : actual - 1);
+    else if (evento.key === "Home") ir(0);
+    else if (evento.key === "End") ir(lista.length - 1);
+  };
 
   // Al abrir, se mide el menú y se decide dirección: si NO cabe hacia abajo (fila cercana al fondo)
   // pero sí hay más espacio arriba, se abre hacia arriba. En cualquier caso el alto se limita al
@@ -111,7 +164,8 @@ const SubMenuDropdown = <T,>({
         maxHeight: pos.maxHeight ? pos.maxHeight : undefined,
         overflowY: "auto",
       }}
-      onClick={() => setAbierto(false)}
+      onClick={cerrarYVolver}
+      onKeyDown={alTeclear}
       className={`app-shell-surface app-dropdown-surface menu min-w-56 rounded-md border border-base-300 bg-base-100 p-2 text-sm text-base-content shadow-[0_20px_45px_rgba(15,23,42,0.20)] ${menuClassName ?? ""}`}
     >
       {renderItem(items)}
@@ -120,9 +174,42 @@ const SubMenuDropdown = <T,>({
 
   return (
     <div className="inline-flex">
-      <div ref={triggerRef} role="button">
-        {botonProps ? (
-          <Boton onClick={alternar} {...botonProps} texto={""} />
+      <div
+        ref={triggerRef}
+        // Escape sobre el disparador también cierra un menú abierto.
+        onKeyDown={(evento) => {
+          if (abierto && evento.key === "Escape") cerrarYVolver();
+        }}
+      >
+        {disparador ? (
+          <Boton
+            variante="secundario"
+            tamano="sm"
+            icono="subMenu"
+            aria-label={disparador.etiqueta}
+            title={disparador.etiqueta}
+            deshabilitado={disparador.deshabilitado}
+            motivoDeshabilitado={disparador.motivo}
+            expandido={abierto}
+            onClick={alternar}
+          />
+        ) : botonBarra ? (
+          <button
+            type="button"
+            className={botonBarra.estilos}
+            title={botonBarra.label}
+            aria-label={botonBarra.label}
+            aria-haspopup="menu"
+            aria-expanded={abierto}
+            onClick={alternar}
+          >
+            <Iconos nombre={botonBarra.icono} />
+            {botonBarra.indicativo?.activo && botonBarra.indicativo.cantidad > 0 && (
+              <span className="badge badge-warning badge-xs absolute top-0 right-0">
+                {botonBarra.indicativo.cantidad > 5 ? "+5" : botonBarra.indicativo.cantidad}
+              </span>
+            )}
+          </button>
         ) : (
           <UserProfileButton onClick={alternar} />
         )}

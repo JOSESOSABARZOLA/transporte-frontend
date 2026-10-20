@@ -20,6 +20,11 @@
  * ficha; la cuenta tiene otro formulario y otras reglas. Duplicar la orquestación —pequeña— es más
  * barato y seguro que generalizar un componente que ya funciona en P-07.
  *
+ * CAJÓN ESTÁNDAR (2026-10-15, D5): `ancho="lg"`, sin versalita de contexto (va al subtítulo), con
+ * el Stepper en el cuerpo y el pie estándar: en el paso 1 «Continuar →» (primario) y «¿No aparece?
+ * Registro manual»; en el 2, «← Atrás» antes de Cancelar. Cerrar con algo capturado pregunta
+ * «¿Descartar cambios?», que antes faltaba aquí.
+ *
  * LA CÉDULA SOLO SE PRECARGA SI ESA PERSONA YA TIENE FICHA: es el enlace a `t_funcionario`, no un
  * dato de la persona. Precargar la cédula de Auth de quien no está fichado mataría el alta con «no
  * hay ficha con esa cédula». Ese matiz vive en `alContinuar`.
@@ -28,7 +33,10 @@
 
 import { useState, type FC } from "react";
 
+import Boton from "../common/Boton.tsx";
+import CampoDrawer from "../common/CampoDrawer.tsx";
 import DrawerLateral from "../common/DrawerLateral.tsx";
+import SeccionDrawer from "../common/SeccionDrawer.tsx";
 import Stepper from "../common/Stepper.tsx";
 import PasoBuscarPersona from "../personal/PasoBuscarPersona.tsx";
 import { PARA_CUENTA } from "../personal/propositoDirectorio.ts";
@@ -37,6 +45,8 @@ import type { RolDepartamental } from "../../config/env.ts";
 import type { FilaDirectorio } from "../../interfaces/DirectorioAuth.ts";
 import type { UsuarioCuadro } from "../../interfaces/UsuarioCuadro.ts";
 import { useCatalogoRoles } from "../../hooks/useCatalogoRoles.ts";
+import { estadoPieDrawer, motivoSinCambios } from "../../utils/estadoPieDrawer.util.ts";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 /** Lo que el pie envía al guardar; misma forma que consumía el modal anterior. */
 export type DatosCuenta = {
@@ -116,6 +126,8 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
     usuarioEdicion?.funcionario?.cedula ?? "",
   );
   const [activo, setActivo] = useState(usuarioEdicion ? usuarioEdicion.activo : true);
+  /** Ya se pulsó «Guardar»: desde aquí los faltantes se nombran y se marcan en rojo. */
+  const [intentado, setIntentado] = useState(false);
 
   const alternarRol = (rol: RolDepartamental) =>
     setRoles((actuales) =>
@@ -146,15 +158,22 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
   };
 
   // SIN NINGÚN ROL NO SE PUEDE GUARDAR. El servidor también lo rechaza; aquí el botón apagado
-  // explica el porqué antes de intentarlo. En alta, además, el correo es obligatorio.
-  const puedeGuardar =
-    nombre.trim().length > 0 &&
-    roles.length > 0 &&
-    (esAlta ? correo.trim().length > 0 : true);
-
+  // explica el porqué antes de intentarlo (`faltan`, más abajo). En alta, además, el correo.
   const elegidosSinAcceso = roles.filter((rol) => rolesSinAcceso.includes(rol));
 
-  const guardar = () =>
+  // Lo que falta para guardar, con nombre. Antes del primer intento el pie solo lo cuenta.
+  const faltaCorreo = esAlta && correo.trim().length === 0;
+  const faltaNombre = nombre.trim().length === 0;
+  const faltaRol = roles.length === 0;
+  const faltan = [
+    faltaCorreo ? "correo" : null,
+    faltaNombre ? "nombre" : null,
+    faltaRol ? "al menos un rol" : null,
+  ].filter((uno): uno is string => uno !== null);
+
+  const guardar = () => {
+    setIntentado(true);
+    if (faltan.length > 0) return;
     onGuardar({
       correo: correo.trim(),
       nombre: nombre.trim(),
@@ -163,106 +182,84 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
       funcionarioCedula: cedula.trim() || null,
       activo,
     });
+  };
 
-  const pie =
-    paso === 1 && esAlta ? (
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          className="self-start text-sm text-primary underline"
-          onClick={registroManual}
-        >
-          ¿No aparece? Registro manual
-        </button>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onCerrar}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={elegidaId == null}
-            onClick={alContinuar}
-          >
-            Continuar
-          </button>
-        </div>
-      </div>
-    ) : (
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {esAlta ? (
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setPaso(1)}
-            disabled={guardando}
-          >
-            ← Atrás
-          </button>
-        ) : (
-          <span />
-        )}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onCerrar}
-            disabled={guardando}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={guardar}
-            disabled={guardando || !puedeGuardar}
-          >
-            {guardando ? (
-              <>
-                <span
-                  className="loading loading-spinner loading-sm"
-                  aria-hidden="true"
-                />
-                Guardando…
-              </>
-            ) : esAlta ? (
-              "Crear cuenta"
-            ) : (
-              "Guardar cambios"
-            )}
-          </button>
-        </div>
-      </div>
-    );
+  // Hay cambios: en alta, en cuanto se pasa al paso 2; en edición, si algo difiere de la cuenta.
+  const hayCambios = esAlta
+    ? paso === 2
+    : usuarioEdicion !== null &&
+      (nombre !== usuarioEdicion.nombre ||
+        activo !== usuarioEdicion.activo ||
+        identificadorAd !== (usuarioEdicion.identificadorAd ?? "") ||
+        cedula !== (usuarioEdicion.funcionario?.cedula ?? "") ||
+        [...roles].sort().join() !== [...usuarioEdicion.roles].sort().join());
+  const enPaso1 = paso === 1 && esAlta;
+
+  const estadoPie = enPaso1
+    ? null
+    : estadoPieDrawer({ esEdicion: !esAlta, hayCambios, intentado, faltan });
+
+  const motivoGuardar = enPaso1
+    ? elegidaId == null
+      ? "Elija a una persona del directorio."
+      : null
+    : motivoSinCambios(!esAlta, hayCambios);
 
   return (
     <DrawerLateral
       abierto={abierto}
-      antetitulo={esAlta ? PARA_CUENTA.antetitulo : "Cuentas del cuadro"}
+      ancho="lg"
       titulo={
         !esAlta
           ? `Editar cuenta${usuarioEdicion ? ` de ${usuarioEdicion.nombre}` : ""}`
-          : paso === 1
+          : enPaso1
             ? "Buscar en Auth central"
             : "Completar cuenta"
       }
-      onCerrar={guardando ? undefined : onCerrar}
-      pie={pie}
+      subtitulo={esAlta ? `${PARA_CUENTA.antetitulo} · Paso ${paso} de 2` : "Cuentas del cuadro"}
+      onCerrar={onCerrar}
+      sucio={hayCambios}
+      guardando={guardando}
+      onGuardar={enPaso1 ? alContinuar : guardar}
+      textoGuardar={enPaso1 ? "Continuar →" : esAlta ? "Crear cuenta" : "Guardar cambios"}
+      estadoPie={estadoPie}
+      motivoGuardar={motivoGuardar}
+      guardarPendiente={!enPaso1 && faltan.length > 0}
+      errorServidor={enPaso1 ? null : aviso}
+      extraPie={
+        enPaso1 && (
+          <Boton
+            variante="enlace"
+            tamano="sm"
+            onClick={registroManual}
+          >
+            ¿No aparece? Registro manual
+          </Boton>
+        )
+      }
+      accionesPie={
+        !enPaso1 &&
+        esAlta && (
+          <Boton
+            tamano="lg"
+            onClick={() => setPaso(1)}
+            deshabilitado={guardando}
+          >
+            ← Atrás
+          </Boton>
+        )
+      }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4">
-        {esAlta && (
-          <Stepper
-            pasos={PASOS}
-            actual={paso}
-            completados={paso === 2 ? [1] : []}
-          />
-        )}
+      {esAlta && (
+        <Stepper
+          pasos={PASOS}
+          actual={paso}
+          completados={paso === 2 ? [1] : []}
+        />
+      )}
 
-        {paso === 1 && esAlta ? (
+      {enPaso1 ? (
+        <div className="flex min-h-0 flex-1 flex-col">
           <PasoBuscarPersona
             proposito={PARA_CUENTA}
             filas={filas}
@@ -274,210 +271,161 @@ const DrawerFlujoCuenta: FC<DrawerFlujoCuentaProps> = ({
             onSeleccionar={(fila) => setElegidaId(fila.authId)}
             onRegistroManual={registroManual}
           />
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-            <p className="text-xs text-base-content/70">
-              Quién entra al Cuadro de Colores y con qué rol. Auth central acredita la
-              identidad; esta cuenta decide el perfil dentro del módulo.
-            </p>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-app-muted">
+            Quién entra al Cuadro de Colores y con qué rol. Auth central acredita la identidad; esta
+            cuenta decide el perfil dentro del módulo.
+          </p>
 
-            {aviso && (
-              <div
-                className="alert alert-error"
-                role="alert"
+          <SeccionDrawer titulo="Persona">
+            {esAlta ? (
+              <CampoDrawer
+                id="cuenta-correo"
+                etiqueta="Correo institucional"
+                requerido
+                ancha
+                error={intentado && faltaCorreo ? "Escriba el correo institucional." : null}
               >
-                <span>{aviso}</span>
-              </div>
-            )}
-
-            <div className="form-control w-full">
-              <label
-                className="label"
-                htmlFor="cuenta-correo"
-              >
-                <span className="label-text">Correo institucional</span>
-              </label>
-              {esAlta ? (
                 <input
-                  id="cuenta-correo"
                   type="email"
                   maxLength={160}
-                  className="input input-bordered input-sm w-full"
+                  className="input input-bordered w-full"
                   value={correo}
                   onChange={(evento) => setCorreo(evento.target.value)}
-                  disabled={guardando}
                   placeholder="nombre.apellido@quito.gob.ec"
                 />
-              ) : (
-                // Llave natural de la cuenta: no se edita (regla 5). El valor completo, en el title.
+              </CampoDrawer>
+            ) : (
+              // Llave natural de la cuenta: no se edita (regla 5). El valor completo, en el title.
+              <div className="flex min-w-0 flex-col gap-1.5 md:col-span-2">
+                <span className="text-sm font-semibold text-app-label">Correo institucional</span>
                 <span
                   className="badge badge-ghost badge-sm min-w-0 max-w-full"
                   title={correo}
                 >
                   <span className="min-w-0 truncate">{correo}</span>
                 </span>
-              )}
-            </div>
-
-            <div className="form-control w-full">
-              <label
-                className="label"
-                htmlFor="cuenta-nombre"
-              >
-                <span className="label-text">Nombre completo</span>
-              </label>
-              <input
-                id="cuenta-nombre"
-                type="text"
-                maxLength={160}
-                className="input input-bordered input-sm w-full"
-                value={nombre}
-                onChange={(evento) => setNombre(evento.target.value)}
-                disabled={guardando}
-                placeholder="Apellidos Nombres"
-              />
-              <p className="mt-1 text-xs text-base-content/70">
-                Es el nombre que se muestra en la barra superior. Auth no lo envía,
-                así que se escribe aquí.
-              </p>
-            </div>
-
-            {/* Casillas y no `<select multiple>`: la selección múltiple nativa pierde lo elegido. */}
-            <fieldset className="form-control w-full">
-              <legend className="label">
-                <span className="label-text">Roles en el cuadro</span>
-              </legend>
-
-              <div className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-                {asignables.map((codigo) => (
-                  <label
-                    key={codigo}
-                    className="label cursor-pointer justify-start gap-3 py-1"
-                  >
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-sm shrink-0"
-                      checked={roles.includes(codigo)}
-                      onChange={() => alternarRol(codigo)}
-                      disabled={guardando}
-                    />
-                    <span className="label-text min-w-0 whitespace-normal">
-                      {nombreDe(codigo)}
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              <p className="mt-1 text-xs text-base-content/70">
-                Puede elegir varios: esta persona verá la unión de los formularios
-                de todos ellos.
-              </p>
-
-              {roles.length === 0 && (
-                <div
-                  className="alert alert-error mt-2"
-                  role="alert"
-                >
-                  <span className="text-xs">
-                    Elija al menos uno. Sin ningún rol, esta persona entraría y no
-                    podría hacer nada.
-                  </span>
-                </div>
-              )}
-
-              {elegidosSinAcceso.length > 0 && (
-                <div
-                  className="alert alert-warning mt-2"
-                  role="alert"
-                >
-                  <span className="text-xs">
-                    {elegidosSinAcceso.map((rol) => nombreDe(rol)).join(", ")} no
-                    tiene ningún rol de Transporte en Auth central. Si es el único
-                    que le asigna, esta persona no podrá entrar hasta que se cree
-                    allí y se registre en Roles de Auth central.
-                  </span>
-                </div>
-              )}
-            </fieldset>
-
-            <div className="form-control w-full">
-              <label
-                className="label"
-                htmlFor="cuenta-auth"
-              >
-                <span className="label-text">Usuario de Auth central</span>
-              </label>
-              <input
-                id="cuenta-auth"
-                type="text"
-                maxLength={120}
-                className="input input-bordered input-sm w-full"
-                value={identificadorAd}
-                onChange={(evento) => setIdentificadorAd(evento.target.value)}
-                disabled={guardando}
-                placeholder="ffnavarrete"
-              />
-              <p className="mt-1 text-xs text-base-content/70">
-                Es la llave del ingreso: el canje busca esta cuenta por ese usuario.
-                Si queda vacío, esta persona no podrá entrar.
-              </p>
-            </div>
-
-            <div className="form-control w-full">
-              <label
-                className="label"
-                htmlFor="cuenta-cedula"
-              >
-                <span className="label-text">Cédula de la ficha de personal</span>
-              </label>
-              <input
-                id="cuenta-cedula"
-                type="text"
-                maxLength={10}
-                className="input input-bordered input-sm w-full"
-                value={cedula}
-                onChange={(evento) => setCedula(evento.target.value)}
-                disabled={guardando}
-                placeholder="0000000000"
-              />
-              <p className="mt-1 text-xs text-base-content/70">
-                Enlaza con el maestro de personal para que reciba sus órdenes de
-                servicio. Déjelo vacío si esta persona no sale a operativos:
-                Dirección y administración no reciben ninguna.
-              </p>
-
-              {desdeAuth && cedula === "" && (
-                <div
-                  className="alert alert-info mt-2"
-                  role="status"
-                >
-                  <span className="text-xs">
-                    Esta persona <strong>no tiene ficha de personal</strong> en el
-                    sistema, así que no hay ninguna a la que enlazar. Puede crear la
-                    cuenta igualmente. Si debiera salir a operativos, regístrela
-                    primero en «Personal y disponibilidad».
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {!esAlta && (
-              <div className="form-control w-full">
-                <label className="label cursor-pointer justify-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={activo}
-                    onChange={(evento) => setActivo(evento.target.checked)}
-                    disabled={guardando}
-                  />
-                  <span className="label-text">Cuenta activa</span>
-                </label>
               </div>
             )}
-          </div>
-        )}
-      </div>
+
+            <CampoDrawer
+              id="cuenta-nombre"
+              etiqueta="Nombre completo"
+              requerido
+              ancha
+              error={intentado && faltaNombre ? "Escriba el nombre completo." : null}
+              ayuda="Es el nombre que se muestra en la barra superior. Auth no lo envía, así que se escribe aquí."
+            >
+              <input
+                type="text"
+                maxLength={160}
+                className="input input-bordered w-full"
+                value={nombre}
+                onChange={(evento) => setNombre(evento.target.value)}
+                placeholder="Apellidos Nombres"
+              />
+            </CampoDrawer>
+          </SeccionDrawer>
+
+          {/* Casillas y no `<select multiple>`: la selección múltiple nativa pierde lo elegido. */}
+          <SeccionDrawer
+            titulo="Roles en el cuadro"
+            descripcion="Puede elegir varios: esta persona verá la unión de los formularios de todos ellos."
+            rejilla={false}
+          >
+            <fieldset className="grid grid-cols-1 gap-x-6 gap-y-1 md:grid-cols-2">
+              <legend className="sr-only">Roles en el cuadro</legend>
+              {asignables.map((codigo) => (
+                <label
+                  key={codigo}
+                  className="label cursor-pointer justify-start gap-3 py-1"
+                >
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm shrink-0"
+                    checked={roles.includes(codigo)}
+                    onChange={() => alternarRol(codigo)}
+                  />
+                  <span className="label-text min-w-0 whitespace-normal">{nombreDe(codigo)}</span>
+                </label>
+              ))}
+            </fieldset>
+
+            {intentado && faltaRol && (
+              <AvisoEnLinea variante="error">
+                  Elija al menos uno. Sin ningún rol, esta persona entraría y no podría hacer nada.
+                </AvisoEnLinea>
+            )}
+
+            {elegidosSinAcceso.length > 0 && (
+              <AvisoEnLinea variante="advertencia" rol="alert">
+                  {elegidosSinAcceso.map((rol) => nombreDe(rol)).join(", ")} no tiene ningún rol de
+                  Transporte en Auth central. Si es el único que le asigna, esta persona no podrá
+                  entrar hasta que se cree allí y se registre en Roles de Auth central.
+                </AvisoEnLinea>
+            )}
+          </SeccionDrawer>
+
+          <SeccionDrawer titulo="Ingreso y enlace con personal">
+            <CampoDrawer
+              id="cuenta-auth"
+              etiqueta="Usuario de Auth central"
+              ayuda="Es la llave del ingreso: el canje busca esta cuenta por ese usuario. Si queda vacío, esta persona no podrá entrar."
+            >
+              <input
+                type="text"
+                maxLength={120}
+                className="input input-bordered w-full"
+                value={identificadorAd}
+                onChange={(evento) => setIdentificadorAd(evento.target.value)}
+                placeholder="ffnavarrete"
+              />
+            </CampoDrawer>
+
+            <CampoDrawer
+              id="cuenta-cedula"
+              etiqueta="Cédula de la ficha de personal"
+              ayuda="Enlaza con el maestro de personal para que reciba sus órdenes de servicio. Déjelo vacío si esta persona no sale a operativos: Dirección y administración no reciben ninguna."
+            >
+              <input
+                type="text"
+                maxLength={10}
+                className="input input-bordered w-full"
+                value={cedula}
+                onChange={(evento) => setCedula(evento.target.value)}
+                placeholder="0000000000"
+              />
+            </CampoDrawer>
+
+            {desdeAuth && cedula === "" && (
+              <AvisoEnLinea variante="info" className="md:col-span-2">
+                  Esta persona <strong>no tiene ficha de personal</strong> en el sistema, así que no
+                  hay ninguna a la que enlazar. Puede crear la cuenta igualmente. Si debiera salir a
+                  operativos, regístrela primero en «Personal y disponibilidad».
+                </AvisoEnLinea>
+            )}
+          </SeccionDrawer>
+
+          {!esAlta && (
+            <SeccionDrawer
+              titulo="Estado"
+              rejilla={false}
+            >
+              <label className="label cursor-pointer justify-start gap-3">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm"
+                  checked={activo}
+                  onChange={(evento) => setActivo(evento.target.checked)}
+                />
+                <span className="label-text">Cuenta activa</span>
+              </label>
+            </SeccionDrawer>
+          )}
+        </>
+      )}
     </DrawerLateral>
   );
 };

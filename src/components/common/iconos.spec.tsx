@@ -75,7 +75,10 @@ describe("el menú lateral", () => {
     );
 
     expect(repetidos).toEqual([]);
-    expect(dibujos).toHaveLength(19);
+    // 20 desde el 2026-10-06: «Jornada de los conductores» y «Capacidad de flota» pasaron a
+    // «Planificar el día» (−2) y el grupo «Transporte · DAF» trajo su figura (+1).
+    // 21 desde la versión consolidada (2026-10-06): «Carga inicial» (+1).
+    expect(dibujos).toHaveLength(21);
   });
 });
 
@@ -87,6 +90,25 @@ describe("los iconos que se piden por su nombre", () => {
   });
 
   /** Acompaña al rótulo «Eliminar» de P-02 y de las ausencias de P-07. */
+  it("«informacion» es la i en un círculo (Transporte requerido, 2026-10-07)", () => {
+    expect(dibujoDe("informacion")).toBe("circle-info");
+  });
+
+  /** El único SVG propio (2026-10-07): las barras de «Ver reparto de carga». */
+  it("«barras» es el SVG propio de gráfico de barras: trazo del color del texto y oculto al lector", () => {
+    const { container } = render(<Iconos nombre="barras" />);
+    const svg = container.querySelector("svg");
+
+    expect(svg).toHaveAttribute("data-icon", "barras");
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect(svg).toHaveAttribute("stroke", "currentColor");
+    expect(svg).toHaveAttribute("viewBox", "0 0 16 16");
+    // Línea base + cuatro barras de distinta altura.
+    const trazos = Array.from(svg?.querySelectorAll("path") ?? []).map((p) => p.getAttribute("d"));
+    expect(trazos).toHaveLength(5);
+    expect(new Set(trazos.slice(1)).size).toBe(4);
+  });
+
   it("«eliminar» es un tacho de basura", () => {
     expect(dibujoDe("eliminar")).toBe("trash-can");
   });

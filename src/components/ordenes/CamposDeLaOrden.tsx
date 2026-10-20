@@ -85,11 +85,11 @@ const Campo: FC<{
   resaltarVacio?: boolean;
 }> = ({ rotulo, valor, complemento, vacio = "—", resaltarVacio = false }) => (
   <div>
-    <dt className="text-xs uppercase tracking-wider text-base-content/70">{rotulo}</dt>
+    <dt className="text-xs uppercase tracking-wider text-app-label">{rotulo}</dt>
     <dd className={`font-medium ${!valor && resaltarVacio ? "text-warning" : ""}`}>
       {valor || vacio}
     </dd>
-    {complemento && <dd className="text-sm text-base-content/70">{complemento}</dd>}
+    {complemento && <dd className="text-sm text-app-muted">{complemento}</dd>}
   </div>
 );
 

@@ -36,6 +36,7 @@ import InicioSegunRol from "../components/common/InicioSegunRol.tsx";
 import Loading from "../components/common/Loading";
 import RutaConSesion from "../components/common/RutaConSesion";
 import RutaProtegida from "../components/common/RutaProtegida";
+import RedireccionDaf from "../components/common/RedireccionDaf.tsx";
 import AuthCallbackPage from "../pages/AuthCallbackPage.tsx";
 import LoginLayout from "../layouts/LoginLayout";
 import MainLayout from "../layouts/MainLayout";
@@ -97,16 +98,15 @@ const AdminPermisosPage = lazy(() => import("../pages/AdminPermisosPage.tsx"));
 // P-12 · conductores y vehículos (2026-08-20). Cierra L-11: los ocho endpoints existían
 // desde M-17 y hasta hoy solo se podían usar con curl.
 const AdminFlotaPage = lazy(() => import("../pages/AdminFlotaPage.tsx"));
-
-// P-14 · jornada de los conductores (2026-08-31). Es la pantalla que cambia el objeto del
-// modulo: P-03 pregunta quien lleva este operativo, esta pregunta que lleva este conductor.
-const JornadaConductoresPage = lazy(
-  () => import("../pages/JornadaConductoresPage.tsx"),
+// Rediseño de la DAF (2026-10-06): traslados entre zonales y turnos mensuales de conductores.
+const AdminTrasladosPage = lazy(() => import("../pages/AdminTrasladosPage.tsx"));
+const TurnosConductoresPage = lazy(
+  () => import("../pages/TurnosConductoresPage.tsx"),
 );
+// Carga inicial de la DAF (versión consolidada, 2026-10-06): se usa una sola vez.
+const CargaInicialPage = lazy(() => import("../pages/CargaInicialPage.tsx"));
 
-// P-15 · declaracion de capacidad de flota (2026-08-31). El endpoint existia desde M-18
-// y ninguna pantalla lo llamaba, asi que RN-46 no se disparaba nunca.
-const CapacidadFlotaPage = lazy(() => import("../pages/CapacidadFlotaPage.tsx"));
+
 
 // P-16 · mantenimiento de vehiculos (2026-08-31). RN-DAF-05: hasta hoy parar un vehiculo
 // era un INSERT a mano en la base.
@@ -144,7 +144,7 @@ export const pantallas = [
   },
   {
     path: "cuadro/transporte",
-    titulo: "Asignación de transporte",
+    titulo: "Planificar el día",
     modulo: "M-24",
     // Es la pantalla donde la DAF ASIGNA (mismo público que hoy: solo DAF).
     permisos: ["transporte:asignar"],
@@ -205,24 +205,6 @@ export const pantallas = [
     permisos: ["permisos:administrar"],
   },
   {
-    path: "cuadro/jornada-conductores",
-    titulo: "Jornada de los conductores",
-    modulo: "M-35",
-    permisos: ["transporte:jornada:ver"],
-  },
-  {
-    path: "cuadro/capacidad",
-    titulo: "Capacidad de flota",
-    modulo: "M-18",
-    /*
-      PANTALLA OPERATIVA DE LA DAF, solo DAF (como hoy). No se gatea con un permiso de
-      `capacidad` porque esos los comparte con Dirección (`:ver`) o con la administración
-      (`:declarar`), y ni la Dirección ni el administrador general deben ver esta pantalla.
-      Se usa `transporte:asignar` —solo-DAF— como capacidad operativa de transporte.
-    */
-    permisos: ["transporte:asignar"],
-  },
-  {
     path: "administracion/mantenimiento",
     titulo: "Mantenimiento de vehículos",
     modulo: "M-34",
@@ -230,9 +212,28 @@ export const pantallas = [
   },
   {
     path: "administracion/flota",
-    titulo: "Conductores y vehículos",
+    titulo: "Flota y garajes",
     modulo: "M-33",
     permisos: ["flota:administrar"],
+  },
+  {
+    path: "administracion/traslados",
+    titulo: "Traslados entre zonales",
+    modulo: "M-37",
+    permisos: ["flota:administrar"],
+  },
+  {
+    path: "administracion/turnos-conductores",
+    titulo: "Turnos de conductores",
+    modulo: "M-38",
+    permisos: ["flota:administrar"],
+  },
+  {
+    // Solo el administrador general: carga los datos iniciales de la DAF una sola vez.
+    path: "administracion/carga-inicial",
+    titulo: "Carga inicial",
+    modulo: "M-39",
+    permisos: ["carga-inicial:administrar"],
   },
 ] as const;
 
@@ -271,10 +272,11 @@ const CONSTRUIDAS: Record<Ruta, ReactNode> = {
   "administracion/roles-auth": <AdminRolesAuthPage />,
   "administracion/usuarios": <AdminUsuariosPage />,
   "administracion/permisos": <AdminPermisosPage />,
-  "cuadro/jornada-conductores": <JornadaConductoresPage />,
-  "cuadro/capacidad": <CapacidadFlotaPage />,
   "administracion/mantenimiento": <MantenimientoFlotaPage />,
   "administracion/flota": <AdminFlotaPage />,
+  "administracion/traslados": <AdminTrasladosPage />,
+  "administracion/turnos-conductores": <TurnosConductoresPage />,
+  "administracion/carga-inicial": <CargaInicialPage />,
 };
 
 /**
@@ -351,6 +353,16 @@ export const routes: RouteObject[] = [
           ROLES_REQUERIDOS[pantalla.path],
         ),
       })),
+      /*
+       * RUTAS ANTIGUAS DE LA DAF (2026-10-06). «Jornada de los conductores» es ahora la vista
+       * «Tabla» del paso 2 de Planificar el día, y la capacidad se confirma en su paso 1: los enlaces
+       * viejos redirigen allí conservando la fecha. La protección la pone la ruta de destino.
+       */
+      {
+        path: "cuadro/jornada-conductores",
+        element: <RedireccionDaf vista="tabla" />,
+      },
+      { path: "cuadro/capacidad", element: <RedireccionDaf /> },
       // Una ruta desconocida bajo /home vuelve al inicio del área, no a una página en
       // blanco. `RutaProtegida` ya redirige aquí cuando el rol no corresponde.
       { path: "*", element: <Navigate to="/home" replace /> },

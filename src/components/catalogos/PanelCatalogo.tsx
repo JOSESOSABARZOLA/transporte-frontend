@@ -11,16 +11,22 @@
  * SE EXTRAJO AL DEJAR DE SER TRES TABLAS IGUALES.
  *
  * Los puntos de encuentro dejaron de listarse como los otros dos catálogos —tienen una
- * segunda coordenada, la zonal, y se leen agrupados por ella—, así que `TablaCatalogo` ya
- * no puede servirlos. Lo que **sí** siguen compartiendo los tres es el marco: el panel, el
+ * segunda coordenada, la zonal, y se leen agrupados por ella—, así que la tabla común (la antigua
+ * `TablaCatalogo`, retirada el 2026-10-13) ya no podía servirlos. Lo que **sí** siguen compartiendo los tres es el marco: el panel, el
  * título, el recuento de vigentes y el botón de alta.
  *
  * Eso es lo que vive aquí, para que la división de arriba no traiga de vuelta el hallazgo
  * D-01: el día que cambie cómo se anuncia un catálogo, sigue habiendo un solo sitio.
+ *
+ * ESTÁNDAR DE BOTONES (2026-10-15): la acción de la cabecera azul es `<Boton enBarraOscura>` de
+ * 36 px: `primario` con borde claro (guardar, crear) o `secundario` blanco. Apagada, con su motivo
+ * en el `title` (`motivoAccion`). Antes era `app-modules-panel-action`: 27,6 px y translúcido.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import type { FC, ReactNode } from "react";
+
+import Boton from "../common/Boton.tsx";
 
 type PanelCatalogoProps = {
   titulo: string;
@@ -44,6 +50,10 @@ type PanelCatalogoProps = {
   textoAccion?: string;
   /** Apaga el botón sin apagar el panel: no hay nada que guardar todavía. */
   accionDeshabilitada?: boolean;
+  /** Por qué está apagada la acción («Sin cambios»): va al `title`. */
+  motivoAccion?: string | null;
+  /** `primario` por omisión (guardar, crear); `secundario` para lo que no es la acción principal. */
+  varianteAccion?: "primario" | "secundario";
   children: ReactNode;
 };
 
@@ -54,6 +64,8 @@ const PanelCatalogo: FC<PanelCatalogoProps> = ({
   onAgregar,
   textoAccion = "Agregar",
   accionDeshabilitada = false,
+  motivoAccion,
+  varianteAccion = "primario",
   children,
 }) => (
   <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
@@ -64,14 +76,15 @@ const PanelCatalogo: FC<PanelCatalogoProps> = ({
       <div className="flex items-center gap-2">
         {distintivo}
         {onAgregar && (
-          <button
-            type="button"
-            className="btn btn-sm app-modules-panel-action"
+          <Boton
+            variante={varianteAccion}
+            enBarraOscura
             onClick={onAgregar}
-            disabled={procesando || accionDeshabilitada}
+            deshabilitado={procesando || accionDeshabilitada}
+            motivoDeshabilitado={motivoAccion}
           >
             {textoAccion}
-          </button>
+          </Boton>
         )}
       </div>
     </div>

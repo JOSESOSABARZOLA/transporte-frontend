@@ -32,9 +32,6 @@ vi.mock("./VisorPdf.tsx", () => ({
 vi.mock("../../services/documento.service.ts", () => ({
   DocumentoService: {
     verOrdenMemorando: vi.fn(),
-    obtenerConfigCuadro: vi.fn(),
-    guardarConfigCuadro: vi.fn(),
-    completarDatosPersona: vi.fn(),
   },
 }));
 
@@ -60,16 +57,17 @@ const pintar = (props: Partial<Parameters<typeof VisorPdfMemorando>[0]>) =>
         codigo="OS-ICNECU-001-1-1"
         funcionario="YUNDA JESSICA"
         vigente
-        fechaJornada="2026-07-31"
         onCerrar={vi.fn()}
         {...props}
       />
     </MemoryRouter>,
   );
 
+// El grupo del funcionario sigue siendo posible en el contrato, aunque el cargo ya nunca falte
+// (2026-10-08: sale de la ficha y, sin dato, va en blanco).
 const FALTA: Faltante = {
-  token: "cargo",
-  etiqueta: "Cargo del destinatario",
+  token: "dependencia",
+  etiqueta: "Dependencia del destinatario",
   origen: "persona",
 };
 
@@ -93,7 +91,7 @@ describe("VisorPdfMemorando · borrador frente a documento válido", () => {
     await userEvent.click(descargar);
 
     // No hay confirmación: una orden válida se descarga directo, con el número oficial.
-    expect(screen.queryByText(/Este documento es un borrador/)).toBeNull();
+    expect(screen.queryByText(/el borrador?/)).toBeNull();
     expect(descargarArchivo).toHaveBeenCalledWith(
       PDF,
       "orden-AMC-OS-00005572-2026.pdf",
@@ -115,7 +113,7 @@ describe("VisorPdfMemorando · borrador frente a documento válido", () => {
 
     // E22: avisa antes de descargar un borrador.
     expect(
-      screen.getByText(/Este documento es un borrador/),
+      screen.getByText(/¿Descargar el borrador?/),
     ).toBeInTheDocument();
     expect(descargarArchivo).not.toHaveBeenCalled();
 
@@ -161,41 +159,18 @@ const FALTA_FIRMANTE: Faltante = {
   origen: "firmante",
 };
 
-describe("VisorPdfMemorando · completar datos sin cerrar el cajón (E21)", () => {
+describe("VisorPdfMemorando · completar datos (E21)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(DocumentoService.verOrdenMemorando).mockResolvedValue(PDF);
-    vi.mocked(DocumentoService.completarDatosPersona).mockResolvedValue();
   });
 
-  it("«Completar datos» → Guardar llama al servicio y a onActualizado, y NO cierra el cajón", async () => {
-    const usuario = userEvent.setup();
-    const onActualizado = vi.fn();
-    const onCerrar = vi.fn();
-    pintar({
-      estado: "BORRADOR",
-      numeroOrden: null,
-      datosFaltantes: [FALTA],
-      onActualizado,
-      onCerrar,
-    });
+  it("el grupo del funcionario ya no ofrece «Completar datos» ni un campo de cargo (2026-10-08)", async () => {
+    pintar({ estado: "BORRADOR", numeroOrden: null, datosFaltantes: [FALTA] });
 
-    await usuario.click(
-      await screen.findByRole("button", { name: "Completar datos" }),
-    );
-    await usuario.type(
-      screen.getByLabelText("Cargo del destinatario"),
-      "Agente de control",
-    );
-    await usuario.click(screen.getByRole("button", { name: "Guardar" }));
-
-    expect(DocumentoService.completarDatosPersona).toHaveBeenCalledWith(
-      "OS-ICNECU-001-1-1",
-      "Agente de control",
-    );
-    expect(onActualizado).toHaveBeenCalled();
-    // El cajón NO se cierra al guardar: se queda abierto para seguir completando/ver el documento.
-    expect(onCerrar).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Datos del funcionario:/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Completar datos" })).toBeNull();
+    expect(screen.queryByLabelText("Cargo del destinatario")).toBeNull();
   });
 
   it("el firmante faltante se completa en la plantilla: «Completar en la plantilla» abre el editor y YA NO existe «Completar mi perfil»", async () => {
@@ -221,59 +196,32 @@ describe("VisorPdfMemorando · completar datos sin cerrar el cajón (E21)", () =
     expect(onEditarPlantilla).toHaveBeenCalled();
   });
 
-  it("«Completar cuadro» → Guardar guarda NUT y «elaborado por» del día y NO cierra el cajón", async () => {
-    const usuario = userEvent.setup();
-    const onActualizado = vi.fn();
-    const onCerrar = vi.fn();
-    vi.mocked(DocumentoService.obtenerConfigCuadro).mockResolvedValue({
-      nut: null,
-      elaboradoPor: null,
-    });
-    vi.mocked(DocumentoService.guardarConfigCuadro).mockResolvedValue({
-      nut: "N-7",
-      elaboradoPor: null,
-    });
+  it("«elaborado por» y siglas faltan en la PLANTILLA: ya no hay grupo «Cuadro» ni formulario del día (2026-10-08)", async () => {
+    const onEditarPlantilla = vi.fn();
     pintar({
       estado: "BORRADOR",
       numeroOrden: null,
-      datosFaltantes: [{ token: "nut", etiqueta: "NUT", origen: "cuadro" }],
-      onActualizado,
-      onCerrar,
+      datosFaltantes: [
+        { token: "elaboradoPor", etiqueta: "Elaborado por", origen: "plantilla" },
+        {
+          token: "siglasUnidad",
+          etiqueta: "Siglas de la unidad",
+          origen: "plantilla",
+        },
+      ],
+      onEditarPlantilla,
     });
 
-    expect(await screen.findByText("Cuadro:")).toBeInTheDocument();
-    await usuario.click(screen.getByRole("button", { name: "Completar cuadro" }));
-    await usuario.type(await screen.findByLabelText("NUT"), "N-7");
-    await usuario.click(screen.getByRole("button", { name: "Guardar cuadro" }));
-
-    await vi.waitFor(() => expect(onActualizado).toHaveBeenCalled());
-    expect(DocumentoService.guardarConfigCuadro).toHaveBeenCalled();
-    expect(onCerrar).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-
-  it("Esc dentro del formulario lo cierra pero NO cierra el cajón", async () => {
-    const usuario = userEvent.setup();
-    const onCerrar = vi.fn();
-    pintar({
-      estado: "BORRADOR",
-      numeroOrden: null,
-      datosFaltantes: [FALTA],
-      onCerrar,
-    });
-
-    await usuario.click(
-      await screen.findByRole("button", { name: "Completar datos" }),
-    );
-    const campo = screen.getByLabelText("Cargo del destinatario");
-    expect(campo).toBeInTheDocument();
-
-    await usuario.type(campo, "{Escape}");
-
-    // El formulario se cierra (su campo desaparece) pero el cajón sigue abierto.
     expect(
-      screen.queryByLabelText("Cargo del destinatario"),
+      await screen.findByText("Datos generales de la plantilla:"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Cuadro:")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Completar cuadro" }),
     ).toBeNull();
-    expect(onCerrar).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("NUT")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Completar en la plantilla" }),
+    ).toBeInTheDocument();
   });
 });

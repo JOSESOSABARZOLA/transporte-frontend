@@ -61,7 +61,9 @@
 
 .app-multiselect:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  /* Deshabilitado: el texto toma su token (2026-10-08) en vez de `opacity: 0.6`, que apagaba
+     también el borde. Único caso permitido por debajo de 4,5:1 (docs/estilos.md). */
+  color: var(--app-text-disabled);
 }
 
 .app-multiselect option {
@@ -102,7 +104,7 @@
   margin-top: 0.25rem;
   font-size: 0.65rem;
   line-height: 1rem;
-  color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
+  color: var(--app-text-muted);
 }
 
 /* Paginación de tabla propia de transporte: su componente de paginación usa estas

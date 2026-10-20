@@ -11,7 +11,7 @@
  * POR QUÉ NO BASTA `crypto.randomUUID()`, QUE ES LO QUE HABÍA.
  *
  * Solo existe en **contextos seguros**: HTTPS, o `localhost`. Servida por HTTP desde una
- * dirección IP —`http://172.20.136.73:5176`, que era como llegaba el usuario cuando el
+ * dirección IP —`http://<IP_EQUIPO_DESARROLLO>:5176`, que era como llegaba el usuario cuando el
  * portal de Auth le redirigía— el navegador **no expone esa función**, y la llamada lanza
  * `crypto.randomUUID is not a function`.
  *

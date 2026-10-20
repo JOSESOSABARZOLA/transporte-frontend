@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Cajón estándar · Paradas → Registrar parada > el cajón de paradas es de consulta: [Cerrar] y ningún «Guardar» 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cerrar",
+  ],
+  "estadoPie": "",
+  "secciones": [],
+  "subtitulo": "Camioneta",
+  "titulo": "Paradas de PMA7056",
+}
+`;

@@ -23,7 +23,9 @@
 
 import type { ReactNode } from "react";
 
+import AvisoSinPortal from "./AvisoSinPortal.tsx";
 import Loading from "./Loading";
+import { hayPortal } from "../../config/env.ts";
 import { useUser } from "../../hooks/useUser";
 import { urlDelPortal } from "../../services/sesion.service";
 
@@ -35,6 +37,8 @@ const RutaConSesion = ({ children }: { children: ReactNode }) => {
   if (estado === "resolviendo") return <Loading />;
 
   if (estado === "sinSesion" || !user) {
+    // Sin portal configurado (solo en `npm run dev`) no se navega a una URL rota: se dice.
+    if (!hayPortal()) return <AvisoSinPortal />;
     window.location.replace(urlDelPortal());
     return <Loading />;
   }

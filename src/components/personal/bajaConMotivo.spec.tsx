@@ -32,12 +32,11 @@ const FUNCIONARIO: Funcionario = {
   activo: true,
 };
 
-const montar = (onConfirmar = vi.fn()) => {
+const montar = (onConfirmar = vi.fn().mockResolvedValue(undefined)) => {
   render(
     <ModalBajaConMotivo
       abierto
       funcionario={FUNCIONARIO}
-      procesando={false}
       onConfirmar={onConfirmar}
       onCancelar={vi.fn()}
     />,
@@ -49,7 +48,7 @@ describe("ModalBajaConMotivo", () => {
   it("no confirma sin motivo: exige elegirlo", async () => {
     const onConfirmar = montar();
 
-    await userEvent.click(screen.getByRole("button", { name: "Dar de baja" }));
+    await userEvent.click(screen.getByRole("button", { name: "Desactivar" }));
 
     expect(screen.getByText("Indique el motivo de la baja.")).toBeInTheDocument();
     expect(onConfirmar).not.toHaveBeenCalled();
@@ -62,7 +61,7 @@ describe("ModalBajaConMotivo", () => {
       screen.getByLabelText("Motivo de la baja"),
       "OTRO",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Dar de baja" }));
+    await userEvent.click(screen.getByRole("button", { name: "Desactivar" }));
 
     expect(
       screen.getByText("Con motivo «Otro», escriba el detalle."),
@@ -81,7 +80,7 @@ describe("ModalBajaConMotivo", () => {
       screen.getByLabelText("Detalle del motivo de la baja"),
       "Cambio de ciudad",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Dar de baja" }));
+    await userEvent.click(screen.getByRole("button", { name: "Desactivar" }));
 
     expect(onConfirmar).toHaveBeenCalledWith({
       motivo: "OTRO",
@@ -96,11 +95,27 @@ describe("ModalBajaConMotivo", () => {
       screen.getByLabelText("Motivo de la baja"),
       "RENUNCIA",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Dar de baja" }));
+    await userEvent.click(screen.getByRole("button", { name: "Desactivar" }));
 
     expect(onConfirmar).toHaveBeenCalledWith({
       motivo: "RENUNCIA",
       detalle: undefined,
     });
+  });
+
+  it("es un mensaje de peligro, y si el servidor rechaza la baja el error queda en el mismo modal", async () => {
+    montar(
+      vi.fn().mockRejectedValue({
+        status: 409,
+        originalError: { response: { data: { codigo: "X", mensaje: "La ficha tiene operativos de hoy." } } },
+      }),
+    );
+    expect(screen.getByRole("alertdialog", { name: "¿Desactivar a PEREZ LOPEZ JUAN?" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Motivo de la baja"), "RENUNCIA");
+    await userEvent.click(screen.getByRole("button", { name: "Desactivar" }));
+
+    const error = await screen.findByRole("alertdialog", { name: "No se pudo desactivar" });
+    expect(error).toHaveTextContent("La ficha tiene operativos de hoy.");
   });
 });

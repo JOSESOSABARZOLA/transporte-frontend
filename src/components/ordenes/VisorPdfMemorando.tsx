@@ -9,20 +9,19 @@
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * «VER DOCUMENTO» EN CAJÓN LATERAL (2026-10-01). Antes era un `MarcoModal` centrado; ahora abre el
- * mismo `DrawerLateral` del resto de la app —en su variante ANCHA («3xl», ~768px)— para dar más
- * sitio al PDF. Renderiza con `VisorPdf` (react-pdf), el MISMO visor de la vista previa del editor
+ * mismo `DrawerLateral` del resto de la app. Desde el cajón estándar (2026-10-15, D6) es `lg` en modo
+ * LECTURA —[Imprimir] · [Cerrar] · [Descargar PDF]— y el documento se dibuja AL ANCHO DEL CAJÓN
+ * (se mide con `ResizeObserver`), no a 700 px fijos. Renderiza con `VisorPdf` (react-pdf), el MISMO visor de la vista previa del editor
  * de plantilla: mismo zoom, páginas y controles. Aquí solo se añaden el pedido del PDF, el aviso
  * de borrador AGRUPADO por quién completa cada dato (E21) y las acciones Imprimir / Descargar.
  *
  * AVISO DE BORRADOR AGRUPADO POR ORIGEN (E21). Los datos sin completar se agrupan por QUIÉN los
- * completa —persona, configuración del cuadro y datos generales de la plantilla (que incluyen el
- * FIRMANTE: nombre, cargo y dependencia, 2026-10-02)— y cada grupo ofrece su propia acción: «Completar
- * datos» (el cargo del destinatario de ESTA orden, EN LÍNEA), «Completar cuadro» (NUT y
- * «elaborado por» del DÍA, EN LÍNEA, que promueve los borradores de la jornada) y «Completar en la
- * plantilla» (los datos generales del Director —incluido el firmante—, que abre el editor de la
- * plantilla). Al completar, el documento se regenera y el padre recarga la lista SIN cerrar el cajón.
- * Los formularios en línea se abren de a uno; el foco entra al primer campo y vuelve al botón al
- * cerrar; Enter guarda y Esc cierra solo el formulario (no el cajón).
+ * completa —datos generales de la plantilla (que incluyen el FIRMANTE: nombre, cargo y
+ * dependencia, 2026-10-02, y la TABLA DE CONTROL: «elaborado por» y siglas, 2026-10-08)— y cada
+ * grupo ofrece su propia acción: «Completar en la plantilla» abre el editor de la plantilla del
+ * Director. El grupo «Cuadro» (NUT y «elaborado por» del DÍA) se retiró el 2026-10-08, y también
+ * «Completar datos» (el cargo del destinatario EN LÍNEA): el cargo sale de la ficha de Personal y,
+ * si no lo tiene, va en blanco, así que ya no es un dato que falte.
  *
  * SE PIDE POR `httpClient` COMO BLOB, NO POR URL. La orden va detrás de sesión (cookie, solo
  * DIRECTOR): pasarle a react-pdf una URL haría que pdf.js la pidiera SIN la cookie y el servidor
@@ -35,17 +34,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FC,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type FC, type ReactNode } from "react";
 
+import Boton from "../common/Boton.tsx";
 import DrawerLateral from "../common/DrawerLateral.tsx";
-import ModalConfirmacion from "../common/ModalConfirmacion.tsx";
+import Insignia from "../common/Insignia.tsx";
+import MensajeModal from "../common/MensajeModal.tsx";
 import VisorPdf from "./VisorPdf.tsx";
 import { DocumentoService } from "../../services/documento.service.ts";
 import type {
@@ -67,14 +61,10 @@ type VisorPdfMemorandoProps = {
   /** Vigente o Reemplazada (una reemitida deja la anterior no vigente). */
   vigente: boolean;
   /**
-   * Datos del documento sin completar (D15/D16), cada uno con su ORIGEN ('persona' | 'configuracion'
-   * | 'plantilla'), para agrupar el aviso de borrador por quién los completa (E21). Vacío = sin alerta.
+   * Datos del documento sin completar (D15/D16), cada uno con su ORIGEN ('persona' | 'plantilla' |
+   * 'firmante' | 'configuracion'), para agrupar el aviso de borrador por quién los completa (E21). Vacío = sin alerta.
    */
   datosFaltantes?: Faltante[];
-  /** Fecha de la jornada (AAAA-MM-DD): la config del memorando es del DÍA (E21, 'configuracion'). */
-  fechaJornada: string;
-  /** Tras completar datos o configuración, para que el padre recargue la lista de órdenes. */
-  onActualizado?: () => void;
   /**
    * Abre el editor de la plantilla (2026-10-02): los datos generales del Director —dirección
    * responsable, memorando de designación y funcionario designado— se completan ahí, no por orden.
@@ -83,7 +73,7 @@ type VisorPdfMemorandoProps = {
   onEditarPlantilla?: () => void;
   /**
    * PLANTILLA POR DIRECTOR (2026-10-05): `true` si la orden la generó el Director en sesión. Solo
-   * entonces hay formularios en línea y «Completar en la plantilla»; una orden ajena es de SOLO
+   * entonces se ofrece «Completar en la plantilla»; una orden ajena es de SOLO
    * LECTURA (el servidor también lo exige con 403). Por omisión `true`, como hasta ahora.
    */
   esPropia?: boolean;
@@ -99,8 +89,6 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
   funcionario,
   vigente,
   datosFaltantes = [],
-  fechaJornada,
-  onActualizado,
   onEditarPlantilla,
   esPropia = true,
   directorNombre = null,
@@ -123,35 +111,30 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
 
   const [pdf, setPdf] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Contador para RE-PEDIR el PDF tras completar datos: al cambiar, el efecto vuelve a traerlo.
-  const [recarga, setRecarga] = useState(0);
   const iframeImpresion = useRef<HTMLIFrameElement | null>(null);
 
-  // Qué formulario en línea del aviso de borrador está abierto, y el estado de su envío. El firmante
-  // y los demás datos generales se completan en el editor de la plantilla, no aquí (2026-10-02).
-  const [formulario, setFormulario] = useState<
-    "persona" | "cuadro" | null
-  >(null);
-  const [cargo, setCargo] = useState("");
-  // El número de memorando salió de la config del cuadro (2026-10-02): es un dato general de la
-  // plantilla. Aquí quedan el NUT y «elaborado por», que sí son del día.
-  const [config, setConfig] = useState({
-    nut: "",
-    elaboradoPor: "",
-  });
-  const [guardando, setGuardando] = useState(false);
-  const [errorForm, setErrorForm] = useState<string | null>(null);
-  // Accesibilidad de los formularios en línea: el foco entra al primer campo al abrir y VUELVE al
-  // botón que lo abrió al cerrar (Cancelar/Esc). Guardamos ambos para dirigirlo.
-  const primerCampoRef = useRef<HTMLInputElement | null>(null);
-  const botonAbridorRef = useRef<HTMLButtonElement | null>(null);
+  // D6: el ancho del cuerpo del cajón, para dibujar el documento a ese ancho. 0 mientras no se mide
+  // (o sin `ResizeObserver`, como en las pruebas): entonces, el ancho de siempre.
+  const contenedor = useRef<HTMLDivElement>(null);
+  const [anchoDisponible, setAnchoDisponible] = useState(0);
+  useEffect(() => {
+    const nodo = contenedor.current;
+    if (!nodo || typeof ResizeObserver === "undefined") return;
+    const observador = new ResizeObserver(([entrada]) =>
+      setAnchoDisponible(Math.floor(entrada.contentRect.width)),
+    );
+    observador.observe(nodo);
+    return () => observador.disconnect();
+  }, []);
+
+  // Ya no hay formularios en línea (2026-10-08): el firmante, los datos generales y la tabla de
+  // control se completan en el editor de la plantilla; el cargo del destinatario sale de su ficha.
   // Confirmación de imprimir/descargar un borrador (E22): no es un documento válido todavía.
   const [confirmando, setConfirmando] = useState<"imprimir" | "descargar" | null>(
     null,
   );
 
   // El padre remonta el visor por `key={codigo}`, así que el estado nace limpio en cada apertura.
-  // `recarga` lo vuelve a pedir tras completar un dato, para que el documento refleje el cambio.
   useEffect(() => {
     let vigenteEfecto = true;
 
@@ -166,7 +149,7 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
     return () => {
       vigenteEfecto = false;
     };
-  }, [codigo, recarga]);
+  }, [codigo]);
 
   // Limpia el iframe de impresión al cerrar, para no dejar URLs `blob:` ni nodos sueltos.
   useEffect(
@@ -183,12 +166,11 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
 
   const faltantesDe = (origen: OrigenFaltante): Faltante[] =>
     datosFaltantes.filter((falta) => falta.origen === origen);
-  // Los CINCO orígenes (2026-10-05), en el orden en que se leen: funcionario, plantilla, firmante,
-  // cuadro (NUT, elaborado por) y configuración (siglas institucionales).
+  // Los CUATRO orígenes (2026-10-08), en el orden en que se leen: funcionario, plantilla (con la tabla
+  // de control), firmante y configuración (el respaldo de órdenes antiguas).
   const faltantesPersona = faltantesDe("persona");
   const faltantesPlantilla = faltantesDe("plantilla");
   const faltantesFirmante = faltantesDe("firmante");
-  const faltantesCuadro = faltantesDe("cuadro");
   const faltantesConfig = faltantesDe("configuracion");
 
   /**
@@ -198,103 +180,15 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
    */
   const accionPlantilla: ReactNode = esPropia ? (
     onEditarPlantilla ? (
-      <button
-        type="button"
-        className="btn btn-sm whitespace-nowrap"
-        onClick={onEditarPlantilla}
-      >
+      <Boton variante="secundario" tamano="sm" icono="editar" onClick={onEditarPlantilla}>
         Completar en la plantilla
-      </button>
+      </Boton>
     ) : null
   ) : (
-    <span className="text-xs text-base-content/70">
+    <span className="text-xs text-app-muted">
       Faltan datos en la plantilla de {directorNombre ?? "otro Director"}
     </span>
   );
-
-  /**
-   * Abre el formulario de un grupo (solo uno a la vez); guarda el botón que lo abrió para devolverle
-   * el foco al cerrar. La config se precarga con lo ya guardado del día.
-   */
-  const abrirFormulario = async (
-    cual: "persona" | "cuadro",
-    boton: HTMLButtonElement | null,
-  ) => {
-    setErrorForm(null);
-    botonAbridorRef.current = boton;
-    setFormulario(cual);
-    if (cual === "cuadro") {
-      try {
-        const actual = await DocumentoService.obtenerConfigCuadro(fechaJornada);
-        setConfig({
-          nut: actual.nut ?? "",
-          elaboradoPor: actual.elaboradoPor ?? "",
-        });
-      } catch {
-        // Si no se pudo precargar, el formulario arranca vacío: no es un fallo que detenga completar.
-      }
-    }
-  };
-
-  /** Cierra el formulario abierto SIN cerrar el cajón y devuelve el foco al botón que lo abrió. */
-  const cerrarFormulario = () => {
-    setFormulario(null);
-    setErrorForm(null);
-    botonAbridorRef.current?.focus();
-  };
-
-  // Al abrir un formulario, el foco entra a su primer campo (accesibilidad).
-  useEffect(() => {
-    if (formulario !== null) primerCampoRef.current?.focus();
-  }, [formulario]);
-
-  /** Enter guarda; Escape cierra SOLO el formulario (no el cajón: se detiene la propagación). */
-  const manejarTecla = (evento: KeyboardEvent, guardar: () => void) => {
-    if (evento.key === "Enter") {
-      evento.preventDefault();
-      guardar();
-    } else if (evento.key === "Escape") {
-      evento.preventDefault();
-      evento.stopPropagation();
-      cerrarFormulario();
-    }
-  };
-
-  /** Tras completar con éxito: cierra el formulario, re-pide el PDF y avisa al padre para recargar. */
-  const trasCompletar = () => {
-    setFormulario(null);
-    setGuardando(false);
-    setRecarga((valor) => valor + 1);
-    onActualizado?.();
-  };
-
-  const completarPersona = async () => {
-    if (cargo.trim() === "") return;
-    setGuardando(true);
-    setErrorForm(null);
-    try {
-      await DocumentoService.completarDatosPersona(codigo, cargo.trim());
-      trasCompletar();
-    } catch (fallo) {
-      setErrorForm(presentarError(fallo).mensaje);
-      setGuardando(false);
-    }
-  };
-
-  const completarConfig = async () => {
-    setGuardando(true);
-    setErrorForm(null);
-    try {
-      await DocumentoService.guardarConfigCuadro(fechaJornada, {
-        nut: config.nut.trim() || null,
-        elaboradoPor: config.elaboradoPor.trim() || null,
-      });
-      trasCompletar();
-    } catch (fallo) {
-      setErrorForm(presentarError(fallo).mensaje);
-      setGuardando(false);
-    }
-  };
 
   const imprimir = () => {
     if (!pdf) return;
@@ -358,55 +252,57 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
   return (
     <DrawerLateral
       abierto
-      ancho="3xl"
-      antetitulo={numeroOrden ?? "Borrador · sin número"}
+      ancho="lg"
+      modo="lectura"
       titulo={`Orden de servicio · ${funcionario}`}
-      onCerrar={onCerrar}
-      pie={
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={!pdf}
-            onClick={pedirImprimir}
-          >
-            Imprimir
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={!pdf}
-            onClick={pedirDescargar}
-          >
-            Descargar PDF
-          </button>
-        </div>
-      }
-    >
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <span
-            className={`badge badge-sm whitespace-nowrap ${
+      subtitulo={
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <span className="font-mono">{numeroOrden ?? "Borrador · sin número"}</span>
+          <Insignia
+            className="whitespace-nowrap"
+            variante={
               estadoEfectivo === "REEMPLAZADA"
-                ? "badge-ghost"
+                ? "neutro"
                 : estadoEfectivo === "BORRADOR"
-                  ? "badge-warning"
-                  : "badge-success"
-            }`}
+                  ? "aviso"
+                  : "exito"
+            }
           >
             {estadoEfectivo === "REEMPLAZADA"
               ? "Reemplazada"
               : estadoEfectivo === "BORRADOR"
                 ? "Borrador"
                 : "Vigente"}
-          </span>
-          {/* Al completar los datos, la orden pasa a Vigente y toma su número oficial AMC-OS. */}
-          {estadoEfectivo === "VIGENTE" && numeroOrden && (
-            <span className="text-sm text-success" role="status">
-              Orden vigente con el número {numeroOrden}
-            </span>
-          )}
-        </div>
+          </Insignia>
+        </span>
+      }
+      onCerrar={onCerrar}
+      textoAccionLectura="Descargar PDF"
+      onAccionLectura={pedirDescargar}
+      motivoGuardar={pdf ? null : "El documento todavía se está cargando."}
+      accionesPie={
+        <Boton
+          tamano="lg"
+          motivoDeshabilitado={pdf ? null : "El documento todavía se está cargando."}
+          onClick={pedirImprimir}
+        >
+          Imprimir
+        </Boton>
+      }
+    >
+      <div
+        ref={contenedor}
+        className="flex min-h-0 flex-1 flex-col gap-3"
+      >
+        {/* Al completar los datos, la orden pasa a Vigente y toma su número oficial AMC-OS. */}
+        {estadoEfectivo === "VIGENTE" && numeroOrden && (
+          <p
+            className="text-sm text-[var(--app-text-exito)]"
+            role="status"
+          >
+            Orden vigente con el número {numeroOrden}
+          </p>
+        )}
 
         {/* E21 · aviso de borrador AGRUPADO: un renglón por origen, cada uno con su acción. */}
         {esBorrador && datosFaltantes.length > 0 && (
@@ -424,158 +320,11 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
               filaGrupo(
                 "Datos del funcionario",
                 faltantesPersona,
-                esPropia && <button
-                  type="button"
-                  className="btn btn-sm whitespace-nowrap"
-                  onClick={(evento) =>
-                    void abrirFormulario("persona", evento.currentTarget)
-                  }
-                >
-                  Completar datos
-                </button>,
+                // Sin acción (2026-10-08): el nombre y la dependencia los deriva el servidor y el cargo
+                // sale de la ficha, en blanco si no lo tiene. El grupo se tolera, sin formulario.
+                null,
               )}
 
-            {esPropia && formulario === "persona" && (
-              <div
-                className="flex flex-col gap-2 rounded-md bg-base-100 p-2"
-                onKeyDown={(evento) =>
-                  manejarTecla(evento, () => void completarPersona())
-                }
-              >
-                <label className="form-control w-full">
-                  <span className="label-text text-xs">
-                    Cargo del destinatario
-                  </span>
-                  <input
-                    ref={primerCampoRef}
-                    type="text"
-                    className="input input-bordered input-sm w-full"
-                    value={cargo}
-                    onChange={(evento) => setCargo(evento.target.value)}
-                    placeholder="Cargo del destinatario"
-                    aria-label="Cargo del destinatario"
-                  />
-                </label>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={cerrarFormulario}
-                    disabled={guardando}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => void completarPersona()}
-                    disabled={guardando || cargo.trim() === ""}
-                  >
-                    {guardando ? (
-                      <>
-                        <span
-                          className="loading loading-spinner loading-sm"
-                          aria-hidden="true"
-                        />
-                        Guardando…
-                      </>
-                    ) : (
-                      "Guardar"
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {faltantesCuadro.length > 0 &&
-              filaGrupo(
-                "Cuadro",
-                faltantesCuadro,
-                esPropia && (
-                  <button
-                    type="button"
-                    className="btn btn-sm whitespace-nowrap"
-                    onClick={(evento) =>
-                      void abrirFormulario("cuadro", evento.currentTarget)
-                    }
-                  >
-                    Completar cuadro
-                  </button>
-                ),
-              )}
-
-            {esPropia && formulario === "cuadro" && (
-              <div
-                className="flex flex-col gap-2 rounded-md bg-base-100 p-2"
-                onKeyDown={(evento) =>
-                  manejarTecla(evento, () => void completarConfig())
-                }
-              >
-                <p className="text-xs text-base-content/70">
-                  Son del día: al guardarlos, se completan todas las órdenes de la
-                  jornada que solo esperaban estos datos.
-                </p>
-                <label className="form-control w-full">
-                  <span className="label-text text-xs">NUT</span>
-                  <input
-                    ref={primerCampoRef}
-                    type="text"
-                    className="input input-bordered input-sm w-full"
-                    value={config.nut}
-                    onChange={(evento) =>
-                      setConfig((previo) => ({
-                        ...previo,
-                        nut: evento.target.value,
-                      }))
-                    }
-                    aria-label="NUT"
-                  />
-                </label>
-                <label className="form-control w-full">
-                  <span className="label-text text-xs">Elaborado por</span>
-                  <input
-                    type="text"
-                    className="input input-bordered input-sm w-full"
-                    value={config.elaboradoPor}
-                    onChange={(evento) =>
-                      setConfig((previo) => ({
-                        ...previo,
-                        elaboradoPor: evento.target.value,
-                      }))
-                    }
-                    aria-label="Elaborado por"
-                  />
-                </label>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={cerrarFormulario}
-                    disabled={guardando}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => void completarConfig()}
-                    disabled={guardando}
-                  >
-                    {guardando ? (
-                      <>
-                        <span
-                          className="loading loading-spinner loading-sm"
-                          aria-hidden="true"
-                        />
-                        Guardando…
-                      </>
-                    ) : (
-                      "Guardar cuadro"
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
 
             {faltantesPlantilla.length > 0 &&
               filaGrupo(
@@ -595,16 +344,10 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
                 "Configuración",
                 faltantesConfig,
                 // Siglas institucionales: parámetro global, sin formulario en el visor.
-                <span className="text-xs text-base-content/70">
+                <span className="text-xs text-app-muted">
                   Se configura en «Ventanas y parámetros».
                 </span>,
               )}
-
-            {errorForm && (
-              <p className="text-xs text-error" role="alert">
-                {errorForm}
-              </p>
-            )}
           </div>
         )}
 
@@ -612,23 +355,23 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
           pdf={pdf}
           cargando={!pdf && !error}
           error={error}
-          ancho={700}
+          ancho={anchoDisponible > 0 ? anchoDisponible - 24 : 700}
           maxAlto={Math.round(
             (typeof window !== "undefined" ? window.innerHeight : 900) * 0.72,
           )}
         />
       </div>
 
-      <ModalConfirmacion
+      <MensajeModal
         abierto={confirmando !== null}
-        titulo="Este documento es un borrador"
-        mensaje={
-          "La orden aún tiene datos sin completar y el documento sale con la marca «BORRADOR · NO VÁLIDO». ¿Continuar de todos modos?"
+        variante="advertencia"
+        titulo={
+          confirmando === "imprimir" ? "¿Imprimir el borrador?" : "¿Descargar el borrador?"
         }
-        textoSi={confirmando === "imprimir" ? "Sí, imprimir" : "Sí, descargar"}
-        textoNo="Cancelar"
-        onConfirmar={confirmarAccion}
-        onCancelar={() => setConfirmando(null)}
+        mensaje="La orden aún tiene datos sin completar y el documento sale con la marca «BORRADOR · NO VÁLIDO»."
+        textoPrincipal={confirmando === "imprimir" ? "Sí, imprimir" : "Sí, descargar"}
+        onPrincipal={confirmarAccion}
+        onSecundario={() => setConfirmando(null)}
       />
     </DrawerLateral>
   );

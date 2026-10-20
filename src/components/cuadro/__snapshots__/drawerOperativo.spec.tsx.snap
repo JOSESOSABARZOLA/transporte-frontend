@@ -1,0 +1,81 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`el cuerpo va por secciones y sin listas abiertas > rotula las cuatro secciones del adicional 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cancelar",
+    "Registrar adicional (apagado)",
+  ],
+  "estadoPie": "0 efectivos · 1 campo por completar",
+  "secciones": [
+    {
+      "campos": [],
+      "titulo": "Personal y horario*",
+    },
+    {
+      "campos": [
+        "Zonales*",
+        "Punto de encuentro*",
+      ],
+      "titulo": "Lugar",
+    },
+    {
+      "campos": [
+        "Instituciones*",
+        "Tipo de control*",
+      ],
+      "titulo": "Control",
+    },
+    {
+      "campos": [
+        "Requiere vehículo exclusivo (macrooperativo)No comparte vehículo con otros operativos aunque coincidan en hora y zona.",
+        "Observaciones",
+      ],
+      "titulo": "Transporte y observaciones",
+    },
+  ],
+  "subtitulo": "de OCPMO-001-09-OCT-20262. Control de Punto de Mando Operativo (PMO)",
+  "titulo": "Operativo adicional",
+}
+`;
+
+exports[`el modo «editar» del cajón único > es el mismo cajón: título, identificador con el chip del formulario y «Guardar cambios» 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar cambios (apagado: Sin cambios)",
+  ],
+  "estadoPie": "1 efectivo · Sin cambios pendientes",
+  "secciones": [
+    {
+      "campos": [],
+      "titulo": "Personal y horario*",
+    },
+    {
+      "campos": [
+        "Zonales*",
+        "Punto de encuentro*",
+      ],
+      "titulo": "Lugar",
+    },
+    {
+      "campos": [
+        "Instituciones*",
+        "Tipo de control*",
+      ],
+      "titulo": "Control",
+    },
+    {
+      "campos": [
+        "Requiere vehículo exclusivo (macrooperativo)No comparte vehículo con otros operativos aunque coincidan en hora y zona.",
+        "Observaciones",
+      ],
+      "titulo": "Transporte y observaciones",
+    },
+  ],
+  "subtitulo": "OCPMO-001-09-OCT-20262. Control de Punto de Mando Operativo (PMO)",
+  "titulo": "Editar operativo",
+}
+`;

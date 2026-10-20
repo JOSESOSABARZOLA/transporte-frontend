@@ -41,6 +41,15 @@ import {
 
 // ─────────────────────────── P-01 y P-02 ───────────────────────────
 
+/**
+ * El horario se pinta en dos líneas («08H00 A» / «12H30», 2026-10-13), así que el texto ya no es
+ * un solo nodo: se busca por el envoltorio, que lleva el horario completo.
+ */
+const porHorario =
+  (texto: string) =>
+  (_contenido: string, elemento: Element | null): boolean =>
+    elemento?.getAttribute("data-horario") === texto;
+
 const persona = (
   id: number,
   nombre: string,
@@ -128,10 +137,10 @@ describe("un operativo con varias personas ocupa un renglón por cada una", () =
     ]);
 
     const filas = screen.getAllByRole("row");
-    expect(within(filas[1]).getByText("07H00 A 16H00")).toBeInTheDocument();
-    expect(within(filas[2]).getByText("09H00 A 18H00")).toBeInTheDocument();
+    expect(within(filas[1]).getByText(porHorario("07H00 A 16H00"))).toBeInTheDocument();
+    expect(within(filas[2]).getByText(porHorario("09H00 A 18H00"))).toBeInTheDocument();
     // La envolvente del operativo (fixture: 08H00 A 12H30) ya no se pinta.
-    expect(screen.queryByText("08H00 A 12H30")).toBeNull();
+    expect(screen.queryByText(porHorario("08H00 A 12H30"))).toBeNull();
   });
 
   /** Con turnos IGUALES el horario se dice una sola vez, abarcando los renglones. */
@@ -141,7 +150,7 @@ describe("un operativo con varias personas ocupa un renglón por cada una", () =
       { ...MEJIA, horaInicio: "08:00", horaFin: "12:30" },
     ]);
 
-    const celdas = screen.getAllByText("08H00 A 12H30");
+    const celdas = screen.getAllByText(porHorario("08H00 A 12H30"));
     expect(celdas).toHaveLength(1);
     expect(celdas[0].closest("td")).toHaveAttribute("rowspan", "2");
   });
@@ -360,7 +369,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
     // La acción se conserva POR operativo: tres botones de editar.
     expect(screen.getAllByRole("button", { name: /Editar/ })).toHaveLength(3);
     // Lo que es del operativo (el horario) se fusiona: una vez, abarcando las tres filas.
-    const horario = screen.getByText("08H00 A 12H30");
+    const horario = screen.getByText(porHorario("08H00 A 12H30"));
     expect(horario.closest("td")).toHaveAttribute("rowspan", "3");
   });
 
@@ -403,14 +412,15 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
     }
     // …y el horario se fusiona UNA sola vez abarcando las tres filas: es una sola patrulla,
     // no un grupo de dos más el aportado suelto.
-    const horario = screen.getByText("08H00 A 12H30");
+    const horario = screen.getByText(porHorario("08H00 A 12H30"));
     expect(horario.closest("td")).toHaveAttribute("rowspan", "3");
   });
 
   /**
-   * ACCIONES FUSIONADAS (2026-09-18). La patrulla es UN operativo: «Editar» y «Agregar Personal»
-   * se pintan UNA sola vez para todo el grupo (`accionesPatrulla`), y «Eliminar» va por persona
-   * (`accionPersona`), EN LA COLUMNA ACCIONES —no pegado al nombre—. Es lo que el usuario pidió.
+   * ACCIONES FUSIONADAS (2026-09-18; grupo único desde el 2026-10-13). La patrulla es UN operativo:
+   * «Editar» y «Agregar Personal» se pintan UNA sola vez, en la cabeza, y «Eliminar» va por persona,
+   * EN LA COLUMNA ACCIONES —no pegado al nombre—. `accionesFilaPatrulla` recibe si la fila es la
+   * cabeza. Es lo que el usuario pidió.
    */
   it("las acciones de patrulla se fusionan: un solo Editar/Agregar, y Eliminar por persona en Acciones", () => {
     const general = persona(1, "BENAVIDES FERNANDO", null);
@@ -425,14 +435,16 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
           { ...base, id: 3, identificador: "INECU-001", personal: [instruccion] },
         ]}
         columnas={COLUMNAS_LISTADO}
-        accionesPatrulla={() => (
+        accionesFilaPatrulla={(operativoDeLaFila, _grupo, esCabeza) => (
           <>
-            <button type="button">Editar</button>
-            <button type="button">Agregar Personal</button>
+            {esCabeza && (
+              <>
+                <button type="button">Editar</button>
+                <button type="button">Agregar Personal</button>
+              </>
+            )}
+            <button type="button">Eliminar {operativoDeLaFila.identificador}</button>
           </>
-        )}
-        accionPersona={(operativoDeLaFila) => (
-          <button type="button">Eliminar {operativoDeLaFila.identificador}</button>
         )}
       />,
     );
@@ -481,7 +493,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
       />,
     );
 
-    const horario = screen.getByText("08H00 A 12H30").closest("td")!;
+    const horario = screen.getByText(porHorario("08H00 A 12H30")).closest("td")!;
     expect(horario).toHaveClass("align-top");
     expect(horario).not.toHaveClass("text-center");
   });
@@ -505,9 +517,9 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
           { ...base, id: 1, identificador: "IGNECU-001", personal: [general] },
         ]}
         columnas={COLUMNAS_LISTADO}
-        accionesPatrulla={(grupo) => (
-          <button type="button">Editar {grupo[0].identificador}</button>
-        )}
+        accionesFilaPatrulla={(_fila, grupo, esCabeza) =>
+          esCabeza ? <button type="button">Editar {grupo[0].identificador}</button> : null
+        }
       />,
     );
 
@@ -546,15 +558,17 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
           },
         ]}
         columnas={COLUMNAS_LISTADO}
-        accionesPatrulla={() => <button type="button">Editar</button>}
+        accionesFilaPatrulla={(_fila, _grupo, esCabeza) =>
+          esCabeza ? <button type="button">Editar</button> : null
+        }
       />,
     );
 
-    // UN solo grupo: `accionesPatrulla` se pinta UNA vez (si se partiera, saldrían dos «Editar»).
+    // UN solo grupo: la cabeza es una (si se partiera, saldrían dos «Editar»).
     expect(screen.getAllByRole("button", { name: "Editar" })).toHaveLength(1);
     // El horario baja POR PERSONA: se ven los dos, no uno fusionado.
-    expect(screen.getByText("08H00 A 16H30")).toBeInTheDocument();
-    expect(screen.getByText("08H30 A 16H30")).toBeInTheDocument();
+    expect(screen.getByText(porHorario("08H00 A 16H30"))).toBeInTheDocument();
+    expect(screen.getByText(porHorario("08H30 A 16H30"))).toBeInTheDocument();
   });
 
   /**
@@ -578,11 +592,13 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
           { ...enB, id: 5, identificador: "ITNECU-002", personal: [persona(5, "B2", null)] },
         ]}
         columnas={COLUMNAS_LISTADO}
-        accionesPatrulla={(grupo) => (
-          <button type="button">
-            Editar {grupo.map((operativo) => operativo.identificador).join(",")}
-          </button>
-        )}
+        accionesFilaPatrulla={(_fila, grupo, esCabeza) =>
+          esCabeza ? (
+            <button type="button">
+              Editar {grupo.map((operativo) => operativo.identificador).join(",")}
+            </button>
+          ) : null
+        }
       />,
     );
 
@@ -717,7 +733,7 @@ describe("el bloque del formulario 8 se lee como un solo operativo", () => {
     // Las tres copias se juntan en un bloque con el conteo.
     expect(screen.getByText("GUAYAQUIL (3)")).toBeInTheDocument();
     // La celda fusionada se alinea ARRIBA (con la primera fila), no centrada en el medio.
-    const horario = screen.getByText("08H00 A 12H30").closest("td")!;
+    const horario = screen.getByText(porHorario("08H00 A 12H30")).closest("td")!;
     expect(horario).toHaveClass("align-top");
     expect(horario).not.toHaveClass("text-center");
   });

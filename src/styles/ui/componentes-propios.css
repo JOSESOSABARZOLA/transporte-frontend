@@ -4,8 +4,10 @@
    Archivo: componentes-propios.css
    Responsabilidad: Definir las clases ESTRUCTURALES de los componentes que este
      módulo tiene y el proyecto de referencia (resolucion-frontend) NO: el icono
-     (`Iconos`) y el marco de modal (`MarcoModal`). Sin estas definiciones esos
+     (`Iconos`), el cajón y los mensajes estándar. Sin estas definiciones esos
      componentes se romperían, porque ninguna hoja de resolucion las provee.
+     (El marco de modal `MarcoModal` y sus `app-modal-fondo`/`app-modal-caja` se
+     retiraron el 2026-10-16: los mensajes son `MensajeModal`.)
    Motivo: al alinear el sistema de estilos con resolucion se retiraron las capas de
      acabado propias (`refinamiento.css`, `avisos-y-distintivos.css`). Estas reglas
      vivían allí, pero NO son acabado de daisyUI: son la maqueta mínima de dos
@@ -33,39 +35,282 @@
   block-size: 1em;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   MARCO DE MODAL. `MarcoModal` sitúa y mide la caja con utilidades de Tailwind;
-   estos dos enganches aportan lo que la maqueta no da: el velo de fondo (sin el
-   cual el modal quedaría sin fondo) y la sombra de la caja, más su entrada.
-
-   El velo usa el azul marino institucional compuesto con `transparent`, para que
-   el porcentaje sea la opacidad real. La sombra sale de la variable del tema, ya
-   calibrada para claro y oscuro.
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.app-modal-fondo {
-  background-color: color-mix(in srgb, var(--color-secondary) 62%, transparent);
-  animation: app-modal-entrar-fondo 140ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.app-modal-caja {
-  box-shadow: var(--app-shell-dropdown-shadow);
-  animation: app-modal-entrar-caja 160ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
+/* Entrada del velo de `MensajeModal` (`app-mensaje-fondo`). */
 @keyframes app-modal-entrar-fondo {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@keyframes app-modal-entrar-caja {
-  from { opacity: 0; transform: translateY(8px); }
+/* ─────────────────────────────────────────────────────────────────────────────
+   CAJÓN LATERAL AMPLIO (2026-10-08, operativo adicional). `DrawerLateral` con
+   `ancho="amplio"` sitúa y mide el panel con utilidades; este enganche aporta lo
+   que la maqueta no da: una sombra marcada, que separa el panel de la página que
+   queda visible detrás, y una entrada corta desde la derecha. Sin movimiento si
+   el sistema lo pide (`prefers-reduced-motion`).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.app-cajon-amplio {
+  box-shadow: -24px 0 64px color-mix(in srgb, var(--color-secondary) 32%, transparent);
+  animation: app-cajon-entrar 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes app-cajon-entrar {
+  from { transform: translateX(2rem); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-cajon-amplio {
+    animation: none;
+  }
+}
+
+/* Campo inválido dentro del cajón (`CampoDrawer` marca `aria-invalid` tras el primer intento):
+   borde rojo, para que el error no dependa solo del texto de debajo. Desde el 2026-10-16 también
+   en el alta del registro de operativo (`app-form-operativo`, el `<form>` de `FormOperativo`). */
+.app-cajon-amplio :is(.input, .select, .textarea)[aria-invalid="true"],
+.app-form-operativo :is(.input, .select, .textarea)[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BARRAS AZULES DEL CAJÓN ESTÁNDAR (2026-10-15, plan «drawer-estandar», revisión 2).
+   La cabecera y el pie de `DrawerLateral` llevan `app-cajon-barra`: fondo azul
+   corporativo y, DENTRO, los roles de texto pasan a claros (strong/label blanco,
+   muted #c9d2ec), así el subtítulo, el identificador en mono y el estado del pie
+   se leen sin tocar cada llamador. Los botones e insignias de la barra se pintan
+   por contexto (`BarraOscuraContexto`): `app-boton-barra-*` e `app-insignia-barra`.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.app-cajon-barra {
+  background-color: var(--app-cajon-barra);
+  color: var(--app-cajon-texto);
+  --app-text-strong: var(--app-cajon-texto);
+  --app-text-label: var(--app-cajon-texto);
+  --app-text-muted: var(--app-cajon-texto-suave);
+}
+
+/* La casilla («Agregar otro después»): borde blanco; marcada, blanca con el check azul. */
+.app-cajon-barra .checkbox {
+  --input-color: var(--app-cajon-texto);
+  color: var(--app-cajon-barra);
+}
+
+/* Secundario sobre azul: fondo blanco, texto azul (también en oscuro). */
+.btn.app-boton-barra-secundario {
+  --btn-color: var(--app-cajon-texto);
+  --btn-fg: var(--app-cajon-barra);
+  --btn-border: var(--app-cajon-texto);
+}
+
+/* Primario sobre azul: con borde blanco para no leerse azul sobre azul. */
+.btn.app-boton-barra-primario {
+  --btn-border: var(--app-cajon-texto);
+}
+
+/* Primario APAGADO sobre azul: colores fijos, sin opacidad (el motivo va en el `title`). */
+.btn.app-boton-barra-primario[aria-disabled="true"],
+.btn.app-boton-barra-primario[aria-disabled="true"]:hover {
+  opacity: 1;
+  --btn-color: var(--app-cajon-deshabilitado-bg);
+  --btn-bg: var(--app-cajon-deshabilitado-bg);
+  --btn-border: var(--app-cajon-deshabilitado-borde);
+  --btn-fg: var(--app-cajon-deshabilitado-texto);
+  --btn-shadow: none;
+}
+
+/* Enlace sobre azul (p. ej. «¿No aparece? Registro manual»): blanco subrayado. */
+.btn.app-boton-barra-enlace {
+  --btn-fg: var(--app-cajon-texto);
+  color: var(--app-cajon-texto);
+}
+
+/* Fantasma sobre azul (el aspa ✕): blanco sin borde; al pasar, blanco al 14 %. */
+.btn.app-boton-barra-fantasma {
+  --btn-fg: var(--app-cajon-texto);
+  color: var(--app-cajon-texto);
+}
+.btn.app-boton-barra-fantasma:hover {
+  background-color: color-mix(in srgb, var(--app-cajon-texto) 14%, transparent);
+}
+
+/* Insignia sobre azul: translúcida (fondo blanco 14 %, borde blanco 35 %, texto blanco). */
+.badge.app-insignia-barra {
+  --badge-bg: color-mix(in srgb, var(--app-cajon-texto) 14%, transparent);
+  --badge-fg: var(--app-cajon-texto);
+  color: var(--app-cajon-texto);
+  border-color: color-mix(in srgb, var(--app-cajon-texto) 35%, transparent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MENSAJES ESTÁNDAR (2026-10-16, plan «mensajes-estandar»). `MensajeModal` y los
+   avisos breves de `MensajeHost` sitúan y miden con utilidades; estos enganches
+   aportan la entrada: el velo aparece (fade) y la tarjeta crece de 0,96 a 1 en
+   150 ms; el aviso breve entra desde la derecha. Sin movimiento si el sistema lo pide.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.app-mensaje-fondo {
+  animation: app-modal-entrar-fondo 150ms ease-out;
+}
+
+.app-mensaje-caja {
+  box-shadow: var(--app-shell-dropdown-shadow);
+  animation: app-mensaje-entrar 150ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes app-mensaje-entrar {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+.app-toast {
+  box-shadow: var(--app-shell-dropdown-shadow);
+  animation: app-toast-entrar 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes app-toast-entrar {
+  from { opacity: 0; transform: translateX(1rem); }
   to { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-modal-fondo,
-  .app-modal-caja {
+  .app-mensaje-fondo,
+  .app-mensaje-caja,
+  .app-toast {
     animation: none;
   }
+}
+
+/* Botón de PELIGRO RELLENO (M2): el rojo de los mensajes, con su tono al pasar. */
+.btn.app-boton-peligro-relleno {
+  --btn-color: var(--app-peligro-relleno);
+  --btn-bg: var(--app-peligro-relleno);
+  --btn-border: var(--app-peligro-relleno);
+  --btn-fg: white;
+}
+.btn.app-boton-peligro-relleno:hover {
+  --btn-bg: var(--app-peligro-relleno-hover);
+  --btn-border: var(--app-peligro-relleno-hover);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOOLTIP ÚNICO Y NOTAS DEL OPERATIVO (2026-10-19, plan «acciones-icono-notas»).
+   `common/Tooltip.tsx` lo sitúa con `position: fixed` (portal); aquí van el aspecto y
+   la flecha. `common/NotasObservacion.tsx` pinta cada nota como una tarjeta.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.app-tooltip {
+  position: fixed;
+  z-index: 10004;
+  max-width: 16rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: var(--app-tooltip-bg);
+  color: var(--app-tooltip-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  pointer-events: none;
+  white-space: normal;
+}
+
+.app-tooltip::after {
+  content: "";
+  position: absolute;
+  left: var(--app-tooltip-flecha, 50%);
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  transform: translateX(-50%);
+}
+
+.app-tooltip[data-lado="arriba"]::after {
+  top: 100%;
+  border-top-color: var(--app-tooltip-bg);
+}
+
+.app-tooltip[data-lado="abajo"]::after {
+  bottom: 100%;
+  border-bottom-color: var(--app-tooltip-bg);
+}
+
+.app-nota {
+  display: block;
+  max-width: 210px;
+  padding: 5px 8px;
+  border: 1px solid var(--app-nota-borde);
+  border-left: 3px solid var(--app-nota-filete);
+  border-radius: 6px;
+  background: var(--app-nota-bg);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.app-nota-compartida {
+  border-color: var(--app-nota-compartida-borde);
+  border-left-color: var(--app-nota-compartida-filete);
+  background: var(--app-nota-compartida-bg);
+}
+
+button.app-nota-compartida {
+  cursor: pointer;
+  width: 100%;
+}
+
+button.app-nota-compartida:hover,
+button.app-nota-compartida:focus-visible {
+  border-color: var(--app-nota-compartida-filete);
+}
+
+button.app-nota-compartida:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/*
+  La fila a la que lleva una nota «Comparte con X» (2026-10-19, plan «notas-jornada-matriz»): un
+  amarillo que se desvanece en 1,5 s. Se pinta en las celdas porque el fondo de banda va en la fila.
+  Sin animación si el usuario lo pide: el amarillo queda fijo hasta que la clase se retira.
+*/
+.app-fila-destello > td {
+  animation: app-fila-destello 1500ms ease-out;
+}
+
+@keyframes app-fila-destello {
+  from {
+    background-color: var(--app-fila-destello);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-fila-destello > td {
+    animation: none;
+    background-color: var(--app-fila-destello);
+  }
+}
+
+/* La columna Observaciones de las tablas de operativos, jornada y matriz: ~220 px. */
+.app-columna-notas {
+  width: 220px;
+  min-width: 220px;
+}
+
+.app-nota-pie {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.625rem;
+}
+
+/* Las 4 acciones con icono de la fila de un operativo: 4 × 32 px + 3 × 4 px. */
+.app-acciones-icono {
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }

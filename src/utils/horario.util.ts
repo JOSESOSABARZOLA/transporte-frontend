@@ -145,6 +145,63 @@ export const horasSeleccionables = (): string[] => {
   return horas;
 };
 
+/**
+ * LA VENTANA DEL OPERATIVO A PARTIR DE LA DE SU GENTE (2026-10-19, compartir unidad). Espejo de
+ * `RangoHorario.envolvente` del servidor: el arco más corto que cubre todas las franjas, respetando
+ * el cruce de medianoche (se toma el hueco libre más grande del día y la ventana es el resto). Solo
+ * para PREGUNTAR por coincidencias mientras se registra: la ventana que vale la deriva el servidor.
+ * `null` si no hay ninguna franja válida o si cubren el día entero.
+ */
+export const envolventeDeHorarios = (
+  franjas: ReadonlyArray<{ horaInicio?: string | null; horaFin?: string | null }>,
+): { horaInicio: string; horaFin: string } | null => {
+  const tramos: [number, number][] = [];
+  for (const { horaInicio, horaFin } of franjas) {
+    if (!horaInicio || !horaFin || !esHoraValida(horaInicio) || !esHoraValida(horaFin)) continue;
+    const inicio = aMinutos(horaInicio);
+    const fin = aMinutos(horaFin);
+    if (inicio === fin) continue;
+    if (fin > inicio) {
+      tramos.push([inicio, fin]);
+    } else {
+      tramos.push([inicio, MINUTOS_POR_DIA]);
+      if (fin > 0) tramos.push([0, fin]);
+    }
+  }
+  if (tramos.length === 0) return null;
+
+  tramos.sort((a, b) => a[0] - b[0]);
+  const fusionados: [number, number][] = [];
+  for (const [desde, hasta] of tramos) {
+    const ultimo = fusionados[fusionados.length - 1];
+    if (ultimo && desde <= ultimo[1]) ultimo[1] = Math.max(ultimo[1], hasta);
+    else fusionados.push([desde, hasta]);
+  }
+  if (fusionados.length === 1 && fusionados[0][0] === 0 && fusionados[0][1] === MINUTOS_POR_DIA) {
+    return null;
+  }
+
+  // El hueco mayor, contando el que da la vuelta por la medianoche.
+  let hueco = {
+    desde: fusionados[fusionados.length - 1][1],
+    hasta: fusionados[0][0] + MINUTOS_POR_DIA,
+  };
+  for (let i = 0; i < fusionados.length - 1; i += 1) {
+    const candidato = { desde: fusionados[i][1], hasta: fusionados[i + 1][0] };
+    if (candidato.hasta - candidato.desde > hueco.hasta - hueco.desde) hueco = candidato;
+  }
+
+  return {
+    horaInicio: aHora(hueco.hasta % MINUTOS_POR_DIA),
+    horaFin: aHora(hueco.desde % MINUTOS_POR_DIA),
+  };
+};
+
+const aHora = (minutos: number): string =>
+  `${String(Math.floor(minutos / MINUTOS_POR_HORA)).padStart(2, "0")}:${String(
+    minutos % MINUTOS_POR_HORA,
+  ).padStart(2, "0")}`;
+
 const aMinutos = (hora: string): number => {
   const [horas, minutos] = hora.split(":").map(Number);
   return horas * MINUTOS_POR_HORA + minutos;

@@ -63,3 +63,16 @@ export const laJornadaSeAbriraSola = (
   fecha: string,
   hoy: string = fechaDeHoy(),
 ): boolean => fecha >= hoy;
+
+/** «AAAA-MM-DD» bien formada (regla 12: la fecha de calendario viaja como texto). 2026-10-06. */
+export const esFechaDeCalendario = (valor: string | null | undefined): valor is string =>
+  typeof valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(valor);
+
+/**
+ * «2026-10-07» + 7 → «2026-10-14». En UTC a propósito: la fecha de calendario no tiene huso y
+ * así no se desplaza un día en Quito (regla 12). 2026-10-06.
+ */
+export const sumarDias = (fecha: string, dias: number): string => {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  return new Date(Date.UTC(anio, mes - 1, dia + dias)).toISOString().slice(0, 10);
+};

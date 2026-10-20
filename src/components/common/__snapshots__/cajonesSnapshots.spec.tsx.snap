@@ -1,0 +1,528 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`estructura de cada cajón migrado (instantánea) > Editar ventana de carga 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar (apagado: Sin cambios)",
+  ],
+  "estadoPie": "Sin cambios pendientes",
+  "secciones": [
+    {
+      "campos": [
+        "Tipo de ventana",
+        "Hora de apertura",
+        "Hora de cierre",
+      ],
+      "titulo": "Horario",
+    },
+    {
+      "campos": [
+        "Mensaje que verá el funcionario",
+        "Ventana vigenteSi la desactiva, el rol queda sin restricción horaria y puede cargar a cualquier hora.",
+      ],
+      "titulo": "Mensaje y vigencia",
+    },
+  ],
+  "subtitulo": "DMIP · Unidad de Operativos · Hora local America/Guayaquil",
+  "titulo": "Editar ventana de carga",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nueva cuenta (paso 1) y Editar cuenta > alta 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "¿No aparece? Registro manual",
+    "Cancelar",
+    "Continuar → (apagado: Elija a una persona del directorio.)",
+  ],
+  "estadoPie": "",
+  "secciones": [],
+  "subtitulo": "Nueva cuenta · Paso 1 de 2",
+  "titulo": "Buscar en Auth central",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nueva cuenta (paso 1) y Editar cuenta > edición 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar cambios (apagado: Sin cambios)",
+  ],
+  "estadoPie": "Sin cambios pendientes",
+  "secciones": [
+    {
+      "campos": [
+        "Nombre completo *",
+      ],
+      "titulo": "Persona",
+    },
+    {
+      "campos": [
+        "DMIP · Unidad de Operativos",
+        "DAF · Transportes",
+      ],
+      "titulo": "Roles en el cuadro",
+    },
+    {
+      "campos": [
+        "Usuario de Auth central",
+        "Cédula de la ficha de personal",
+      ],
+      "titulo": "Ingreso y enlace con personal",
+    },
+    {
+      "campos": [
+        "Cuenta activa",
+      ],
+      "titulo": "Estado",
+    },
+  ],
+  "subtitulo": "Cuentas del cuadro",
+  "titulo": "Editar cuenta de Salazar Villavicencio Daniela Shantale",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nueva institución (Catálogos) 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar (apagado)",
+  ],
+  "estadoPie": "2 campos por completar",
+  "secciones": [
+    {
+      "campos": [
+        "Sigla *",
+        "Denominación *",
+      ],
+      "titulo": "Institución participante",
+    },
+  ],
+  "subtitulo": "",
+  "titulo": "Nueva institución participante",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo formulario 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cancelar",
+    "Crear formulario (apagado)",
+  ],
+  "estadoPie": "3 secciones por completar",
+  "secciones": [
+    {
+      "campos": [
+        "Número",
+        "Código *",
+        "Prefijo del identificador *",
+        "Nombre del formulario *",
+      ],
+      "titulo": "Identificación",
+    },
+    {
+      "campos": [],
+      "titulo": "Color en el cuadro",
+    },
+    {
+      "campos": [
+        "Departamento dueño *",
+        "Política de vehículo",
+        "Transporte por defecto al registrar",
+      ],
+      "titulo": "Responsable y transporte",
+    },
+    {
+      "campos": [],
+      "titulo": "Áreas de personal",
+    },
+    {
+      "campos": [
+        "Es patrullaAplica el descanso tras patrullar: quien patrulló en los últimos días, personal o conductor, no se ofrece de nuevo.",
+        "Condicionante nocturnoSi el operativo es nocturno, exige transporte de la DAF: no admite «Propios medios», y el transporte pendiente pasa a alerta crítica.",
+        "Admite varios tipos de controlUn operativo puede llevar más de un tipo de control.",
+        "Tipo de control libre (adicionales)Permite escribir un tipo que no está en el catálogo, con alerta de revisión.",
+        "Punto de encuentro libre (adicionales)Permite escribir un punto que no está en el catálogo, con alerta de revisión.",
+        "Agregar punto al catálogo al registrarQuien registra puede crear un punto nuevo en la zonal elegida, y queda en el catálogo de este formulario.",
+        "Filtra el personal por el rol que consultaSolo se ofrece personal de las áreas del rol que registra.",
+        "Un operativo por persona (split)Cada persona asignada genera su propio operativo, todos vinculados al mismo registro.",
+        "Ofrece fijar cantidad de operativos por personaMuestra «Cantidad de operativos» para crear N copias por persona. Sin esta bandera solo se admite 1. Requiere «Un operativo por persona».",
+      ],
+      "titulo": "Comportamiento al registrar",
+    },
+  ],
+  "subtitulo": "10Se agregará como formulario N.º 10",
+  "titulo": "Nuevo formulario",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo funcionario (paso 1) y Ausencias (Personal) > alta 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "¿No aparece? Registro manual",
+    "Cancelar",
+    "Continuar → (apagado: Elija a una persona del directorio.)",
+  ],
+  "estadoPie": "",
+  "secciones": [],
+  "subtitulo": "Busque a la persona en Auth central",
+  "titulo": "Nuevo funcionario",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo funcionario (paso 1) y Ausencias (Personal) > ausencias 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cerrar",
+  ],
+  "estadoPie": "",
+  "secciones": [
+    {
+      "campos": [
+        "Situación*VacacionesPermiso médicoLicenciaCapacitaciónComisión de serviciosCalamidad domésticaPermiso",
+        "Desde*",
+        "Hasta*",
+        "Motivo (opcional)",
+      ],
+      "titulo": "Registrar ausencia",
+    },
+    {
+      "campos": [],
+      "titulo": "Registradas (0)",
+    },
+  ],
+  "subtitulo": "AGUAS MORA FEDERICO SANTIAGO · 0602526907",
+  "titulo": "Ausencias",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo rol de Auth 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar (apagado)",
+  ],
+  "estadoPie": "3 campos por completar",
+  "secciones": [
+    {
+      "campos": [
+        "Identificador en Auth *",
+        "Nombre en Auth *",
+      ],
+      "titulo": "Rol de Auth central",
+    },
+    {
+      "campos": [
+        "Rol del Cuadro de Colores *",
+      ],
+      "titulo": "Correspondencia",
+    },
+  ],
+  "subtitulo": "Correspondencia con un rol del Cuadro de Colores",
+  "titulo": "Nuevo rol de Auth",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo vehículo, Editar conductor y Nuevo garaje (Flota) > conductor 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar (apagado: Sin cambios)",
+  ],
+  "estadoPie": "Sin cambios pendientes",
+  "secciones": [
+    {
+      "campos": [
+        "Cédula",
+        "Teléfono",
+        "Apellidos y nombres *",
+      ],
+      "titulo": "Datos personales",
+    },
+    {
+      "campos": [
+        "Vehículo habitual",
+        "Tipo de licencia",
+      ],
+      "titulo": "Vehículo y licencia",
+    },
+    {
+      "campos": [
+        "Sector donde vive",
+        "Tipo de contrato",
+      ],
+      "titulo": "Asignación",
+    },
+    {
+      "campos": [],
+      "titulo": "Patrón de rotación",
+    },
+    {
+      "campos": [
+        "Tiene parqueadero autorizadoArt. 8: puede llevarse el vehículo a casa al terminar la jornada, con acta vigente, y al día siguiente le corresponde el mismo. Sin él, el vehículo queda en un garaje autorizado.",
+      ],
+      "titulo": "Parqueadero",
+    },
+  ],
+  "subtitulo": "LOOR ANA · C.I. 1712345678",
+  "titulo": "Editar conductor",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo vehículo, Editar conductor y Nuevo garaje (Flota) > garaje 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar (apagado)",
+  ],
+  "estadoPie": "1 campo por completar",
+  "secciones": [
+    {
+      "campos": [
+        "Nombre del garaje *",
+        "Zonal del cuadro",
+      ],
+      "titulo": "Garaje",
+    },
+  ],
+  "subtitulo": "Dónde puede quedar un vehículo al terminar la jornada (Art. 8).",
+  "titulo": "Nuevo garaje autorizado",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Nuevo vehículo, Editar conductor y Nuevo garaje (Flota) > vehículo 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Guardar (apagado)",
+  ],
+  "estadoPie": "1 campo por completar",
+  "secciones": [
+    {
+      "campos": [
+        "Placa *",
+        "Tipo",
+        "Descripción",
+      ],
+      "titulo": "Identificación",
+    },
+    {
+      "campos": [
+        "Asientos",
+        "Kilometraje",
+      ],
+      "titulo": "Capacidad y uso",
+    },
+    {
+      "campos": [
+        "Matrícula vence",
+        "SOAT vence",
+      ],
+      "titulo": "Documentos",
+    },
+  ],
+  "subtitulo": "Un vehículo sin conductor habitual no se propone automáticamente al planificar el día.",
+  "titulo": "Nuevo vehículo",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Operación del vehículo y Completar conductor (Transporte · DAF) > completar conductor (cargando) 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cerrar",
+  ],
+  "estadoPie": "",
+  "secciones": [],
+  "subtitulo": "",
+  "titulo": "Editar conductor",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Operación del vehículo y Completar conductor (Transporte · DAF) > operación del vehículo 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cerrar",
+  ],
+  "estadoPie": "",
+  "secciones": [
+    {
+      "campos": [
+        "Luces",
+        "Frenos",
+        "Llantas",
+        "Niveles (aceite, agua, líquido de frenos)",
+        "Documentos (matrícula, SOAT, orden)",
+        "Kilometraje de salida",
+        "Observación",
+      ],
+      "titulo": "Checklist diario",
+    },
+    {
+      "campos": [
+        "Lectura del odómetro",
+      ],
+      "titulo": "Kilometraje",
+    },
+    {
+      "campos": [
+        "Número del vale (opcional)",
+      ],
+      "titulo": "Vale de combustible",
+    },
+  ],
+  "subtitulo": "PMA-3370 · LOOR ANA · 2026-10-15",
+  "titulo": "Operación del vehículo",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Programar mantenimiento 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cancelar",
+    "Registrar parada (apagado)",
+  ],
+  "estadoPie": "1 campo por completar",
+  "secciones": [
+    {
+      "campos": [
+        "Vehículo *",
+        "Desde*",
+        "Hasta*",
+      ],
+      "titulo": "Vehículo y fechas",
+    },
+    {
+      "campos": [
+        "Taller",
+        "Hora de la cita",
+        "Motivo",
+        "Zonal del taller",
+      ],
+      "titulo": "Cita en el taller",
+    },
+  ],
+  "subtitulo": "Elija la placa que va al taller",
+  "titulo": "Programar mantenimiento",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > Visor de la orden de servicio 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Imprimir (apagado: El documento todavía se está cargando.)",
+    "Cerrar",
+    "Descargar PDF (apagado: El documento todavía se está cargando.)",
+  ],
+  "estadoPie": "",
+  "secciones": [],
+  "subtitulo": "Borrador · sin númeroVigente",
+  "titulo": "Orden de servicio · YUNDA JESSICA",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > aplicar patrón 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Aplicar patrón (apagado: El patrón no cambia ninguna celda.)",
+  ],
+  "estadoPie": "El patrón no cambia ninguna celda",
+  "secciones": [
+    {
+      "campos": [
+        "Patrón libre (D, N y -; de 2 a 14 letras)",
+      ],
+      "titulo": "Patrón",
+    },
+    {
+      "campos": [
+        "Desde el día0102",
+        "Solo celdas vacías",
+        "Sobrescribir",
+      ],
+      "titulo": "Dónde se escribe",
+    },
+  ],
+  "subtitulo": "Cobertura por turnos · Alcance: las 1 personas visibles",
+  "titulo": "Aplicar patrón",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > cambiar zona 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Cambiar zona (apagado: Sin cambios)",
+  ],
+  "estadoPie": "Sin cambios pendientes",
+  "secciones": [
+    {
+      "campos": [
+        "Zona",
+        "Denominación",
+      ],
+      "titulo": "Zona y denominación",
+    },
+  ],
+  "subtitulo": "AGUAS MORA FEDERICO",
+  "titulo": "Cambiar zona",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > continuar rotación 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Completar 0 celdas (apagado: No hay celdas que completar.)",
+  ],
+  "estadoPie": "",
+  "secciones": [
+    {
+      "campos": [],
+      "titulo": "Propuesta",
+    },
+  ],
+  "subtitulo": "Cobertura por turnos",
+  "titulo": "Continuar rotación",
+}
+`;
+
+exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > propuesta del mes 1`] = `
+{
+  "ancho": "md",
+  "botonesPie": [
+    "Cancelar",
+    "Aplicar (apagado: La propuesta no cambia ninguna celda.)",
+  ],
+  "estadoPie": "",
+  "secciones": [
+    {
+      "campos": [
+        "Rehacer todo (no toca ausencias)",
+      ],
+      "titulo": "Propuesta",
+    },
+  ],
+  "subtitulo": "Turnos de conductores",
+  "titulo": "Generar propuesta del mes",
+}
+`;

@@ -45,7 +45,9 @@ import {
   type FC,
 } from "react";
 
-import ModalConfirmacion from "../common/ModalConfirmacion.tsx";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
+import Boton from "../common/Boton.tsx";
+import MensajeModal from "../common/MensajeModal.tsx";
 import VisorPdf from "./VisorPdf.tsx";
 import type {
   Apartado,
@@ -73,8 +75,9 @@ const aFallo = (fallo: unknown): Fallo => {
 
 /**
  * Los tokens que salen de los DATOS GENERALES de la plantilla, con su nombre legible. El chip de
- * «datos sin completar» evalúa SOLO estos (D17): los de la orden —fecha de emisión, destinatario,
- * NUT…— se llenan en cada orden y en la vista previa salen como marcadores grises de ejemplo.
+ * «datos sin completar» evalúa SOLO estos (D17): los de la orden —fecha de emisión, destinatario…—
+ * se llenan en cada orden y en la vista previa salen como marcadores grises de ejemplo. Desde el
+ * 2026-10-08 incluye la tabla de control («elaborado por» y siglas), que también es de la plantilla.
  */
 const TOKENS_DATOS_GENERALES: {
   codigo: keyof DatosGeneralesPlantilla;
@@ -87,14 +90,24 @@ const TOKENS_DATOS_GENERALES: {
   { codigo: "firmante", nombre: "Firmante" },
   { codigo: "firmanteCargo", nombre: "Cargo del firmante" },
   { codigo: "firmanteDependencia", nombre: "Dependencia del firmante" },
+  { codigo: "elaboradoPor", nombre: "Elaborado por" },
+  { codigo: "siglasUnidad", nombre: "Siglas de la unidad" },
 ];
 
-/** El firmante y su cargo/dependencia van SIEMPRE en el bloque «Atentamente», aunque no se citen. */
+/**
+ * Van SIEMPRE en el documento, aunque no se citen: el firmante y su cargo/dependencia (bloque
+ * «Atentamente») y la tabla de control del final (2026-10-08).
+ */
 const SIEMPRE_EN_EL_DOCUMENTO = new Set<keyof DatosGeneralesPlantilla>([
   "firmante",
   "firmanteCargo",
   "firmanteDependencia",
+  "elaboradoPor",
+  "siglasUnidad",
 ]);
+
+/** Las siglas de la unidad se imprimen en mayúsculas y no pasan de 20 caracteres (como el servidor). */
+const MAX_SIGLAS_UNIDAD = 20;
 
 const TIPOS: { valor: TipoApartado; nombre: string }[] = [
   { valor: "texto", nombre: "Texto (párrafo)" },
@@ -115,10 +128,16 @@ const TOKENS: { codigo: string; nombre: string }[] = [
   { codigo: "fechaMemorando", nombre: "Fecha del memorando" },
   { codigo: "designado", nombre: "Funcionario designado" },
   { codigo: "numeroOrden", nombre: "N.º orden" },
-  { codigo: "nut", nombre: "NUT" },
   { codigo: "firmante", nombre: "Firmante" },
   { codigo: "elaboradoPor", nombre: "Elaborado por" },
   { codigo: "siglasUnidad", nombre: "Siglas unidad" },
+  // Trámite de Inspección del inspector (2026-10-07): la copia guardada al registrar el operativo.
+  // Quien no lo tiene ve `[Etiqueta]`, pero su orden no queda en borrador por eso.
+  { codigo: "tramiteCodigo", nombre: "Trámite de Inspección" },
+  { codigo: "tramiteSitra", nombre: "N.º SITRA del trámite" },
+  { codigo: "tramitePredio", nombre: "Predio del trámite" },
+  { codigo: "tramiteZonal", nombre: "Zonal del trámite" },
+  { codigo: "tramiteMateria", nombre: "Materia del trámite" },
 ];
 
 /** Ayuda del textarea según el tipo de apartado. La tabla de operativos no lleva contenido. */
@@ -137,6 +156,9 @@ const DATOS_GENERALES_VACIOS: DatosGeneralesPlantilla = {
   firmante: "",
   firmanteCargo: "",
   firmanteDependencia: "",
+  accion: "Elaborado por",
+  elaboradoPor: "",
+  siglasUnidad: "",
 };
 
 /**
@@ -248,7 +270,10 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                 ? `${firmante} (${firmanteCargo})`
                 : firmante
               : dg.designado;
+          // Con los valores por omisión debajo: un servidor sin la tabla de control no deja campos
+          // indefinidos en el formulario.
           const sembrado: DatosGeneralesPlantilla = {
+            ...DATOS_GENERALES_VACIOS,
             ...dg,
             firmante,
             firmanteCargo,
@@ -480,14 +505,16 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
       {/* BARRA SUPERIOR. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-base-300 pb-3">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm self-start"
+          <Boton
+            variante="enlace"
+            tamano="sm"
+            icono="atras"
+            className="self-start"
             onClick={intentarSalir}
-            disabled={guardando}
+            deshabilitado={guardando}
           >
-            ← Órdenes de servicio
-          </button>
+            Órdenes de servicio
+          </Boton>
           <h2
             ref={tituloRef}
             tabIndex={-1}
@@ -500,7 +527,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
               Versión {version}
             </span>
           )}
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             Es TU plantilla: tus órdenes se generan con ella. Guardar la aplica a
             tus borradores; las órdenes vigentes no cambian.
           </p>
@@ -515,38 +542,29 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
           <span
             role="status"
             className={`text-xs ${
-              hayCambios ? "text-warning" : "text-base-content/70"
+              hayCambios ? "text-warning" : "text-app-muted"
             }`}
           >
             {hayCambios ? "Cambios sin guardar" : "Sin cambios"}
           </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
+          <Boton
+            variante="secundario"
+            tamano="md"
             onClick={intentarSalir}
-            disabled={guardando}
+            deshabilitado={guardando}
           >
             Cancelar
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
+          </Boton>
+          {/* Sin plantilla cargada no se guarda: pisaría la real con campos vacíos. */}
+          <Boton
+            variante="primario"
+            tamano="md"
             onClick={() => void guardar()}
-            // Sin plantilla cargada no se guarda: pisaría la real con campos vacíos.
-            disabled={cargando || guardando || errorCarga !== null}
+            cargando={guardando}
+            deshabilitado={cargando || errorCarga !== null}
           >
-            {guardando ? (
-              <>
-                <span
-                  className="loading loading-spinner loading-sm"
-                  aria-hidden="true"
-                />
-                Guardando…
-              </>
-            ) : (
-              "Guardar plantilla"
-            )}
-          </button>
+            {guardando ? "Guardando…" : "Guardar plantilla"}
+          </Boton>
         </div>
       </div>
 
@@ -556,77 +574,77 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
         propio aviso en su panel.
       */}
       {errorCarga && (
-        <div className="alert alert-error" role="alert">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-semibold">
-              No se pudo cargar la plantilla
-            </span>
-            <span className="text-xs">{errorCarga.mensaje}</span>
-            <span className="text-xs">
+        <AvisoEnLinea
+          variante="error"
+          titulo="No se pudo cargar la plantilla"
+          accion={
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              icono="actualizar"
+              onClick={() => setIntentoCarga((valor) => valor + 1)}
+            >
+              Reintentar
+            </Boton>
+          }
+        >
+          <span className="flex flex-col gap-0.5">
+            <span>{errorCarga.mensaje}</span>
+            <span className="text-xs text-app-muted">
               Código de seguimiento: {errorCarga.seguimiento}
             </span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => setIntentoCarga((valor) => valor + 1)}
-          >
-            Reintentar
-          </button>
-        </div>
+          </span>
+        </AvisoEnLinea>
       )}
       {errorGuardar && (
-        <div className="alert alert-error" role="alert">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-sm font-semibold">
-              No se pudo guardar la plantilla
-            </span>
-            <span className="text-xs">{errorGuardar.mensaje}</span>
-            <span className="text-xs">
+        <AvisoEnLinea
+          variante="error"
+          titulo="No se pudo guardar la plantilla"
+          accion={
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              icono="actualizar"
+              onClick={() => void guardar()}
+              deshabilitado={guardando}
+            >
+              Reintentar
+            </Boton>
+          }
+        >
+          <span className="flex flex-col gap-0.5">
+            <span>{errorGuardar.mensaje}</span>
+            <span className="text-xs text-app-muted">
               Código de seguimiento: {errorGuardar.seguimiento}
             </span>
-          </div>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => void guardar()}
-            disabled={guardando}
-          >
-            Reintentar
-          </button>
-        </div>
+          </span>
+        </AvisoEnLinea>
       )}
 
       {deshacer && (
-        <div
-          className="alert alert-warning"
-          role="status"
+        <AvisoEnLinea
+          variante="advertencia"
+          accion={
+            <span className="flex gap-2">
+              <Boton variante="secundario" tamano="sm" icono="activar" onClick={restaurarEliminado}>
+                Deshacer
+              </Boton>
+              <Boton
+                variante="enlace"
+                tamano="sm"
+                icono="cerrar"
+                onClick={() => setDeshacer(null)}
+                aria-label="Descartar el aviso"
+              />
+            </span>
+          }
         >
-          <span className="text-xs">
-            Se eliminó «{deshacer.apartado.titulo}».
-          </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs"
-              onClick={restaurarEliminado}
-            >
-              Deshacer
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs"
-              onClick={() => setDeshacer(null)}
-              aria-label="Descartar el aviso"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+          Se eliminó «{deshacer.apartado.titulo}».
+        </AvisoEnLinea>
       )}
 
       {cargando ? (
-        <p className="py-6 text-center text-sm text-base-content/70">
+        <p className="py-6 text-center text-sm text-app-muted">
           Cargando la plantilla…
         </p>
       ) : (
@@ -656,7 +674,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                     }
                     placeholder="Dirección Metropolitana de Inspección"
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Dirección o unidad responsable de la ejecución.
                   </span>
                 </label>
@@ -673,7 +691,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                     }
                     placeholder="GADDMQ-AMC-DMIP-2026-9379-M"
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Memorando que designa al funcionario.
                   </span>
                 </label>
@@ -688,7 +706,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                       editarDato({ fechaMemorando: e.target.value })
                     }
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Se imprime como «17 de junio de 2026».
                   </span>
                 </label>
@@ -705,7 +723,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                     }
                     placeholder="Mgs. Nombres Apellidos (Cargo)"
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Va después de «asignó al». Se sugiere «firmante (cargo)»;
                     editable.
                   </span>
@@ -723,7 +741,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                     }
                     placeholder="Mgs. Nombres Apellidos"
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Firma el documento. Se sugiere el Director en sesión; editable.
                   </span>
                 </label>
@@ -738,7 +756,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                     }
                     placeholder="Funcionario Directivo 9"
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Cargo que consta bajo la firma.
                   </span>
                 </label>
@@ -755,8 +773,79 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                     }
                     placeholder="Dirección Metropolitana de Inspección"
                   />
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-app-muted">
                     Se imprime en mayúsculas bajo la firma.
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          )}
+
+          {/*
+            TABLA DE CONTROL (2026-10-08). La fila del final de cada orden: «<acción>: <elaborado
+            por>» | siglas de la unidad | fecha de emisión. Antes «elaborado por» se pedía por día y
+            las siglas eran un parámetro global; ahora las fija el Director aquí, versionadas con su
+            plantilla. La fecha la pone el servidor. Solo el Director.
+          */}
+          {esDirector && (
+            <fieldset className="flex flex-col gap-2 rounded-box border border-base-300 p-3">
+              <legend className="px-1 text-xs font-semibold uppercase text-primary/95">
+                Tabla de control
+              </legend>
+              <p className="text-xs text-app-muted">
+                Se imprime al final de cada orden. La fecha se completa sola.
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Acción</span>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm"
+                    value={datosGenerales.accion}
+                    maxLength={60}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      editarDato({ accion: e.target.value })
+                    }
+                    placeholder="Elaborado por"
+                  />
+                  <span className="text-xs text-app-muted">
+                    Va antes del nombre: «Elaborado por: Nombre».
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Elaborado por</span>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm"
+                    value={datosGenerales.elaboradoPor}
+                    maxLength={200}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      editarDato({ elaboradoPor: e.target.value })
+                    }
+                    placeholder="Nombres Apellidos"
+                  />
+                  <span className="text-xs text-app-muted">
+                    Quién elabora las órdenes.
+                  </span>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium">Siglas Unidad</span>
+                  <input
+                    type="text"
+                    className="input input-bordered input-sm"
+                    value={datosGenerales.siglasUnidad}
+                    maxLength={MAX_SIGLAS_UNIDAD}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                      editarDato({
+                        siglasUnidad: e.target.value
+                          .toUpperCase()
+                          .slice(0, MAX_SIGLAS_UNIDAD),
+                      })
+                    }
+                    placeholder="DMI"
+                  />
+                  <span className="text-xs text-app-muted">
+                    En mayúsculas, hasta {MAX_SIGLAS_UNIDAD} caracteres.
                   </span>
                 </label>
               </div>
@@ -773,6 +862,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                 <button
                   key={token.codigo}
                   type="button"
+                  // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
                   className="btn btn-outline btn-xs"
                   title={`{{${token.codigo}}}`}
                   onClick={() => insertarToken(token.codigo)}
@@ -807,7 +897,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                           {apartado.etiqueta}
                         </span>
                       ) : null}
-                      <span className="text-xs text-base-content/60 whitespace-nowrap">
+                      <span className="text-xs text-app-muted whitespace-nowrap">
                         {TIPOS.find((t) => t.valor === apartado.tipo)?.nombre ??
                           apartado.tipo}
                       </span>
@@ -871,7 +961,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                         )}
 
                         {apartado.tipo === "operativos" ? (
-                          <p className="text-xs text-base-content/70">
+                          <p className="text-xs text-app-muted">
                             Este apartado se llena solo: pinta la tabla de
                             operativos de la persona (IDS · Memorando u oficio ·
                             Motivo).
@@ -892,43 +982,50 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                                 editar(indice, { contenido: e.target.value })
                               }
                             />
-                            <span className="text-xs text-base-content/60">
+                            <span className="text-xs text-app-muted">
                               {AYUDA_CONTENIDO[apartado.tipo]}
                             </span>
                           </label>
                         )}
 
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
+                          <Boton
+                            variante="secundario"
+                            tamano="sm"
+                            icono="subir"
                             onClick={() => mover(indice, -1)}
-                            disabled={indice === 0}
+                            motivoDeshabilitado={indice === 0 ? "Ya es el primero." : null}
                           >
                             Subir
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
+                          </Boton>
+                          <Boton
+                            variante="secundario"
+                            tamano="sm"
+                            icono="bajar"
                             onClick={() => mover(indice, 1)}
-                            disabled={indice === apartados.length - 1}
+                            motivoDeshabilitado={
+                              indice === apartados.length - 1 ? "Ya es el último." : null
+                            }
                           >
                             Bajar
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
+                          </Boton>
+                          <Boton
+                            variante="secundario"
+                            tamano="sm"
+                            icono="duplicar"
                             onClick={() => duplicar(indice)}
                           >
                             Duplicar
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs text-error"
+                          </Boton>
+                          {/* Se deshace con «Deshacer»: por eso no pide confirmación. */}
+                          <Boton
+                            variante="peligroTexto"
+                            tamano="sm"
+                            icono="eliminar"
                             onClick={() => eliminar(indice)}
                           >
                             Eliminar
-                          </button>
+                          </Boton>
                         </div>
                       </div>
                     )}
@@ -936,13 +1033,9 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                 );
               })}
 
-              <button
-                type="button"
-                className="btn btn-outline btn-sm self-start"
-                onClick={anadir}
-              >
+              <Boton variante="acento" tamano="sm" className="self-start" onClick={anadir}>
                 + Añadir apartado
-              </button>
+              </Boton>
             </div>
 
             {/*
@@ -951,13 +1044,13 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
             */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs text-base-content/70">
+                <span className="text-xs text-app-muted">
                   Vista previa · los datos de cada orden salen como marcadores grises
                 </span>
                 {/* La PRIMERA vez (sin PDF) «Generando…»; después la versión anterior sigue a la
                     vista y solo se avisa con un discreto «Actualizando…». */}
                 {actualizando && (
-                  <span className="text-xs text-base-content/60" role="status">
+                  <span className="text-xs text-app-muted" role="status">
                     {vistaPrevia === null
                       ? "Generando vista previa…"
                       : "Actualizando…"}
@@ -983,16 +1076,17 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
                       No se pudo generar la vista previa
                     </span>
                     <span className="text-xs">{errorPreview.mensaje}</span>
-                    <span className="text-xs text-base-content/70">
+                    <span className="text-xs text-app-muted">
                       Código de seguimiento: {errorPreview.seguimiento}
                     </span>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
+                    <Boton
+                      variante="secundario"
+                      tamano="sm"
+                      icono="actualizar"
                       onClick={() => setIntentoPreview((valor) => valor + 1)}
                     >
                       Reintentar
-                    </button>
+                    </Boton>
                   </div>
                 ) : (
                   <VisorPdf
@@ -1011,17 +1105,18 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
         </>
       )}
 
-      <ModalConfirmacion
+      <MensajeModal
         abierto={confirmandoSalir}
-        titulo="Descartar cambios"
-        mensaje="¿Descartar los cambios de la plantilla? Se perderá lo editado; las órdenes ya emitidas no se verían afectadas."
-        textoSi="Descartar"
-        textoNo="Seguir editando"
-        onConfirmar={() => {
+        variante="peligro"
+        titulo="¿Descartar cambios?"
+        mensaje="Se perderá lo editado en la plantilla. Las órdenes ya emitidas no se ven afectadas."
+        textoPrincipal="Descartar"
+        textoSecundario="Seguir editando"
+        onPrincipal={() => {
           setConfirmandoSalir(false);
           onVolver();
         }}
-        onCancelar={() => setConfirmandoSalir(false)}
+        onSecundario={() => setConfirmandoSalir(false)}
       />
     </section>
   );

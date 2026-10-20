@@ -38,31 +38,55 @@
  * CÓMO SE AGREGA UNO. Se importa de `free-solid` —nunca de `free-brands` ni de
  * `free-regular`—, se le da un nombre del Cuadro de Colores y se comprueba que la figura
  * no esté ya usada para otra cosa. Un icono entra si dice algo.
+ *
+ * EL ÚNICO SVG PROPIO (2026-10-07): `barras`, el gráfico de barras de «Ver reparto de carga».
+ * `free-solid` no tiene unas barras de trazo que digan «reparto» a 16 px, así que se dibuja aquí
+ * (`SVG_PROPIOS`), con trazo `currentColor`, `aria-hidden` y sin color ni tamaño propios. La
+ * regla 13 se mantiene: este archivo sigue siendo el ÚNICO por el que entra un icono, y el nombre
+ * sigue siendo `NombreIcono`.
  */
 
 import {
+  faArrowDown,
   faArrowLeft,
+  faArrowUp,
   faArrowsRotate,
   faBell,
+  faCalendarWeek,
   faBan,
   faCalendarDays,
   faCarSide,
   faCheck,
+  faChevronDown,
+  faChevronRight,
+  faCircleInfo,
+  faClipboardCheck,
+  faCloudMoon,
+  faFlagCheckered,
+  faGasPump,
+  faHouse,
+  faLink,
+  faWandMagicSparkles,
   faCircleQuestion,
   faClock,
+  faCopy,
   faEllipsisVertical,
+  faEye,
+  faFileImport,
   faFileLines,
   faFileSignature,
   faGaugeHigh,
   faGear,
   faListCheck,
   faListUl,
+  faLock,
   faMagnifyingGlass,
   faMoon,
   faPenToSquare,
   faPlus,
   faRotateLeft,
-  faScaleBalanced,
+  faRoute,
+  faTruck,
   faScrewdriverWrench,
   faSquarePlus,
   faSun,
@@ -70,6 +94,7 @@ import {
   faTableColumns,
   faTableList,
   faTrashCan,
+  faTriangleExclamation,
   faKey,
   faUserClock,
   faUserGear,
@@ -99,6 +124,11 @@ const NAVEGACION = {
   misOperativos: faListCheck,
   /** P-13. Una tabla con renglones: es la jornada leída de arriba abajo. */
   jornada: faTableList,
+  /**
+   * Grupo «Transporte · DAF» (2026-10-06): el camión dice «la flota de la Agencia» y no se repite
+   * con ninguna de sus entradas (la furgoneta es «Planificar el día»).
+   */
+  transporteDaf: faTruck,
   transporte: faVanShuttle,
   /** P-14 es una vista de horarios por conductor, de ahí el reloj sobre la persona. */
   jornadaConductores: faUserClock,
@@ -119,6 +149,12 @@ const NAVEGACION = {
   cuentas: faUserGear,
   flota: faCarSide,
   mantenimiento: faScrewdriverWrench,
+  /** Traslados entre zonales (2026-10-06): la ruta de un punto a otro, en minutos. */
+  traslados: faRoute,
+  /** Turnos de conductores (2026-10-06): la planificación de la semana/mes, en calendario. */
+  turnosConductores: faCalendarWeek,
+  /** Carga inicial (2026-10-06): un archivo que ENTRA al sistema, una sola vez. */
+  cargaInicial: faFileImport,
 } as const;
 
 /*
@@ -160,6 +196,8 @@ const ACCIONES = {
    * icono se lee como un descuido, no como una jerarquía.
    */
   editar: faPenToSquare,
+  // «Ver» de Mis operativos (2026-10-13): un cuadro cerrado o pasado solo se consulta.
+  ver: faEye,
   ausencias: faCalendarDays,
   /*
    * DESACTIVAR y ACTIVAR son las dos caras de la misma acción reversible de P-08 (PV-36):
@@ -184,10 +222,47 @@ const ACCIONES = {
   /** Re-consultar el directorio de Auth en el paso 1 del cajón (botón «Actualizar»). */
   actualizar: faArrowsRotate,
   /**
-   * «Ver reparto de carga» (P-01 y cajón de P-02, 2026-10-05): la balanza dice «equilibrio del
-   * trabajo entre el personal». Acompaña al rótulo del botón, nunca lo sustituye (regla 13).
+   * Ordenar y copiar un apartado de la plantilla de órdenes (estándar de botones, 2026-10-15).
+   * Acompañan a «Subir», «Bajar» y «Duplicar», nunca los sustituyen (regla 13).
    */
-  reparto: faScaleBalanced,
+  subir: faArrowUp,
+  bajar: faArrowDown,
+  duplicar: faCopy,
+  /**
+   * Despliegue de un acordeón (zonales de P-08, 2026-10-12). Acompaña al nombre de la zonal en un
+   * botón con `aria-expanded`: la figura gira al abrir, el estado lo dice el atributo (regla 6).
+   */
+  desplegar: faChevronDown,
+  /**
+   * Cabecera de una zonal en el acordeón de P-08 (ajustes del 2026-10-13): ▸ cerrada y, girada 90°,
+   * ▾ abierta. Va con `aria-expanded` en el botón; la figura no es la única señal (regla 6).
+   */
+  acordeon: faChevronRight,
+  /**
+   * Celda de AUSENCIA en la cobertura por turnos (2026-10-05): el candado dice «no se edita aquí»
+   * —la ausencia viene de «Ausencias»—. Acompaña a la letra (V, RM, C, P), nunca la sustituye.
+   */
+  candado: faLock,
+  /*
+   * LÍNEA DE TIEMPO DE TRANSPORTE (Fase 4, 2026-10-06). Cada figura acompaña a su texto o al nombre
+   * accesible del control (regla 13): la CADENA de operativos de un funcionario; el conductor que
+   * VINO DE NOCHE; el que tiene PARQUEADERO autorizado con acta; «Cubrir al máximo» (optimizador);
+   * «Fin del día»; la operación del vehículo (checklist) y el vale de combustible.
+   */
+  cadena: faLink,
+  vinoDeNoche: faCloudMoon,
+  parqueadero: faHouse,
+  optimizar: faWandMagicSparkles,
+  finDelDia: faFlagCheckered,
+  checklist: faClipboardCheck,
+  combustible: faGasPump,
+  /**
+   * Ayuda «ⓘ» junto a una etiqueta (Transporte requerido, 2026-10-07): abre la explicación de las
+   * opciones. Va dentro de un botón con nombre accesible propio; nunca sustituye al texto.
+   */
+  informacion: faCircleInfo,
+  /** El «Falta: …» del pie del cajón estándar (2026-10-15): acompaña al texto rojo (regla 6). */
+  alerta: faTriangleExclamation,
 } as const;
 
 /*
@@ -230,52 +305,59 @@ const iconoMap = {
   ...RESPALDO,
 } satisfies Record<string, IconDefinition>;
 
-/**
- * Los nombres admitidos. Se deriva del mapa, no se escribe aparte: una lista paralela
- * se desincroniza el día que alguien agrega un icono y se olvida de la otra mitad.
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * SVG PROPIOS. Uno solo: ver la cabecera. 16×16, trazo `currentColor`, `aria-hidden`.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
-export type NombreIcono = keyof typeof iconoMap;
+const SVG_PROPIOS = {
+  /**
+   * «Ver reparto de carga» (P-01 y cajón de P-02; barras desde el 2026-10-07, antes una balanza):
+   * cuatro barras de distinta altura sobre la línea base. Acompaña al rótulo, nunca lo sustituye.
+   */
+  barras: (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      width="1em"
+      height="1em"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      aria-hidden="true"
+      focusable="false"
+      data-icon="barras"
+    >
+      <path d="M1.5 14.5h13" />
+      <path d="M3.5 12.5v-4" />
+      <path d="M6.5 12.5v-8" />
+      <path d="M9.5 12.5v-6" />
+      <path d="M12.5 12.5v-10" />
+    </svg>
+  ),
+} as const;
 
 /**
- * Para los nombres que llegan de fuera del código: del servidor o de un archivo de
- * configuración. `actiIconName` viaja como texto libre en el contrato de acciones, de
- * modo que **no se puede prometer** que sea uno de los nuestros.
- *
- * Se comprueba en vez de forzarlo con `as`: una aserción no verifica nada y devolvería
- * el respaldo igual, pero habiendo apagado antes al compilador. Aquí, lo que no es de la
- * casa se resuelve como `undefined` y cae en el respaldo a propósito, que es lo correcto
- * para un dato que no controlamos.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * POR QUÉ VIVE AQUÍ Y NO EN SU PROPIO ARCHIVO, QUE ES LO QUE PIDE EL LINT.
- *
- * `react-refresh/only-export-components` avisa de que un archivo de componente que
- * además exporta una función pierde la recarga en caliente: al editarlo, Vite recarga
- * la página entera en vez de sustituir el componente. Es un coste de comodidad al
- * desarrollar, y su remedio sería mover el mapa a `iconos.catalogo.ts`.
- *
- * No se hace porque chocaría con algo más caro: la **regla 13** dice que este archivo es
- * el ÚNICO que importa de `@fortawesome/*`, y el mapa no puede existir sin esa
- * importación. Separarlos dejaría dos archivos tocando la librería —el catálogo y el
- * componente, que necesita `FontAwesomeIcon`—, que es exactamente lo que la regla
- * previene.
- *
- * Entre perder recarga en caliente en un archivo que se toca una vez cada varias
- * semanas, y abrir una segunda puerta a la librería de iconos, se elige lo primero. Si
- * algún día se prefiere lo contrario, la regla 13 hay que reescribirla primero.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Los nombres admitidos. Se deriva de los mapas, no se escribe aparte: una lista paralela
+ * se desincroniza el día que alguien agrega un icono y se olvida de la otra mitad.
  */
-// eslint-disable-next-line react-refresh/only-export-components
-export const esNombreIcono = (valor: string | undefined): valor is NombreIcono =>
-  valor !== undefined && Object.hasOwn(iconoMap, valor);
+export type NombreIcono = keyof typeof iconoMap | keyof typeof SVG_PROPIOS;
 
 type Props = {
   nombre: NombreIcono | undefined;
   estilo?: string;
 };
 
+const esSvgPropio = (nombre: NombreIcono): nombre is keyof typeof SVG_PROPIOS =>
+  Object.hasOwn(SVG_PROPIOS, nombre);
+
 const Iconos: FC<Props> = ({ nombre, estilo }) => {
-  const icono = iconoMap[nombre ?? "sinIcono"];
+  const clave = nombre ?? "sinIcono";
+  if (esSvgPropio(clave)) {
+    return <span className="app-icono">{SVG_PROPIOS[clave]}</span>;
+  }
+  const icono = iconoMap[clave];
 
   return (
     // `app-icono` no pinta: centra. El envoltorio era un <span> suelto, de línea, y

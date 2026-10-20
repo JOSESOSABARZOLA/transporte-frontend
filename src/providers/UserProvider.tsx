@@ -138,7 +138,8 @@ export const UserProvider: FC<{ children: ReactNode }> = ({ children }) => {
     setUser(null);
     setEstado("sinSesion");
     limpiarTodosLosBorradores();
-    window.location.replace(env.logoutAuthUrl);
+    // Sin portal configurado (solo `npm run dev`), al inicio: allí se dice qué falta.
+    window.location.replace(env.logoutAuthUrl || "/");
   }, []);
 
   // El valor del contexto se MEMORIZA (2026-10-05): un objeto nuevo en cada render obligaba a

@@ -108,6 +108,11 @@ describe("ruta y menú declaran los mismos permisos", () => {
     { ruta: "administracion/personal", permisos: ["personal:administrar"] },
     { ruta: "administracion/flota", permisos: ["flota:administrar"] },
     { ruta: "administracion/mantenimiento", permisos: ["flota:mantenimiento"] },
+    // Rediseño de la DAF (2026-10-06): las dos pantallas nuevas, con el permiso de la flota.
+    { ruta: "administracion/traslados", permisos: ["flota:administrar"] },
+    { ruta: "administracion/turnos-conductores", permisos: ["flota:administrar"] },
+    // Versión consolidada (2026-10-06): la carga inicial, con su permiso propio.
+    { ruta: "administracion/carga-inicial", permisos: ["carga-inicial:administrar"] },
     {
       ruta: "administracion/ventanas",
       permisos: ["ventanas:administrar", "parametros:administrar"],
@@ -117,6 +122,15 @@ describe("ruta y menú declaran los mismos permisos", () => {
   it.each(CASOS)("$ruta", ({ ruta, permisos }) => {
     expect(permisosDeRuta(ruta).sort()).toEqual([...permisos].sort());
     expect(permisosDeMenu(ruta).sort()).toEqual([...permisos].sort());
+  });
+
+  it("«Carga inicial» solo la ve el ADMINISTRADOR: ni la DAF ni los demás administradores", () => {
+    expect(rutasDeMenuQueAbre(permisosSuper)).toContain("administracion/carga-inicial");
+    for (const rol of ["ADMINISTRADOR_DAF", "DAF", "ADMINISTRADOR_DMIP", "ADMINISTRADOR_DMIT"] as const) {
+      expect(rutasDeMenuQueAbre(permisosDeRoles([rol]))).not.toContain(
+        "administracion/carga-inicial",
+      );
+    }
   });
 });
 

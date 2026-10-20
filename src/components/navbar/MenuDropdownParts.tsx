@@ -17,6 +17,7 @@ import {
 } from "../../config/navigation";
 import { useUser } from "../../hooks/useUser";
 import { tieneRol } from "../../hooks/usePermiso";
+import { useFechaDafContexto } from "../../context/FechaDafContext.tsx";
 
 const resolveNavigationPath = (path: string, parentPath = "") => {
   const resolvedPath = path || parentPath;
@@ -72,6 +73,8 @@ type ContentProps = {
 const Content: FC<ContentProps> = ({ onNavigate }) => {
   const { user } = useUser();
   const { pathname } = useLocation();
+  // La fecha de trabajo compartida de la DAF: sus enlaces la llevan para no perderla (2026-10-06).
+  const fechaDaf = useFechaDafContexto();
 
   /**
    * PER-07 · los ítems ajenos se muestran ATENUADOS, NO OCULTOS.
@@ -108,7 +111,22 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
    */
   const grupoUtil = (item: NavigationItem) =>
     item.children ? item.children.some(puedeEntrar) : puedeEntrar(item);
-  const menuItems = shellNavigationItems;
+  /*
+   * LO QUE EL PERFIL NO ABRE SE OCULTA, NO SE ATENÚA (2026-10-06, decisión del negocio para TODO el
+   * menú). Antes se pintaba apagado con su explicación; ahora un grupo sin ninguna opción alcanzable
+   * desaparece entero, y dentro de un grupo solo quedan las opciones que el perfil puede abrir. La
+   * ruta sigue protegida igual (RutaProtegida): esto solo deja de ofrecer lo que daría 403.
+   */
+  const menuItems = shellNavigationItems.filter(grupoUtil);
+
+  /**
+   * Destino del enlace: en los grupos de la DAF lleva la fecha de trabajo compartida, salvo el hijo
+   * que no depende de ninguna jornada (`sinFechaDaf`, «Flota y garajes»).
+   */
+  const destino = (subitem: NavigationItem, grupo: NavigationItem): string => {
+    const base = subitem.path || grupo.path;
+    return grupo.conFechaDaf && !subitem.sinFechaDaf && fechaDaf ? `${base}?fecha=${fechaDaf}` : base;
+  };
 
   return (
     <ul className="app-sidebar-menu app-sidebar-menu-list menu">
@@ -134,17 +152,7 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
                     className={[
                       "app-sidebar-summary",
                       hasActiveChild ? "app-sidebar-summary-current" : "",
-                      // Atenuado, pero SIN `pointer-events-none`: se sigue pudiendo
-                      // desplegar. Ver que hay dentro y por que esta apagado es
-                      // justamente lo que evita la llamada por telefono.
-                      grupoUtil(item) ? "" : "opacity-40",
                     ].join(" ")}
-                    aria-disabled={grupoUtil(item) ? undefined : "true"}
-                    title={
-                      grupoUtil(item)
-                        ? undefined
-                        : "Ninguna opción de este grupo corresponde a su perfil."
-                    }
                   >
                   <span className="app-sidebar-summary-main">
                     <span className="app-sidebar-summary-leading">
@@ -176,15 +184,23 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
                     </svg>
                   </span>
                 </summary>
-                {item.children.map((subitem) => (
+                {item.children
+                  .filter(puedeEntrar)
+                  .map((subitem, indice) => (
                   <ul
                     key={subitem.id}
                     className="app-sidebar-sublist"
                   >
+                    {/*
+                      DIVISOR (2026-10-08): una línea fina, sin texto, antes del ítem que lo pide
+                      («Flota…» en «Transporte · DAF»). Sustituye a los encabezados «Uso diario» /
+                      «Configuración»: ningún otro submenú tiene títulos de grupo. No se pinta si no
+                      hay nada visible antes. Su trazo lo fija `app-sidebar.css`.
+                    */}
+                    {subitem.divisorAntes && indice > 0 && <li role="separator" />}
                     <li>
-                      {puedeEntrar(subitem) ? (
                         <NavLink
-                          to={subitem.path || item.path}
+                          to={destino(subitem, item)}
                           onClick={onNavigate}
                           className={({ isActive }) =>
                             [
@@ -201,24 +217,11 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
                           />
                           {subitem.label}
                         </NavLink>
-                      ) : (
-                        <span
-                          className="app-sidebar-link app-sidebar-subitem-link pointer-events-none opacity-40"
-                          aria-disabled="true"
-                          title="Esta opción no corresponde a su perfil."
-                        >
-                          <Iconos
-                            nombre={subitem.icon}
-                            estilo="text-current"
-                          />
-                          {subitem.label}
-                        </span>
-                      )}
                     </li>
                   </ul>
                 ))}
               </details>
-            ) : puedeEntrar(item) ? (
+            ) : (
               <NavLink
                 to={item.path}
                 onClick={onNavigate}
@@ -235,18 +238,6 @@ const Content: FC<ContentProps> = ({ onNavigate }) => {
                 />
                 {item.label}
               </NavLink>
-            ) : (
-              <span
-                className="app-sidebar-link app-sidebar-root-link pointer-events-none opacity-40"
-                aria-disabled="true"
-                title="Esta opción no corresponde a su perfil."
-              >
-                <Iconos
-                  nombre={item.icon}
-                  estilo="text-current"
-                />
-                {item.label}
-              </span>
             )}
           </li>
         );

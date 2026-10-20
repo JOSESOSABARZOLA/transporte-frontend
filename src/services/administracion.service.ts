@@ -57,8 +57,8 @@ const listarVentanas = async (): Promise<VentanaCarga[]> => {
 /**
  * `PUT /administracion/ventanas/:rol`.
  *
- * Devuelve la ventana guardada **y las advertencias**: el servidor puede aceptar un
- * cambio y avisar de que deja la jornada sin margen. Se muestran; no impiden nada.
+ * Devuelve la ventana guardada. Sin advertencias desde el 2026-10-08: la pantalla solo
+ * parametriza; la coherencia entre ventanas la aplica el sistema en ejecución.
  */
 const actualizarVentana = async (
   rol: RolDepartamental,

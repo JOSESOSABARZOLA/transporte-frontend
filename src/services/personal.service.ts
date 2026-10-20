@@ -17,10 +17,12 @@
 import httpClient from "../api/httpClient";
 import type {
   ActualizarFuncionario,
+  AusenciaDelMaestro,
   BajaFuncionario,
   CrearFuncionario,
   Disponibilidad,
   Funcionario,
+  OperativoDeLaPersona,
   PersonaElegible,
   RegistrarAusencia,
 } from "../interfaces/Personal";
@@ -237,6 +239,38 @@ const retirarAusencia = async (
   );
 };
 
+/**
+ * `GET /administracion/personal/ausencias?desde=` (2026-10-08). Las ausencias EN CURSO y PRÓXIMAS
+ * de todo el maestro al alcance, en UNA consulta y sin motivo. Sustituye a las N peticiones por fila
+ * con las que la lista pintaba la columna «Estado». Sin `desde`, el servidor usa hoy en Quito.
+ */
+const listarAusenciasDelMaestro = async (
+  desde?: string,
+): Promise<AusenciaDelMaestro[]> => {
+  const { data } = await httpClient.get<AusenciaDelMaestro[]>(
+    "/administracion/personal/ausencias",
+    { params: desde ? { desde } : undefined },
+  );
+  return data;
+};
+
+/**
+ * `GET /administracion/personal/:id/operativos?desde&hasta` (2026-10-08). Los operativos activos de
+ * la persona en ese rango (extremos incluidos), para avisar al registrar una ausencia. La ausencia
+ * no los retira y el servidor no notifica a nadie.
+ */
+const operativosDe = async (
+  id: number,
+  desde: string,
+  hasta: string,
+): Promise<OperativoDeLaPersona[]> => {
+  const { data } = await httpClient.get<OperativoDeLaPersona[]>(
+    `/administracion/personal/${id}/operativos`,
+    { params: { desde, hasta } },
+  );
+  return data;
+};
+
 export const PersonalService = {
   consultarElegibles,
   consultarDirectorio,
@@ -249,6 +283,8 @@ export const PersonalService = {
   desactivar,
   reactivar,
   listarAusencias,
+  listarAusenciasDelMaestro,
+  operativosDe,
   registrarAusencia,
   retirarAusencia,
 };

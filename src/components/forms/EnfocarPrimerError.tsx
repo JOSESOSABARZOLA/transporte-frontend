@@ -10,6 +10,8 @@
 import { useEffect, useRef } from "react";
 import { useFormikContext } from "formik";
 
+import { enfocarPrimerError } from "../../utils/enfocarPrimerError.util.ts";
+
 /**
  * NO PINTA CONTENIDO: existe por su efecto. Es la versión GENÉRICA del `FocoAlPrimerError`
  * de P-01 —que enumera sus campos en un arreglo—. En vez de esa lista, busca dentro de su
@@ -36,9 +38,7 @@ const EnfocarPrimerError = () => {
     if (isValidating || submitCount === intentoAtendido.current) return;
     intentoAtendido.current = submitCount;
 
-    const ambito: ParentNode = ancla.current?.closest("form") ?? document;
-    const invalido = ambito.querySelector<HTMLElement>('[aria-invalid="true"]');
-    invalido?.focus();
+    enfocarPrimerError(ancla.current?.closest("form") ?? document);
   }, [submitCount, isValidating]);
 
   return <span ref={ancla} hidden aria-hidden="true" />;

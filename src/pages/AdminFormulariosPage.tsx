@@ -17,76 +17,72 @@
  * NÚMERO Y CÓDIGO SON INMUTABLES tras crear (los referencian los operativos). La baja NUNCA
  * borra: `activo=false`, para que los cuadros anteriores se sigan pudiendo leer. El color se
  * elige de la paleta institucional, no se teclea.
+ *
+ * REDISEÑO DEL 2026-10-13: tabla propia (`TablaFormularios`) con buscador, Vigentes | Inactivos |
+ * Todos (arranca en Vigentes) y contador; alta y edición en un cajón por secciones
+ * (`DrawerFormulario`); confirmación solo para desactivar (reactivar no la pide); aviso breve y
+ * fila resaltada tras cada cambio. Las ÁREAS ya no se tocan aquí: se configuran en Catálogos del
+ * cuadro, y tras un alta el aviso lleva directo allí con la barra de áreas abierta.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import ModalCatalogo from "../components/catalogos/ModalCatalogo.tsx";
-import TablaCatalogo, {
-  type ColumnaCatalogo,
-} from "../components/catalogos/TablaCatalogo.tsx";
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
-import CamposFormulario from "../components/formularios/CamposFormulario.tsx";
-import type { RolDepartamental } from "../config/env.ts";
-import { esquemaFormulario } from "../config/validationSchemas.ts";
-import type {
-  AreaPersonal,
-  ColorPaleta,
-  FormularioAdmin,
-  PoliticaVehiculo,
-} from "../interfaces/Formulario.ts";
+import MensajeModal from "../components/common/MensajeModal.tsx";
+import SelectorSegmentado from "../components/forms/SelectorSegmentado.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
+import Paginacion from "../components/common/Paginacion.tsx";
+import DrawerFormulario from "../components/formularios/DrawerFormulario.tsx";
+import TablaFormularios from "../components/formularios/TablaFormularios.tsx";
+import type { ColorPaleta, FormularioAdmin } from "../interfaces/Formulario.ts";
 import { FormulariosAdminService } from "../services/formulariosAdmin.service.ts";
-import { NOMBRE_AREA, NOMBRE_DIRECCION } from "../utils/personal.util.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
+import {
+  cambiosDeEdicion,
+  cuerpoDeAlta,
+  numeroLibre,
+  rutaCatalogosConAreas,
+  type ValoresFormularioAdmin,
+} from "../utils/formularioAdmin.util.ts";
+import { MS_RESALTADO } from "../utils/listadoOperativos.util.ts";
+import { usePaginaLocal } from "../hooks/usePaginaLocal.ts";
+import { normalizar } from "../utils/texto.util.ts";
 
-/**
- * Los valores del formulario del modal. `rolDueno`/`politicaVehiculo` viajan como texto.
- * Extiende `Record<string, unknown>` para satisfacer el genérico de `ModalCatalogo`; los
- * campos con nombre conservan su tipo (el índice solo cubre las claves no declaradas).
- */
-interface ValoresFormulario extends Record<string, unknown> {
-  numero: number;
-  codigo: string;
-  nombre: string;
-  colorFondo: string;
-  colorAcento: string;
-  colorNombre: string;
-  rolDueno: string;
-  prefijo: string;
-  areas: AreaPersonal[];
-  politicaVehiculo: string;
-  esPatrulla: boolean;
-  condicionanteNoct: boolean;
-  tipoControlMultiple: boolean;
-  capturaLibreTipo: boolean;
-  capturaLibrePunto: boolean;
-  puntoManual: boolean;
-  filtraPersonalPorRol: boolean;
-  variosPorPersona: boolean;
-  cantidadPorPersona: boolean;
-}
 
-/** Un aviso de página (fuera del modal): su color y su texto. */
-interface AvisoPagina {
-  clase: string;
-  texto: string;
-}
+type FiltroVigencia = "vigentes" | "inactivos" | "todos";
+
+
+const OPCIONES_VIGENCIA: { valor: FiltroVigencia; nombre: string }[] = [
+  { valor: "vigentes", nombre: "Vigentes" },
+  { valor: "inactivos", nombre: "Inactivos" },
+  { valor: "todos", nombre: "Todos" },
+];
 
 /** Lo que se está editando: `"nuevo"` es un alta; una fila, su edición; `null`, cerrado. */
 type Edicion = FormularioAdmin | "nuevo" | null;
 
+
+const NOTA_PIE =
+  "Los formularios no se eliminan: se desactivan, para que los cuadros anteriores se sigan leyendo. El número y el código quedan fijos al crear.";
+
 const AdminFormulariosPage = () => {
+  const navegar = useNavigate();
   const [formularios, setFormularios] = useState<FormularioAdmin[]>([]);
   const [paleta, setPaleta] = useState<ColorPaleta[]>([]);
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [vigencia, setVigencia] = useState<FiltroVigencia>("vigentes");
   const [edicion, setEdicion] = useState<Edicion>(null);
+  /** Cambia en cada apertura: el cajón se monta de nuevo y arranca con sus valores iniciales. */
+  const [apertura, setApertura] = useState(0);
+  const [errorDrawer, setErrorDrawer] = useState<string | null>(null);
   const [baja, setBaja] = useState<FormularioAdmin | null>(null);
-  const [avisoModal, setAvisoModal] = useState<string | null>(null);
-  const [avisoPagina, setAvisoPagina] = useState<AvisoPagina | null>(null);
-  const [exito, setExito] = useState<string | null>(null);
+  const [avisoPagina, setAvisoPagina] = useState<AvisoTexto | null>(null);
+  const [resaltado, setResaltado] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -99,8 +95,7 @@ const AdminFormulariosPage = () => {
       setPaleta(colores);
       setAvisoPagina(null);
     } catch (error) {
-      const info = presentarError(error);
-      setAvisoPagina({ texto: info.mensaje, clase: claseDeAviso(info.trato) });
+      setAvisoPagina(avisoDeFallo(error));
     } finally {
       setCargando(false);
     }
@@ -110,225 +105,241 @@ const AdminFormulariosPage = () => {
     void cargar();
   }, [cargar]);
 
-  const siguienteNumero = (): number => {
-    const mayor = formularios.reduce((tope, fila) => Math.max(tope, fila.numero), 0);
-    return Math.min(99, mayor + 1);
+  // El resaltado se apaga solo.
+  useEffect(() => {
+    if (!resaltado) return;
+    const espera = window.setTimeout(() => setResaltado(null), MS_RESALTADO);
+    return () => window.clearTimeout(espera);
+  }, [resaltado]);
+
+  const vigentes = formularios.filter((fila) => fila.activo).length;
+
+  const filas = useMemo(() => {
+    const texto = normalizar(busqueda.trim());
+    return [...formularios]
+      .sort((a, b) => a.numero - b.numero)
+      .filter((fila) =>
+        vigencia === "todos" ? true : vigencia === "vigentes" ? fila.activo : !fila.activo,
+      )
+      .filter(
+        (fila) =>
+          !texto || normalizar(`${fila.numero} ${fila.codigo} ${fila.nombre}`).includes(texto),
+      );
+  }, [formularios, busqueda, vigencia]);
+
+  const abrir = (nueva: FormularioAdmin | "nuevo") => {
+    setErrorDrawer(null);
+    setApertura((antes) => antes + 1);
+    setEdicion(nueva);
   };
 
-  /** Los valores del modal, a partir de la fila que se edita o de un alta en blanco. */
-  const valoresIniciales = (): ValoresFormulario => {
-    const fila = edicion !== "nuevo" ? edicion : null;
-    return {
-      numero: fila?.numero ?? siguienteNumero(),
-      codigo: fila?.codigo ?? "",
-      nombre: fila?.nombre ?? "",
-      colorFondo: fila?.colorFondo ?? "",
-      colorAcento: fila?.colorAcento ?? "",
-      colorNombre: fila?.colorNombre ?? "",
-      rolDueno: fila?.rolDueno ?? "",
-      prefijo: fila?.prefijo ?? "",
-      areas: fila?.areas ?? [],
-      politicaVehiculo: fila?.politicaVehiculo ?? "CONDICIONAL",
-      esPatrulla: fila?.esPatrulla ?? false,
-      condicionanteNoct: fila?.condicionanteNoct ?? false,
-      tipoControlMultiple: fila?.tipoControlMultiple ?? false,
-      capturaLibreTipo: fila?.capturaLibreTipo ?? false,
-      capturaLibrePunto: fila?.capturaLibrePunto ?? false,
-      puntoManual: fila?.puntoManual ?? false,
-      filtraPersonalPorRol: fila?.filtraPersonalPorRol ?? true,
-      variosPorPersona: fila?.variosPorPersona ?? false,
-      cantidadPorPersona: fila?.cantidadPorPersona ?? false,
-    };
-  };
+  const cerrarDrawer = useCallback(() => {
+    setEdicion(null);
+    setErrorDrawer(null);
+  }, []);
 
-  const guardar = async (valores: ValoresFormulario): Promise<void> => {
+  const irACatalogos = (codigo: string) => navegar(rutaCatalogosConAreas(codigo));
+
+  const guardar = async (valores: ValoresFormularioAdmin): Promise<void> => {
+    if (edicion === null) return;
     setProcesando(true);
-    setAvisoModal(null);
+    setErrorDrawer(null);
     try {
-      const banderas = {
-        esPatrulla: valores.esPatrulla,
-        condicionanteNoct: valores.condicionanteNoct,
-        tipoControlMultiple: valores.tipoControlMultiple,
-        capturaLibreTipo: valores.capturaLibreTipo,
-        capturaLibrePunto: valores.capturaLibrePunto,
-        puntoManual: valores.puntoManual,
-        filtraPersonalPorRol: valores.filtraPersonalPorRol,
-        variosPorPersona: valores.variosPorPersona,
-        cantidadPorPersona: valores.cantidadPorPersona,
-      };
-      const comunes = {
-        nombre: valores.nombre.trim(),
-        colorFondo: valores.colorFondo,
-        colorAcento: valores.colorAcento,
-        colorNombre: valores.colorNombre,
-        rolDueno: valores.rolDueno as RolDepartamental,
-        prefijo: valores.prefijo.trim(),
-        areas: valores.areas,
-        politicaVehiculo: valores.politicaVehiculo as PoliticaVehiculo,
-        ...banderas,
-      };
-
       if (edicion === "nuevo") {
-        await FormulariosAdminService.crear({
-          numero: valores.numero,
-          codigo: valores.codigo.trim(),
-          ...comunes,
+        const creado = await FormulariosAdminService.crear(cuerpoDeAlta(valores));
+        toast.exito(`${creado.numero}. ${creado.nombre} creado`, {
+          texto: "Configure sus áreas y catálogos.",
+          accion: { texto: "Ir a Catálogos", onClick: () => irACatalogos(creado.codigo) },
         });
-        setExito(`Formulario ${valores.numero} creado.`);
-      } else if (edicion) {
-        await FormulariosAdminService.actualizar(edicion.codigo, comunes);
-        setExito(`Formulario ${edicion.numero} actualizado.`);
+        setResaltado(creado.codigo);
+        // Se ve en la lista aunque el filtro estuviera en «Inactivos».
+        if (vigencia === "inactivos") setVigencia("vigentes");
+      } else {
+        const guardado = await FormulariosAdminService.actualizar(
+          edicion.codigo,
+          cambiosDeEdicion(edicion, valores),
+        );
+        toast.exito(`${guardado.numero}. ${guardado.nombre} actualizado.`);
+        setResaltado(guardado.codigo);
       }
-
       setEdicion(null);
       await cargar();
     } catch (error) {
-      setAvisoModal(presentarError(error).mensaje);
+      setErrorDrawer(presentarError(error).mensaje);
     } finally {
       setProcesando(false);
     }
   };
 
-  const cambiarActivo = async (
-    fila: FormularioAdmin,
-    activo: boolean,
-  ): Promise<void> => {
+  /** Activa o desactiva. Si el servidor lo rechaza, lanza. */
+  const aplicarActivo = async (fila: FormularioAdmin, activo: boolean): Promise<void> => {
+    if (activo) {
+      await FormulariosAdminService.actualizar(fila.codigo, { activo: true });
+      toast.exito(`${fila.numero}. ${fila.nombre} reactivado.`);
+    } else {
+      await FormulariosAdminService.darDeBaja(fila.codigo);
+      toast.exito(`${fila.numero}. ${fila.nombre} desactivado.`);
+    }
+    setResaltado(fila.codigo);
+    setBaja(null);
+    await cargar();
+  };
+
+  /** Reactivar no se confirma: el error va al mensaje estándar. */
+  const cambiarActivo = async (fila: FormularioAdmin, activo: boolean): Promise<void> => {
     setProcesando(true);
     try {
-      if (activo) {
-        await FormulariosAdminService.actualizar(fila.codigo, { activo: true });
-        setExito(`Formulario ${fila.numero} reactivado.`);
-      } else {
-        const resultado = await FormulariosAdminService.darDeBaja(fila.codigo);
-        setExito(resultado.mensaje);
-      }
-      setBaja(null);
-      await cargar();
+      await aplicarActivo(fila, activo);
     } catch (error) {
-      const info = presentarError(error);
-      setAvisoPagina({ texto: info.mensaje, clase: claseDeAviso(info.trato) });
+      void mensaje.errorDe(error, { titulo: activo ? `No se pudo reactivar ${fila.nombre}` : `No se pudo desactivar ${fila.nombre}` });
       setBaja(null);
     } finally {
       setProcesando(false);
     }
   };
 
-  const columnas: ColumnaCatalogo<FormularioAdmin>[] = [
-    { titulo: "N.º", valor: (fila) => fila.numero },
-    { titulo: "Código", valor: (fila) => fila.codigo },
-    { titulo: "Nombre", valor: (fila) => fila.nombre },
-    {
-      titulo: "Color",
-      valor: (fila) => (
-        <span className="inline-flex items-center gap-2">
-          <span
-            className="inline-block h-4 w-4 rounded-full border border-base-300"
-            style={{ backgroundColor: fila.colorFondo }}
-            aria-hidden="true"
-          />
-          {fila.colorNombre}
-        </span>
-      ),
-    },
-    { titulo: "Dueño", valor: (fila) => NOMBRE_DIRECCION[fila.rolDueno] },
-    {
-      titulo: "Áreas",
-      valor: (fila) => fila.areas.map((area) => NOMBRE_AREA[area]).join(", "),
-    },
-  ];
+  // Paginado en el navegador (estándar de tablas): la fila recién guardada abre su página.
+  const pagina0 = usePaginaLocal(filas, resaltado, (fila) => fila.codigo);
+
+  const contador = `${filas.length} ${filas.length === 1 ? "formulario" : "formularios"} · ${vigentes} vigentes de ${formularios.length}`;
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Administración
-        </p>
-        <h1 className="page-heading-title">Formularios del cuadro</h1>
-        <p className="page-heading-subtitle text-sm">
-          Crea, edita y da de baja los formularios. El número y el código quedan
-          fijos tras crear; los formularios no se eliminan, se desactivan.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="page-heading-kicker font-semibold uppercase">Administración</p>
+          <h1 className="page-heading-title">Formularios del cuadro</h1>
+          <p className="page-heading-subtitle text-sm">
+            Tipos de operativo que se registran en el cuadro: su color, dueño y cómo se comportan al
+            registrar.
+          </p>
+        </div>
       </header>
 
       {avisoPagina && (
-        <div
-          className={`alert ${avisoPagina.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={avisoPagina.variante}
+          titulo="No se pudieron cargar los formularios"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{avisoPagina.texto}</span>
-        </div>
+          {avisoPagina.texto}
+        </AvisoEnLinea>
       )}
 
-      <div className="alert alert-info">
-        <span>
-          Un formulario no se elimina: se desactiva, para que los cuadros
-          anteriores que lo usaron se sigan pudiendo leer. Se puede reactivar más
-          tarde desde su lista.
-        </span>
-      </div>
+      <section
+        aria-label="Formularios"
+        className="app-shell-surface flex flex-col gap-4 rounded-3xl border border-base-300 bg-base-100 px-4 py-4 shadow-[0_12px_32px_rgba(15,23,42,0.12)] md:px-6"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="search"
+            className="input input-bordered w-full sm:w-80"
+            placeholder="Buscar por número, código o nombre…"
+            aria-label="Buscar por número, código o nombre"
+            value={busqueda}
+            onChange={(evento) => {
+              setBusqueda(evento.target.value);
+            }}
+          />
+          <SelectorSegmentado
+            id="filtro-vigencia-formularios"
+            etiqueta="Estado"
+            etiquetaOculta
+            opciones={OPCIONES_VIGENCIA}
+            valor={vigencia}
+            onCambiar={(valor) => {
+              setVigencia(valor as FiltroVigencia);
+            }}
+          />
+          <span
+            className="text-sm text-app-strong"
+            role="status"
+          >
+            {contador}
+          </span>
+          {/* Estándar de botones (D4): «+ Nuevo» a la derecha de la barra de su tabla. */}
+          <Boton
+            variante="primario"
+            className="sm:ml-auto"
+            deshabilitado={cargando || procesando}
+            onClick={() => abrir("nuevo")}
+          >
+            + Nuevo formulario
+          </Boton>
+        </div>
 
-      <TablaCatalogo
-        titulo="Formularios"
-        filas={formularios}
-        columnas={columnas}
-        cargando={cargando}
-        procesando={procesando}
-        mensajeVacio="Todavía no hay formularios."
-        textoDe={(fila) => `${fila.numero} ${fila.codigo} ${fila.nombre}`}
-        onAgregar={() => {
-          setAvisoModal(null);
-          setEdicion("nuevo");
-        }}
-        onEditar={(fila) => {
-          setAvisoModal(null);
-          setEdicion(fila);
-        }}
-        onDesactivar={(fila) => setBaja(fila)}
-        onActivar={(fila) => void cambiarActivo(fila, true)}
-      />
+        {cargando ? (
+          <div className="flex justify-center py-6">
+            <span
+              className="loading loading-spinner loading-lg text-primary"
+              aria-label="Cargando formularios"
+            />
+          </div>
+        ) : (
+          <>
+          <TablaFormularios
+            filas={pagina0.filas}
+            procesando={procesando}
+            resaltado={resaltado}
+            mensajeVacio={
+              busqueda.trim()
+                ? "Ningún formulario coincide con la búsqueda."
+                : vigencia === "inactivos"
+                  ? "No hay formularios inactivos."
+                  : "Todavía no hay formularios."
+            }
+            onEditar={(fila) => abrir(fila)}
+            onDesactivar={(fila) => setBaja(fila)}
+            onReactivar={(fila) => void cambiarActivo(fila, true)}
+          />
+          <Paginacion
+            page={pagina0.pagina}
+            pageSize={pagina0.tamano}
+            total={pagina0.total}
+            onPage={pagina0.irA}
+            etiqueta="formularios"
+          />
+          </>
+        )}
+
+        <p className="text-xs text-app-muted">
+          <span aria-hidden="true">ⓘ </span>
+          {NOTA_PIE}
+        </p>
+      </section>
 
       {edicion !== null && (
-        <ModalCatalogo
+        <DrawerFormulario
+          key={apertura}
           abierto
-          titulo={
-            edicion === "nuevo"
-              ? "Nuevo formulario"
-              : `Editar ${edicion.numero}. ${edicion.nombre}`
-          }
-          valoresIniciales={valoresIniciales()}
-          esquema={esquemaFormulario}
-          campos={
-            <CamposFormulario paleta={paleta} esEdicion={edicion !== "nuevo"} />
-          }
+          fila={edicion === "nuevo" ? null : edicion}
+          formularios={formularios}
+          paleta={paleta}
+          numeroSugerido={numeroLibre(formularios)}
           guardando={procesando}
-          aviso={avisoModal}
+          errorServidor={errorDrawer}
           onGuardar={(valores) => void guardar(valores)}
-          onCancelar={() => setEdicion(null)}
+          onCerrar={cerrarDrawer}
+          onIrACatalogos={irACatalogos}
         />
       )}
 
-      <ModalConfirmacion
+      {/* Si el servidor rechaza la baja, el error queda en este mismo modal. */}
+      <MensajeModal
         abierto={baja !== null}
-        titulo="¿Desactivar este formulario?"
-        mensaje={
-          baja
-            ? `«${baja.numero}. ${baja.nombre}» dejará de ofrecerse al registrar operativos. NO se elimina: los cuadros anteriores que lo usaron se siguen pudiendo leer. Se puede reactivar más tarde desde su lista.`
-            : ""
-        }
-        textoSi="Sí, desactivar"
-        textoNo="Cancelar"
-        procesando={procesando}
-        onConfirmar={() => void (baja && cambiarActivo(baja, false))}
-        onCancelar={() => setBaja(null)}
+        variante="peligro"
+        titulo={baja ? `¿Desactivar ${baja.numero}. ${baja.nombre}?` : ""}
+        mensaje="Dejará de aparecer en el registro de operativos. Los cuadros anteriores se siguen leyendo y puede reactivarlo después."
+        textoPrincipal="Sí, desactivar"
+        tituloError="No se pudo desactivar"
+        onPrincipal={() => (baja ? aplicarActivo(baja, false) : undefined)}
+        onSecundario={() => setBaja(null)}
       />
 
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
-        />
-      )}
     </section>
   );
 };

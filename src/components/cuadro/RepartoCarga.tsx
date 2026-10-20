@@ -17,7 +17,7 @@
  * el índice sobre una escala común, con la marca de la cuota, y el estado SIEMPRE en texto bajo la
  * barra (regla 6: nunca solo color).
  *
- * EL COLOR DE LA BARRA ES EL SEMÁFORO DE FATIGA (2026-10-01), los MISMOS tokens que el badge «Carga
+ * EL COLOR DE LA BARRA ES EL SEMÁFORO DE FATIGA (2026-10-01), los MISMOS tokens (`TONO_CARGA`) que el badge «Carga
  * X» de la lista: verde=baja, naranja=media, rojo=alta. Así una persona se ve del mismo color aquí y
  * en la lista. La POSICIÓN frente a la cuota NO se comunica con color —se lee con la marca vertical
  * de la cuota y el texto bajo la barra—, y los CONTEOS de las tarjetas y el texto «bajo/en/sobre su
@@ -37,12 +37,13 @@ import {
 } from "../../interfaces/Personal.ts";
 import {
   clasificarReparto,
-  CLASE_BADGE_FATIGA,
-  NIVEL_FATIGA,
   NOMBRE_AREA,
+  TONO_CARGA,
   type ClaseReparto,
 } from "../../utils/personal.util.ts";
 import type { NivelFatiga } from "../../interfaces/Personal.ts";
+import Boton from "../common/Boton.tsx";
+import EtiquetaCarga from "../common/EtiquetaCarga.tsx";
 
 /**
  * Cómo se guarda lo que se agrega/quita, SOLO para el texto (las acciones las resuelve la pantalla):
@@ -73,16 +74,6 @@ const PALABRA_FATIGA: Record<NivelFatiga, string> = {
   VERDE: "baja",
   AMBAR: "media",
   ROJO: "alta",
-};
-
-/**
- * Color de la barra = SEMÁFORO DE FATIGA, los mismos tonos que el badge «Carga X» (success/warning/
- * error). No depende de la equidad: la posición vs cuota va en la marca y el texto, no en el color.
- */
-const COLOR_BARRA_FATIGA: Record<NivelFatiga, string> = {
-  VERDE: "bg-success",
-  AMBAR: "bg-warning",
-  ROJO: "bg-error",
 };
 
 /** «1 operativo» / «N operativos»: el plural se escribe bien, no «1 operativos». */
@@ -227,7 +218,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
         {/* IZQUIERDA (~210px): nombre (hasta 2 líneas, sin ellipsis), operativos y chips. */}
         <div className="w-full min-w-0 sm:w-52 sm:shrink-0">
           <p className="break-words font-medium">{nombreDePersona(persona)}</p>
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             {textoOperativos(persona.operativosAsignados ?? 0)}
             {!unidadUnica && persona.area
               ? ` · ${NOMBRE_AREA[persona.area]}`
@@ -236,11 +227,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
           <div className="mt-0.5 flex flex-wrap gap-1">
             {/* Badge de fatiga = el MISMO de la lista; da el color de la barra en palabras. */}
             {persona.nivelFatiga && (
-              <span
-                className={`badge badge-sm whitespace-nowrap ${CLASE_BADGE_FATIGA[persona.nivelFatiga]}`}
-              >
-                {NIVEL_FATIGA[persona.nivelFatiga]}
-              </span>
+              <EtiquetaCarga nivel={persona.nivelFatiga} />
             )}
             {persona.sugerido && (
               <span className="badge badge-primary badge-sm whitespace-nowrap">
@@ -264,7 +251,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
             <div
               className={`absolute left-0 top-0 h-full rounded-full ${
                 persona.nivelFatiga
-                  ? COLOR_BARRA_FATIGA[persona.nivelFatiga]
+                  ? TONO_CARGA[persona.nivelFatiga]
                   : "bg-base-content/40"
               }`}
               style={{ width: `${anchoPct}%` }}
@@ -277,11 +264,11 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
               />
             )}
           </div>
-          <p className="mt-1 text-xs text-base-content/80">
+          <p className="mt-1 text-xs text-app-muted">
             {detalleDeCarga(persona, clase)}
           </p>
           {variante === "noDisponible" && persona.motivo && (
-            <p className="mt-0.5 text-xs text-base-content/70">
+            <p className="mt-0.5 text-xs text-app-muted">
               No disponible: {persona.motivo}
             </p>
           )}
@@ -290,22 +277,14 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
         {/* DERECHA: agregar/quitar (outline); los no disponibles no tienen botón. */}
         <div className="flex w-full justify-end sm:w-24 sm:shrink-0">
           {variante === "disponible" && (
-            <button
-              type="button"
-              className="btn btn-outline btn-sm whitespace-nowrap"
-              onClick={() => onAgregar(persona.id)}
-            >
+            <Boton variante="acento" tamano="sm" onClick={() => onAgregar(persona.id)}>
               {rotuloAgregar}
-            </button>
+            </Boton>
           )}
           {variante === "agregado" && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm whitespace-nowrap text-error"
-              onClick={() => onQuitar(persona.id)}
-            >
+            <Boton variante="peligro" tamano="sm" onClick={() => onQuitar(persona.id)}>
               Quitar
-            </button>
+            </Boton>
           )}
         </div>
       </li>
@@ -331,27 +310,27 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
       {/* 4 TARJETAS DE RESUMEN: los tres conteos suman el total de personas con carga. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-box border border-base-300 p-3">
-          <p className="text-xs text-base-content/70">Cuota justa</p>
+          <p className="text-xs text-app-muted">Cuota justa</p>
           <p className="text-lg font-semibold">{cuota ?? "—"}</p>
         </div>
         <div className="rounded-box border border-base-300 p-3">
-          <p className="text-xs text-base-content/70">Bajo su parte</p>
+          <p className="text-xs text-app-muted">Bajo su parte</p>
           <p className="text-lg font-semibold">{bajo}</p>
-          <p className="text-xs text-base-content/70">pueden recibir más</p>
+          <p className="text-xs text-app-muted">pueden recibir más</p>
         </div>
         <div className="rounded-box border border-base-300 p-3">
-          <p className="text-xs text-base-content/70">En su parte</p>
+          <p className="text-xs text-app-muted">En su parte</p>
           <p className="text-lg font-semibold">{en}</p>
         </div>
         <div className="rounded-box border border-base-300 p-3">
-          <p className="text-xs text-base-content/70">Sobre su parte</p>
+          <p className="text-xs text-app-muted">Sobre su parte</p>
           <p className="text-lg font-semibold">{sobre}</p>
-          <p className="text-xs text-base-content/70">ya con carga de más</p>
+          <p className="text-xs text-app-muted">ya con carga de más</p>
         </div>
       </div>
 
       {/* LEYENDA: el COLOR es la fatiga (muestras en barra); la cuota, la marca vertical. Regla 6. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/70">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-app-muted">
         <span className="font-medium text-base-content">Color = fatiga:</span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-5 rounded-full bg-success" />
@@ -372,7 +351,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
       </div>
 
       {!hayCarga ? (
-        <p className="px-1 py-2 text-sm text-base-content/70">
+        <p className="px-1 py-2 text-sm text-app-muted">
           Todavía no hay carga calculada para este personal.
         </p>
       ) : (
@@ -384,7 +363,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
                 <p className="text-sm font-semibold text-base-content">
                   Disponibles ({disponibles.length})
                 </p>
-                <span className="text-xs text-base-content/70">
+                <span className="text-xs text-app-muted">
                   Ordenados de menor a mayor carga
                 </span>
               </div>
@@ -404,7 +383,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
                         <p className="text-sm font-semibold text-base-content">
                           Agregados a este operativo ({agregados.length})
                         </p>
-                        <span className="text-xs text-base-content/70">
+                        <span className="text-xs text-app-muted">
                           Sin registrar todavía
                         </span>
                       </div>
@@ -445,7 +424,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
       )}
 
       {/* NOTA AL PIE. */}
-      <p className="text-xs text-base-content/60">
+      <p className="text-xs text-app-muted">
         Índice = carga acumulada de la semana. La cuota justa es la parte que le
         toca a cada persona del grupo.
       </p>

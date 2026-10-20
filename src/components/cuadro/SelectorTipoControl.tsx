@@ -75,8 +75,8 @@ const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
           MULTIPLE: varios tipos a la vez con `SelectorTokens`, como instituciones. Lo activa
           el flag `tipoControlMultiple` del formulario —verdadero en los nueve desde el
           2026-09-14—. El adicional (RN-20) convive con ellos donde el formulario admite
-          captura libre (`capturaLibreTipo`, hoy 2 y 8): es un campo opcional aparte, no una
-          opción del desplegable.
+          captura libre (`capturaLibreTipo`, hoy 2 y 8): es opcional y se agrega desde el mismo
+          desplegable, como ficha «OTRO ·».
         */}
         <SelectorTokens
           id="tiposControl"
@@ -91,54 +91,22 @@ const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
           flotante={tiposFlotante || enCajon}
           cajaUnica={enCajon}
           /*
-            EN EL CAJÓN, EL «OTRO» LIBRE SE INTEGRA EN EL COMBOBOX (2026-10-01): si lo tecleado no
-            coincide con un tipo del catálogo, el desplegable ofrece «+ Agregar … como otro tipo»
-            (o «Reemplazar…»), y el libre se pinta como chip «OTRO ·». Así desaparece el campo
-            separado «Otro tipo (adicional)», que queda SOLO en P-01 (fuera del cajón).
+            EL «OTRO» LIBRE SE INTEGRA EN EL COMBOBOX, en el cajón (2026-10-01) y desde el 2026-10-16
+            también en el alta de P-01: si lo tecleado no coincide con un tipo del catálogo, el
+            desplegable ofrece «+ Agregar … como otro tipo», y el libre se pinta como ficha naranja
+            «OTRO ·». Es UNO solo —el servidor guarda un texto (`oper_tipo_libre`)—: con uno ya
+            puesto, la opción dice «Reemplazar otro tipo por …». El campo aparte se retiró.
           */
-          valorLibre={enCajon && capturaLibreTipo ? tipoLibre : undefined}
-          onValorLibre={
-            enCajon && capturaLibreTipo ? onTipoLibreChange : undefined
-          }
+          valorLibre={capturaLibreTipo ? tipoLibre : undefined}
+          onValorLibre={capturaLibreTipo ? onTipoLibreChange : undefined}
           deshabilitado={deshabilitado}
           error={errorTipoControl ?? null}
         />
-        {/* Ayuda del «otro tipo» integrado (solo en el cajón). */}
-        {enCajon && capturaLibreTipo && (
-          <p className="mt-1 text-xs text-base-content/80">
+        {/* Ayuda del «otro tipo» integrado. */}
+        {capturaLibreTipo && (
+          <p className="mt-1 text-xs text-app-muted">
             Si no encuentra el tipo, escríbalo y elija «Agregar como otro tipo».
           </p>
-        )}
-        {/* CAMPO SEPARADO «Otro tipo (adicional)»: SOLO fuera del cajón (P-01). En el cajón se
-            integró en el combobox de arriba. */}
-        {capturaLibreTipo && !enCajon && (
-          <>
-            <label
-              className="label mt-2"
-              htmlFor="tipoLibre"
-            >
-              <span className="label-text font-medium">
-                Otro tipo (adicional)
-              </span>
-            </label>
-            <input
-              id="tipoLibre"
-              type="text"
-              className="input input-bordered w-full"
-              placeholder="Escriba un tipo de control adicional (opcional)"
-              aria-label="Tipo de control adicional"
-              maxLength={220}
-              value={tipoLibre}
-              disabled={deshabilitado}
-              aria-invalid={Boolean(errorTipoLibre)}
-              aria-describedby={errorTipoLibre ? "tipoLibre-error" : undefined}
-              onChange={(e) => onTipoLibreChange(e.target.value)}
-            />
-            <PieDeError
-              id="tipoLibre-error"
-              mensaje={errorTipoLibre}
-            />
-          </>
         )}
       </>
     ) : (
@@ -147,7 +115,7 @@ const SelectorTipoControl: FC<SelectorTipoControlProps> = ({
           className="label"
           htmlFor="tipoControl"
         >
-          <span className="label-text font-medium">
+          <span className="label-text">
             Tipo de control<span className="text-error ml-1">*</span>
           </span>
         </label>

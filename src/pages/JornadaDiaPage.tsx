@@ -41,7 +41,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import AvisoVentana from "../components/common/AvisoVentana.tsx";
+import Boton from "../components/common/Boton.tsx";
 import FiltroJornada, {
   TODOS_LOS_FORMULARIOS,
 } from "../components/jornada/FiltroJornada.tsx";
@@ -57,7 +59,7 @@ import type {
 } from "../interfaces/Jornada.ts";
 import { JornadaService } from "../services/jornada.service.ts";
 import { NOMBRE_AREA } from "../utils/personal.util.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
 import { conDiaYMesEnMayuscula } from "../utils/texto.util.ts";
 
@@ -78,7 +80,7 @@ const JornadaDiaPage = () => {
   const [cargando, setCargando] = useState(true);
   const [sinJornada, setSinJornada] = useState(false);
   const [formulario, setFormulario] = useState(TODOS_LOS_FORMULARIOS);
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
+  const [aviso, setAviso] = useState<AvisoTexto | null>(
     null,
   );
 
@@ -105,7 +107,8 @@ const JornadaDiaPage = () => {
       if (error.estado === 404) {
         setSinJornada(true);
       } else {
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        // Que la jornada no cargue es un ERROR (no una advertencia): no hay nada que corregir aquí.
+        setAviso({ texto: error.mensaje, variante: "error" });
       }
     } finally {
       setCargando(false);
@@ -207,7 +210,7 @@ const JornadaDiaPage = () => {
               className="label"
               htmlFor="fechaJornada"
             >
-              <span className="label-text text-xs font-semibold uppercase tracking-[0.12em]">
+              <span className="text-app-label text-xs uppercase tracking-[0.12em]">
                 Fecha del cuadro
               </span>
             </label>
@@ -261,12 +264,10 @@ const JornadaDiaPage = () => {
       )}
 
       {sinJornada && (
-        <div className="alert alert-info">
-          <span>
-            No hay una jornada abierta para el {fecha}. El administrador debe
-            abrir el cuadro del día.
-          </span>
-        </div>
+        <AvisoEnLinea variante="info">
+          No hay una jornada abierta para el {fecha}. El administrador debe
+          abrir el cuadro del día.
+        </AvisoEnLinea>
       )}
 
       {/*
@@ -279,43 +280,41 @@ const JornadaDiaPage = () => {
         exactamente lo mismo.
       */}
       {esperando.operativos > 0 && (
-        <div
-          className="alert alert-warning"
-          role="status"
-        >
-          <span>
-            {esperando.operativos}{" "}
-            {esperando.operativos === 1
-              ? "operativo espera"
-              : "operativos esperan"}{" "}
-            personal que a su departamento le toca asignar:{" "}
-            {esperando.areas.map((area) => NOMBRE_AREA[area]).join(", ")}. Cada
-            fila lo indica en la columna Acciones.
-          </span>
-        </div>
+        <AvisoEnLinea variante="advertencia">
+          {esperando.operativos}{" "}
+          {esperando.operativos === 1
+            ? "operativo espera"
+            : "operativos esperan"}{" "}
+          personal que a su departamento le toca asignar:{" "}
+          {esperando.areas.map((area) => NOMBRE_AREA[area]).join(", ")}. Cada
+          fila lo indica en la columna Acciones.
+        </AvisoEnLinea>
       )}
 
       {/* RN-53. Lo que falta se dice arriba, no solo dentro de cada sección. */}
       {cabecera && cabecera.formulariosSinCarga > 0 && (
-        <div className="alert alert-warning">
-          <span>
-            {cabecera.formulariosSinCarga}{" "}
-            {cabecera.formulariosSinCarga === 1
-              ? "formulario no fue ingresado"
-              : "formularios no fueron ingresados"}
-            . Cada uno deja constancia en su sección, con el departamento
-            responsable y la hora de cierre de su ventana.
-          </span>
-        </div>
+        <AvisoEnLinea variante="advertencia">
+          {cabecera.formulariosSinCarga}{" "}
+          {cabecera.formulariosSinCarga === 1
+            ? "formulario no fue ingresado"
+            : "formularios no fueron ingresados"}
+          . Cada uno deja constancia en su sección, con el departamento
+          responsable y la hora de cierre de su ventana.
+        </AvisoEnLinea>
       )}
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudo cargar la jornada"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
@@ -351,7 +350,7 @@ const JornadaDiaPage = () => {
           />
 
           {/* Regla 6: la leyenda traduce a palabras lo que el color señala. */}
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             Las celdas en Amarillo de Alerta indican asignación logística
             pendiente; el borde marcado señala un vehículo obligatorio sin
             conductor. Todas llevan el motivo en el texto emergente. Aquí solo

@@ -24,22 +24,34 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import { clasesBoton } from "../components/common/Boton.tsx";
 import Loading from "../components/common/Loading";
 import { canjearCodigo } from "../services/sesion.service";
 import { useUser } from "../hooks/useUser";
 import { urlDelPortal } from "../services/sesion.service";
+import { hayPortal } from "../config/env.ts";
+import { traducirError } from "../utils/traductorErrores.ts";
 
 /** Aviso con el marco institucional, para los dos motivos por los que no se entra. */
-const NoSePudo = ({ motivo }: { motivo: string }) => (
+const NoSePudo = ({ motivo, detalle }: { motivo: string; detalle?: string }) => (
   <div className="flex min-h-screen items-center justify-center bg-base-200 p-6">
     <div className="app-modules-panel app-shell-surface max-w-md rounded-md border border-base-300 bg-base-100 p-6">
       <h1 className="page-heading-title">
         No se pudo iniciar sesión
       </h1>
       <p className="page-heading-subtitle mt-2 text-sm">{motivo}</p>
-      <a className="btn btn-primary btn-sm mt-4" href={urlDelPortal()}>
-        Volver al portal institucional
-      </a>
+      {/* Lo técnico (estado HTTP, código, seguimiento), nunca como mensaje principal. */}
+      {detalle && (
+        <details className="mt-3 text-xs text-app-muted">
+          <summary className="cursor-pointer">Ver detalle</summary>
+          <p className="mt-1 font-mono">{detalle}</p>
+        </details>
+      )}
+      {hayPortal() && (
+        <a className={`${clasesBoton("primario", "sm")} mt-4`} href={urlDelPortal()}>
+          Volver al portal institucional
+        </a>
+      )}
     </div>
   </div>
 );
@@ -49,7 +61,7 @@ const AuthCallbackPage = () => {
   const navegar = useNavigate();
   const { establecerSesion } = useUser();
   const canjeado = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ motivo: string; detalle: string } | null>(null);
 
   const code = parametros.get("code");
 
@@ -69,13 +81,12 @@ const AuthCallbackPage = () => {
         navegar("/home", { replace: true });
       })
       .catch((fallo: unknown) => {
-        // El mensaje del servidor se muestra tal cual: está redactado para el
-        // funcionario y distingue «no está dado de alta» de «está desactivado».
-        setError(
-          fallo instanceof Error && fallo.message
-            ? fallo.message
-            : "No se pudo completar el ingreso.",
-        );
+        // El mensaje del SERVIDOR se muestra tal cual: está redactado para el funcionario y
+        // distingue «no está dado de alta» de «está desactivado». Hasta el 2026-10-16 se mostraba
+        // `fallo.message`, que es el texto de axios en inglés («Request failed with status code
+        // 403»): el traductor toma el del servidor y deja lo técnico en el detalle.
+        const traducido = traducirError(fallo);
+        setError({ motivo: traducido.mensaje, detalle: traducido.detalle });
       });
   }, [code, navegar, establecerSesion]);
 
@@ -85,7 +96,7 @@ const AuthCallbackPage = () => {
     );
   }
 
-  if (error) return <NoSePudo motivo={error} />;
+  if (error) return <NoSePudo motivo={error.motivo} detalle={error.detalle} />;
 
   return <Loading />;
 };

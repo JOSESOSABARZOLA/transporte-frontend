@@ -26,12 +26,13 @@
  * mirando.
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import TablaOperativos from "./TablaOperativos.tsx";
 import PanelAdicionalOperativo from "./PanelAdicionalOperativo.tsx";
+import DrawerOperativo from "./DrawerOperativo.tsx";
 import MisOperativosPage from "../../pages/MisOperativosPage.tsx";
 import {
   COLUMNAS_LISTADO,
@@ -39,8 +40,13 @@ import {
 } from "../../utils/listadoOperativos.util.ts";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 
+// El rango de P-02 viaja en la URL (2026-10-13): cada prueba arranca sin él.
+beforeEach(() => window.history.replaceState(null, "", "/"));
+
 vi.mock("../../services/operativo.service.ts", () => ({
   OperativoService: {
+    // Rango de P-02 (2026-10-13): sin respuesta, rige el vigente calculado en la pantalla.
+    rango: vi.fn(() => new Promise(() => {})),
     consultar: vi.fn(),
     crearAdicional: vi.fn(),
     editar: vi.fn(),
@@ -262,13 +268,36 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([]);
   });
 
-  it("con la ventana cerrada, «Editar» y «Eliminar» se apagan y «Adicional» no", async () => {
+  /*
+    Con la ventana cerrada la fila solo se CONSULTA (2026-10-13): «Ver» abre el cajón en SOLO
+    LECTURA (sin «Guardar cambios») y «Eliminar», dentro del menú «⋮», queda apagado. «Adicional»
+    sigue su otra vara: se salta la ventana.
+  */
+  it("con la ventana cerrada, «Eliminar» se oculta, «Agregar adicional» no, y «Ver detalle» abre en solo lectura", async () => {
     estado.ventanaAbierta = false;
     await pintarPantalla();
 
-    expect(screen.getByRole("button", { name: "Editar" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Eliminar" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Adicional" })).toBeEnabled();
+    // RN-61 a RN-64 (regla 11): el adicional ignora la ventana; editar y eliminar, no.
+    expect(screen.getByRole("button", { name: /^Agregar adicional\b/ })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+    expect(screen.queryByRole("button", { name: /^Eliminar\b/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Editar\b/ })).toBeNull();
+
+    const ver = screen.getByRole("button", { name: /^Ver detalle\b/ });
+    expect(ver).toBeEnabled();
+    await userEvent.click(ver);
+
+    const dialogo = await screen.findByRole("dialog", {
+      name: "Editar operativo",
+    });
+    expect(within(dialogo).getByText(/Solo lectura/)).toBeInTheDocument();
+    expect(
+      within(dialogo).queryByRole("button", { name: "Guardar cambios" }),
+    ).toBeNull();
+    expect(
+      within(dialogo).queryByRole("button", { name: "Cancelar" }),
+    ).toBeNull();
   });
 
   /**
@@ -279,12 +308,11 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
    * prefijo de adicional (`OCAPMO`). En los otros ocho el servidor rechazaba la creación
    * con un mensaje redactado, y la pantalla ofrecía el botón igual: se pulsaba y fallaba.
    *
-   * DESAPARECE, NO SE APAGA. Un botón apagado insinúa que en otras circunstancias se
-   * podría, y en un formulario sin prefijo de adicional no se podrá nunca — a diferencia
-   * del cuadro cerrado, que sí es una circunstancia.
+   * SE APAGA CON SU MOTIVO desde el 2026-10-13: el grupo de acciones mide lo mismo en todas las
+   * filas, y un casillero vacío correría el «⋮». El `title` dice que aquí no se podrá nunca.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  it("en un formulario que no admite adicionales, el botón no está", async () => {
+  it("en un formulario que no admite adicionales, el botón se apaga y dice por qué", async () => {
     await pintarPantalla([
       operativo({
         formulario: {
@@ -297,31 +325,32 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
       }),
     ]);
 
-    expect(screen.queryByRole("button", { name: "Adicional" })).toBeNull();
+    const adicional = screen.getByRole("button", { name: /^Agregar adicional\b/ });
+    expect(adicional).toHaveAttribute("aria-disabled", "true");
+    expect(adicional).toHaveAccessibleDescription(
+      "Este formulario no admite operativos adicionales.",
+    );
     // Y lo demás sigue estando: la restricción es solo del adicional.
-    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Editar\b/ })).toBeInTheDocument();
   });
 
   /**
    * Ventana y cuadro cerrado son cosas distintas. Reabrir el cuadro es potestad de la
    * Dirección, y es quien debe enterarse de que algo se sale de lo que ya aprobó.
    */
-  it("con el cuadro cerrado, «Adicional» también se apaga y dice por qué", async () => {
+  it("con el cuadro cerrado, la fila solo se consulta: solo «Ver detalle»", async () => {
     estado.cuadroAbierto = false;
     await pintarPantalla();
 
-    const boton = screen.getByRole("button", { name: "Adicional" });
-
-    expect(boton).toBeDisabled();
-    expect(boton).toHaveAttribute(
-      "title",
-      expect.stringContaining("cerrado por la Dirección"),
-    );
+    expect(screen.queryByRole("button", { name: /^Agregar adicional\b/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Ver detalle\b/ })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /^Editar\b/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Eliminar\b/ })).toBeNull();
   });
 
   /**
-   * NO SE ENCADENAN. El botón DESAPARECE en vez de aparecer apagado: «apagado» insinúa
-   * que en otras circunstancias se podría, y aquí nunca.
+   * NO SE ENCADENAN. Desde el 2026-10-13 el botón queda APAGADO con su motivo, para que el
+   * grupo de acciones no cambie de ancho.
    */
   it("sobre un adicional no se ofrece crear otro adicional", async () => {
     vi.mocked(OperativoService.consultar).mockResolvedValue({
@@ -338,28 +367,33 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     );
 
     expect(filaDelAdicional).toBeDefined();
-    expect(
-      within(filaDelAdicional as HTMLElement).queryByRole("button", {
-        name: "Adicional",
-      }),
-    ).toBeNull();
-    // Y el original sí lo ofrece: la ausencia es del adicional, no de la pantalla.
-    expect(screen.getAllByRole("button", { name: "Adicional" })).toHaveLength(1);
+    const delAdicional = within(filaDelAdicional as HTMLElement).getByRole("button", {
+      name: /^Agregar adicional\b/,
+    });
+    expect(delAdicional).toHaveAttribute("aria-disabled", "true");
+    expect(delAdicional).toHaveAccessibleDescription(expect.stringContaining("no se encadenan"));
+    // Y el original sí lo ofrece: el apagado es del adicional, no de la pantalla.
+    const disponibles = screen
+      .getAllByRole("button", { name: /^Agregar adicional\b/ })
+      .filter((boton) => !boton.hasAttribute("aria-disabled"));
+    expect(disponibles).toHaveLength(1);
   });
 
-  it("abrir el cajón lo titula «Nuevo operativo adicional» y nombra de cuál nace", async () => {
+  it("abrir el cajón lo titula «Operativo adicional» y nombra de cuál nace", async () => {
     estado.ventanaAbierta = false;
     await pintarPantalla();
 
-    await userEvent.click(screen.getByRole("button", { name: "Adicional" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Agregar adicional\b/ }));
 
-    // Fase E: el adicional vive ahora en el cajón lateral. El título lo nombra y el subtítulo dice
-    // de qué operativo nace.
+    // El cajón único del adicional (2026-10-08): el título lo nombra y el subtítulo dice de qué
+    // operativo nace, junto al distintivo de su formulario.
+    const dialogo = screen.getByRole("dialog", { name: "Operativo adicional" });
+    // El cajón único (2026-10-08): el mismo componente que «Editar», en modo «adicional».
     expect(
-      screen.getByRole("dialog", { name: /Nuevo operativo adicional/ }),
-    ).toBeInTheDocument();
+      dialogo.querySelector('[data-drawer-operativo="adicional"]'),
+    ).not.toBeNull();
     expect(
-      screen.getByText(/Sobre OCPMO-004-31-JUL-2026/),
+      within(dialogo).getByText("de OCPMO-004-31-JUL-2026"),
     ).toBeInTheDocument();
   });
 
@@ -367,11 +401,9 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     estado.ventanaAbierta = false;
     await pintarPantalla();
 
-    await userEvent.click(screen.getByRole("button", { name: "Adicional" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Agregar adicional\b/ }));
 
-    const dialogo = screen.getByRole("dialog", {
-      name: /Nuevo operativo adicional/,
-    });
+    const dialogo = screen.getByRole("dialog", { name: "Operativo adicional" });
     // Fase E: las acciones viven en el pie fijo del cajón, no dentro del formulario.
     expect(
       within(dialogo).getByRole("button", { name: "Registrar adicional" }),
@@ -379,6 +411,91 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     expect(
       within(dialogo).getByRole("button", { name: "Cancelar" }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * EL REGISTRO COMPLETO DESDE EL CAJÓN (2026-10-08): con datos válidos el cajón se cierra, el
+ * aviso breve dice el identificador nuevo, la tabla se recarga y la fila nueva queda resaltada.
+ */
+describe("registrar un adicional desde el cajón", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    estado.cuadroAbierto = true;
+    estado.ventanaAbierta = true;
+  });
+
+  it("con datos válidos cierra el cajón, avisa y resalta la fila nueva", async () => {
+    const conEquipo = operativo({
+      instituciones: [{ id: 7, sigla: "AMC", nombre: "AMC" }],
+      personal: [
+        {
+          funcionarioId: 5,
+          nombre: "YUNDA JESSICA",
+          area: "OPERATIVOS",
+          telefono: null,
+          esResponsable: true,
+          asignadoPorRol: "DMIP_OPERATIVOS",
+        },
+      ],
+    } as Partial<Operativo>);
+    vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([
+      {
+        id: 5,
+        apellidos: "YUNDA",
+        nombres: "JESSICA",
+        area: "OPERATIVOS",
+        cargo: null,
+        elegible: true,
+        motivo: null,
+      },
+    ] as Awaited<ReturnType<typeof PersonalService.consultarElegibles>>);
+    vi.mocked(OperativoService.crearAdicional).mockResolvedValue(ADICIONAL);
+    await pintarPantalla([conEquipo]);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Agregar adicional\b/ }));
+    const cajon = screen.getByRole("dialog", { name: "Operativo adicional" });
+
+    // Se hereda sola; su horario nace en blanco y es lo único que falta.
+    const inicio = await within(cajon).findByLabelText(/Hora de inicio de/);
+    await waitFor(() =>
+      expect(within(cajon).getByText(/1 campo por completar/)).toBeInTheDocument(),
+    );
+    await userEvent.type(inicio, "08:00");
+    await userEvent.type(within(cajon).getByLabelText(/Hora de fin de/), "12:00");
+
+    // Tras registrar, la jornada trae también el adicional.
+    vi.mocked(OperativoService.consultar).mockResolvedValue({
+      datos: [conEquipo, ADICIONAL],
+      meta: { pagina: 1, tamanio: 200, total: 2, totalPaginas: 1 },
+    });
+    await userEvent.click(
+      within(cajon).getByRole("button", { name: "Registrar adicional" }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(OperativoService.crearAdicional).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        personal: [
+          expect.objectContaining({
+            funcionarioId: 5,
+            horaInicio: "08:00",
+            horaFin: "12:00",
+          }),
+        ],
+      }),
+    );
+    expect(
+      await screen.findByText(
+        /Operativo adicional OCAPMO-001-31-JUL-2026 registrado/,
+      ),
+    ).toBeInTheDocument();
+    const identificador = await screen.findByText("OCAPMO-001-31-JUL-2026");
+    expect(identificador.closest("tr")).toHaveAttribute(
+      "data-resaltado",
+      "true",
+    );
   });
 });
 
@@ -399,7 +516,8 @@ describe("el panel del adicional", () => {
     bloqueado: false,
     guardando: false,
     onGuardar: vi.fn(),
-    onCancelar: vi.fn(),
+    idForm: "form-adicional-prueba",
+    onEstadoEnvio: vi.fn(),
   };
 
   /**
@@ -432,10 +550,14 @@ describe("el panel del adicional", () => {
   });
 
   it("el botón principal dice lo que hace, no «Guardar»", () => {
+    // El botón vive en el pie del cajón único (2026-10-08), no dentro del panel. El cajón pone
+    // sus propios `idForm` y `onEstadoEnvio` encima de los de `propiedades`.
     render(
-      <PanelAdicionalOperativo
+      <DrawerOperativo
+        modo="adicional"
         {...propiedades}
         ventanaCerrada={false}
+        onCerrar={vi.fn()}
       />,
     );
 
@@ -537,7 +659,8 @@ describe("heredar el personal del operativo original", () => {
     ventanaCerrada: false,
     guardando: false,
     onGuardar: vi.fn(),
-    onCancelar: vi.fn(),
+    idForm: "form-adicional-prueba",
+    onEstadoEnvio: vi.fn(),
   };
 
   it("dice a quién lleva el operativo original, para que se decida con criterio", () => {
@@ -618,7 +741,10 @@ describe("heredar el personal del operativo original", () => {
     expect(
       screen.getAllByText(/figura de baja en el maestro/).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByText("PAREDES ANA")).toBeInTheDocument();
+    // El nombre va en el aviso de herencia (además del distintivo de las heredadas).
+    expect(
+      within(screen.getByRole("alert")).getByText("PAREDES ANA"),
+    ).toBeInTheDocument();
   });
 
   /**

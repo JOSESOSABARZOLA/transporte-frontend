@@ -24,7 +24,10 @@
 import { useEffect } from "react";
 import { Navigate } from "react-router-dom";
 
+import { clasesBoton } from "../components/common/Boton.tsx";
+import AvisoSinPortal from "../components/common/AvisoSinPortal.tsx";
 import Loading from "../components/common/Loading";
+import { hayPortal } from "../config/env.ts";
 import { useUser } from "../hooks/useUser";
 import { urlDelPortal } from "../services/sesion.service";
 
@@ -33,7 +36,7 @@ const ESPERA_MS = 1200;
 
 const LoginPage = () => {
   const { estado } = useUser();
-  const debeReenviar = estado === "sinSesion";
+  const debeReenviar = estado === "sinSesion" && hayPortal();
 
   useEffect(() => {
     if (!debeReenviar) return;
@@ -46,6 +49,7 @@ const LoginPage = () => {
 
   if (estado === "resolviendo") return <Loading />;
   if (estado === "conSesion") return <Navigate to="/home" replace />;
+  if (!hayPortal()) return <AvisoSinPortal />;
 
   return (
     <div className="flex flex-col items-center gap-4 px-6 text-center">
@@ -58,7 +62,7 @@ const LoginPage = () => {
       <p className="text-sm text-primary-content/80">
         Le estamos llevando allí. Si no ocurre en unos segundos, use el enlace.
       </p>
-      <a className="btn btn-accent btn-sm" href={urlDelPortal()}>
+      <a className={clasesBoton("secundario", "sm")} href={urlDelPortal()}>
         Ir al portal institucional
       </a>
     </div>

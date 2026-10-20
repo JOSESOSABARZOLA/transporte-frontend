@@ -21,7 +21,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import JornadaDiaPage from "../../pages/JornadaDiaPage.tsx";
@@ -180,7 +180,7 @@ describe("la jornada distingue lo editable de lo que solo se mira", () => {
     tabla([seccion({ acceso: "ESCRITURA" })], true);
 
     const boton = screen.getByRole("button", { name: "Agregar personal" });
-    expect(boton).toBeDisabled();
+    expect(boton).toHaveAttribute("aria-disabled", "true");
     expect(boton).toHaveAttribute("title", "El cuadro del día ya fue cerrado.");
   });
 });
@@ -267,8 +267,75 @@ describe("las observaciones se ven como notas separadas", () => {
     // exactas fallarían: que cada texto se encuentre por separado prueba que son notas distintas.
     expect(screen.getByText("Primera nota del operativo")).toBeInTheDocument();
     expect(screen.getByText("Segunda nota")).toBeInTheDocument();
-    // La segunda lleva su separador (borde superior), para que se lea aparte.
-    expect(screen.getByText("Segunda nota").className).toContain("border-t");
+    // Desde el 2026-10-19 cada una es su tarjeta (`NotasObservacion`), no un renglón con borde.
+    expect(screen.getByText("Primera nota del operativo").closest(".app-nota")).not.toBe(
+      screen.getByText("Segunda nota").closest(".app-nota"),
+    );
+  });
+
+  /*
+    NOTAS COMO TARJETAS (2026-10-19, plan «notas-jornada-matriz»): la misma lista del servidor que
+    Mis operativos, con la nota «Comparte con X», que lleva a la fila de X.
+  */
+  const NOTA_ESCRITA = {
+    id: "nota-9",
+    tipo: "NOTA" as const,
+    texto: "Pruebas tecnicas 3",
+    autor: "De La Guerra Portugal Lider Franklin",
+    fecha: "2026-10-19T13:30:00.000Z",
+    operativoRelacionadoId: null,
+  };
+  const COMPARTIDA = {
+    id: "compartida-62",
+    tipo: "COMPARTIDA" as const,
+    texto: "Comparte con OCPMO-001-20-OCT-2026",
+    autor: "De La Guerra Portugal Lider Franklin",
+    fecha: "2026-10-19T14:00:00.000Z",
+    operativoRelacionadoId: 61,
+  };
+
+  it("OCPMO-002 muestra su nota y la de compartir; al pulsarla, la fila de OCPMO-001 se centra y destella", () => {
+    const centrar = vi.fn();
+    Element.prototype.scrollIntoView = centrar;
+    tabla([
+      seccion({
+        acceso: "LECTURA",
+        puedeEditarPersonal: false,
+        filas: [
+          fila({ id: 61, identificador: "OCPMO-001-20-OCT-2026", observaciones: [], notas: [] }),
+          fila({
+            id: 62,
+            identificador: "OCPMO-002-20-OCT-2026",
+            observaciones: ["Pruebas tecnicas 3"],
+            notas: [COMPARTIDA, NOTA_ESCRITA],
+          }),
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText("Pruebas tecnicas 3").closest(".app-nota")).toBeInTheDocument();
+    const compartida = screen.getByRole("button", { name: /Ir al operativo OCPMO-001-20-OCT-2026/ });
+    fireEvent.click(compartida);
+
+    expect(document.querySelector('[data-operativo-id="61"]')).toHaveClass("app-fila-destello");
+    expect(centrar).toHaveBeenCalledWith(expect.objectContaining({ block: "center" }));
+  });
+
+  it("si el operativo compartido no está en la jornada, la tarjeta no se pulsa y lo dice", () => {
+    tabla([
+      seccion({
+        filas: [fila({ id: 62, identificador: "OCPMO-002-20-OCT-2026", notas: [COMPARTIDA] })],
+      }),
+    ]);
+    expect(screen.queryByRole("button", { name: /Ir al operativo/ })).toBeNull();
+    expect(document.querySelector(".app-nota-compartida")).toHaveAccessibleDescription(
+      "No está en esta vista",
+    );
+  });
+
+  it("sin notas, «—»", () => {
+    tabla([seccion({ filas: [fila({ observaciones: [], notas: [] })] })]);
+    expect(screen.getAllByText("—").some((nodo) => nodo.classList.contains("text-app-muted"))).toBe(true);
   });
 });
 

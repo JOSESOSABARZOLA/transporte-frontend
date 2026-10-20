@@ -90,7 +90,7 @@ const abrirPantalla = async () => {
 };
 
 const pulsarNuevoFuncionario = async () =>
-  userEvent.click(screen.getByRole("button", { name: "Nuevo funcionario" }));
+  userEvent.click(screen.getByRole("button", { name: "+ Nuevo funcionario" }));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -142,7 +142,7 @@ describe("el alta empieza en el directorio de Auth", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /PEREZ LOPEZ JUAN CARLOS/ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
     // La cédula (solo lectura, en la tarjeta) y el nombre partido (editable) llegan al paso 2.
     expect(screen.getByText("1712345678")).toBeInTheDocument();
@@ -151,7 +151,7 @@ describe("el alta empieza en el directorio de Auth", () => {
 
     // Ya está en el paso 2: no hay «Continuar» (eso es del paso 1).
     expect(
-      screen.queryByRole("button", { name: "Continuar" }),
+      screen.queryByRole("button", { name: "Continuar →" }),
     ).toBeNull();
   });
 
@@ -161,7 +161,7 @@ describe("el alta empieza en el directorio de Auth", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: /PEREZ LOPEZ JUAN CARLOS/ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
     // Quien se equivocó de persona quiere elegir otra, no empezar de cero: «← Atrás» al directorio.
     await userEvent.click(screen.getByRole("button", { name: "← Atrás" }));

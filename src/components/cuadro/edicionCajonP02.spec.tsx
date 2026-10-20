@@ -14,7 +14,7 @@
  *   · un 409 al guardar conserva lo capturado y ofrece «Recargar datos» (vuelve a pedir el
  *     operativo), en vez de perder el trabajo.
  *
- * SE MOCKEA `FormularioOperativo`: es la hoja con Formik y sus campos, y tiene su propia
+ * SE MOCKEA `FormOperativo`: es la hoja con Formik y sus campos, y tiene su propia
  * cobertura. Aquí interesa la lógica de la PÁGINA alrededor del cajón, así que el doble solo
  * publica `refFormik` (con `dirty`), un `<form>` que al enviarse llama a `onGuardar`, y un botón
  * que dispara `onCambiosSinGuardar`, que es lo que la página necesita para decidir.
@@ -24,8 +24,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MutableRefObject, Ref } from "react";
-import type { FormikProps } from "formik";
 
 import MisOperativosPage from "../../pages/MisOperativosPage.tsx";
 import type { Operativo } from "../../interfaces/Operativo.ts";
@@ -58,26 +56,35 @@ const VALORES: ValoresOperativo = {
   observaciones: [],
 };
 
-vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
+/*
+  El doble informa al cajón como el real: `onEstadoEnvio` al montar (con `dirty` del estado de la
+  prueba) y otra vez al «ensuciar». `DrawerOperativo` decide con eso el pie y la confirmación.
+*/
+// El rango de P-02 viaja en la URL (2026-10-13): cada prueba arranca sin él.
+beforeEach(() => window.history.replaceState(null, "", "/"));
+
+vi.mock("../../components/cuadro/FormOperativo.tsx", async () => {
+  const { useEffect } = await import("react");
+  type Estado = { faltantes: string[]; hayCambios: boolean; zonalesIds: number[] };
+  const estado = (hayCambios: boolean): Estado => ({
+    faltantes: [],
+    hayCambios,
+    zonalesIds: VALORES.zonalesIds,
+  });
+  return {
   default: ({
     idForm,
     onGuardar,
-    onCambiosSinGuardar,
-    refFormik,
+    onEstadoEnvio,
   }: {
     idForm?: string;
     onGuardar: (valores: unknown, ayudas: unknown) => void;
-    onCambiosSinGuardar?: (hayCambios: boolean) => void;
-    refFormik?: Ref<FormikProps<ValoresOperativo>>;
+    onEstadoEnvio?: (estado: Estado) => void;
   }) => {
-    if (refFormik && typeof refFormik === "object") {
-      (
-        refFormik as MutableRefObject<FormikProps<ValoresOperativo> | null>
-      ).current = {
-        values: VALORES,
-        dirty: estadoForm.dirty,
-      } as FormikProps<ValoresOperativo>;
-    }
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+      onEstadoEnvio?.(estado(estadoForm.dirty));
+    }, [onEstadoEnvio]);
 
     return (
       <form
@@ -90,17 +97,20 @@ vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
         <p>formulario simulado</p>
         <button
           type="button"
-          onClick={() => onCambiosSinGuardar?.(true)}
+          onClick={() => onEstadoEnvio?.(estado(true))}
         >
           ensuciar formulario
         </button>
       </form>
     );
   },
-}));
+  };
+});
 
 vi.mock("../../services/operativo.service.ts", () => ({
   OperativoService: {
+    // Rango de P-02 (2026-10-13): sin respuesta, rige el vigente calculado en la pantalla.
+    rango: vi.fn(() => new Promise(() => {})),
     consultar: vi.fn(),
     crearAdicional: vi.fn(),
     editar: vi.fn(),
@@ -229,11 +239,12 @@ const abrirEdicion = async () => {
   render(<MisOperativosPage />);
   await screen.findByText("OCPMO-004-31-JUL-2026");
 
-  await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+  await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
 
-  return screen.getByRole("dialog", {
-    name: /Editar operativo OCPMO-004-31-JUL-2026/,
-  });
+  // El título es «Editar operativo»; el identificador va en el subtítulo, con el chip (2026-10-08).
+  const dialogo = screen.getByRole("dialog", { name: "Editar operativo" });
+  expect(within(dialogo).getByText("OCPMO-004-31-JUL-2026")).toBeInTheDocument();
+  return dialogo;
 };
 
 describe("P-02 · cierre y guardado del cajón de edición (Fase D)", () => {
@@ -243,20 +254,25 @@ describe("P-02 · cierre y guardado del cajón de edición (Fase D)", () => {
     vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([]);
   });
 
-  it("el pie indica «Sin cambios» y pasa a «Cambios sin guardar» al editar", async () => {
+  it("el pie indica «Sin cambios pendientes» (Guardar apagado) y pasa a «Cambios sin guardar» al editar", async () => {
     const dialogo = await abrirEdicion();
 
     expect(
-      within(dialogo).getByText("Sin cambios pendientes"),
+      within(dialogo).getByText(/Sin cambios pendientes/),
     ).toBeInTheDocument();
+    // Editar sin cambios no guarda nada: «Guardar cambios» apagado con su motivo.
+    const guardar = within(dialogo).getByRole("button", { name: "Guardar cambios" });
+    expect(guardar).toHaveAttribute("aria-disabled", "true");
+    expect(guardar).toHaveAttribute("title", "Sin cambios");
 
     await userEvent.click(
       within(dialogo).getByRole("button", { name: "ensuciar formulario" }),
     );
 
     expect(
-      within(dialogo).getByText("Cambios sin guardar"),
+      within(dialogo).getByText(/Cambios sin guardar/),
     ).toBeInTheDocument();
+    expect(guardar).not.toHaveAttribute("aria-disabled");
   });
 
   it("descartar con cambios avisa de que nada se guardó todavía (personal incluido)", async () => {
@@ -296,6 +312,8 @@ describe("P-02 · cierre y guardado del cajón de edición (Fase D)", () => {
     vi.mocked(OperativoService.obtener).mockResolvedValue(
       operativo({ version: 2 }),
     );
+    // Guardar exige un cambio (sin cambios, «Guardar cambios» va apagado).
+    estadoForm.dirty = true;
 
     const dialogo = await abrirEdicion();
 
@@ -322,6 +340,32 @@ describe("P-02 · cierre y guardado del cajón de edición (Fase D)", () => {
     );
   });
 
+  /*
+    EL CAJÓN ÚNICO (2026-10-08): «Editar» abre `DrawerOperativo` en modo «editar»; al guardar se
+    cierra, avisa abajo a la derecha y resalta la fila, como el adicional.
+  */
+  it("abre el cajón único en modo «editar» y al guardar cierra, avisa y resalta la fila", async () => {
+    vi.mocked(OperativoService.editar).mockResolvedValue(operativo());
+    estadoForm.dirty = true;
+
+    const dialogo = await abrirEdicion();
+    expect(
+      dialogo.querySelector('[data-drawer-operativo="editar"]'),
+    ).not.toBeNull();
+
+    await userEvent.click(
+      within(dialogo).getByRole("button", { name: "Guardar cambios" }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      await screen.findByText("Operativo OCPMO-004-31-JUL-2026 actualizado"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("OCPMO-004-31-JUL-2026").closest("tr"),
+    ).toHaveAttribute("data-resaltado", "true");
+  });
+
   it("al guardar, el payload lleva los tipos del catálogo y el «otro tipo» libre", async () => {
     // Form de tipos MÚLTIPLES (p. ej. el 8): es la condición que hace viajar `tipoControlIds`.
     catalogosRef.current = { tipoControlMultiple: true };
@@ -330,6 +374,7 @@ describe("P-02 · cierre y guardado del cajón de edición (Fase D)", () => {
     VALORES.tiposControlIds = [30, 31];
     VALORES.tipoLibre = "Patrullaje mixto";
     vi.mocked(OperativoService.editar).mockResolvedValue(operativo());
+    estadoForm.dirty = true;
 
     const dialogo = await abrirEdicion();
     await userEvent.click(
@@ -351,5 +396,56 @@ describe("P-02 · cierre y guardado del cajón de edición (Fase D)", () => {
     VALORES.tipoControl = "30";
     VALORES.tiposControlIds = [];
     VALORES.tipoLibre = "";
+  });
+
+  it("al guardar, el payload lleva el tipo de transporte y el macrooperativo (2026-10-06)", async () => {
+    // El macrooperativo solo existe en COMPLETO (2026-10-19).
+    VALORES.tipoTransporte = "COMPLETO";
+    VALORES.esMacrooperativo = true;
+    vi.mocked(OperativoService.editar).mockResolvedValue(operativo());
+    estadoForm.dirty = true;
+
+    const dialogo = await abrirEdicion();
+    await userEvent.click(
+      within(dialogo).getByRole("button", { name: "Guardar cambios" }),
+    );
+
+    await waitFor(() =>
+      expect(OperativoService.editar).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          tipoTransporte: "COMPLETO",
+          esMacrooperativo: true,
+        }),
+      ),
+    );
+
+    delete VALORES.tipoTransporte;
+    delete VALORES.esMacrooperativo;
+  });
+
+  it("con otro tipo que no sea Completo, el macrooperativo viaja en false (2026-10-19)", async () => {
+    VALORES.tipoTransporte = "SOLO_INICIO";
+    VALORES.esMacrooperativo = true;
+    vi.mocked(OperativoService.editar).mockResolvedValue(operativo());
+    estadoForm.dirty = true;
+
+    const dialogo = await abrirEdicion();
+    await userEvent.click(
+      within(dialogo).getByRole("button", { name: "Guardar cambios" }),
+    );
+
+    await waitFor(() =>
+      expect(OperativoService.editar).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          tipoTransporte: "SOLO_INICIO",
+          esMacrooperativo: false,
+        }),
+      ),
+    );
+
+    delete VALORES.tipoTransporte;
+    delete VALORES.esMacrooperativo;
   });
 });

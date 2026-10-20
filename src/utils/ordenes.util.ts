@@ -94,7 +94,7 @@ export const motivoParaNoEmitir = (
   }
 
   if (!cuadroCerrado) {
-    return "El cuadro del día todavía no está cerrado. Las órdenes se emiten después del cierre.";
+    return "Disponible cuando el cuadro esté cerrado: las órdenes se emiten después del cierre.";
   }
 
   return null;

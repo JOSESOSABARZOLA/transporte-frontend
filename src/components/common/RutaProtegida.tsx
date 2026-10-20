@@ -24,7 +24,9 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 
+import AvisoSinPortal from "./AvisoSinPortal.tsx";
 import Loading from "./Loading";
+import { hayPortal } from "../../config/env.ts";
 import { useUser } from "../../hooks/useUser";
 import { tienePermiso, tieneRol } from "../../hooks/usePermiso";
 import { urlDelPortal } from "../../services/sesion.service";
@@ -54,6 +56,7 @@ const RutaProtegida = ({
   if (estado === "sinSesion" || !user) {
     // `replace` y no un componente de navegación: se abandona la aplicación, y el
     // botón de volver no debe reentrar a una ruta privada sin sesión.
+    if (!hayPortal()) return <AvisoSinPortal />;
     window.location.replace(urlDelPortal());
     return <Loading />;
   }

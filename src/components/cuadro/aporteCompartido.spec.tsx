@@ -38,8 +38,13 @@ import {
 import type { RolDepartamental } from "../../config/env";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 
+// El rango de P-02 viaja en la URL (2026-10-13): cada prueba arranca sin él.
+beforeEach(() => window.history.replaceState(null, "", "/"));
+
 vi.mock("../../services/operativo.service.ts", () => ({
   OperativoService: {
+    // Rango de P-02 (2026-10-13): sin respuesta, rige el vigente calculado en la pantalla.
+    rango: vi.fn(() => new Promise(() => {})),
     consultar: vi.fn(),
     actualizar: vi.fn(),
     retirar: vi.fn(),
@@ -304,28 +309,25 @@ describe("P-02 sobre una fila que registró el otro departamento", () => {
     render(<MisOperativosPage />);
 
     const agregar = await screen.findByRole("button", {
-      name: "Agregar Personal",
+      name: /^Agregar personal\b/,
     });
 
     expect(agregar).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Editar\b/ })).toBeNull();
 
-    // Desde el 2026-08-31 se destaca: para quien solo aporta es lo ÚNICO que puede hacer
-    // en esta fila, y con los tres botones en gris no se distinguía de «Eliminar».
-    expect(agregar).toHaveClass("btn-primary");
+    // Ocupa el casillero principal del grupo único, con el mismo estilo secundario que «Editar».
+    expect(agregar).toHaveClass("app-accion-secundaria");
   });
 
   it("«Eliminar» llega apagado, y dice por qué", async () => {
     render(<MisOperativosPage />);
 
-    const retirar = await screen.findByRole("button", { name: "Eliminar" });
+    // «Eliminar» vuelve a la fila desde el 2026-10-19, solo con icono.
+    const retirar = await screen.findByRole("button", { name: /^Eliminar\b/ });
 
-    expect(retirar).toBeDisabled();
-    // Regla 6: el motivo va escrito, no solo insinuado por el gris.
-    expect(retirar).toHaveAttribute(
-      "title",
-      expect.stringContaining("DMIP_OPERATIVOS"),
-    );
+    expect(retirar).toHaveAttribute("aria-disabled", "true");
+    // Regla 6: el motivo va escrito (en el tooltip), no solo insinuado por el gris.
+    expect(retirar).toHaveAccessibleDescription(expect.stringContaining("DMIP_OPERATIVOS"));
   });
 
   /**
@@ -337,8 +339,12 @@ describe("P-02 sobre una fila que registró el otro departamento", () => {
   it("no se le ofrece registrar un adicional", async () => {
     render(<MisOperativosPage />);
 
-    await screen.findByRole("button", { name: "Agregar Personal" });
-    expect(screen.queryByRole("button", { name: "Adicional" })).toBeNull();
+    await screen.findByRole("button", { name: /^Agregar personal\b/ });
+    // El casillero se queda (el grupo no cambia de ancho), apagado y con su motivo.
+    expect(screen.getByRole("button", { name: /^Agregar adicional\b/ })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });
 
@@ -388,9 +394,9 @@ describe("P-02 sobre una patrulla del Form 6 (el DMIT aporta Instrucción)", () 
     render(<MisOperativosPage />);
 
     const agregar = await screen.findByRole("button", {
-      name: "Agregar Personal",
+      name: /^Agregar personal\b/,
     });
     expect(agregar).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Editar\b/ })).toBeNull();
   });
 });

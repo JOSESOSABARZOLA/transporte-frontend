@@ -134,6 +134,14 @@ credencial de quien pregunta es la única que existe. Antes se descartaba en cua
 Se pide a ese equipo. Mientras no exista, esta es la única forma de leer el directorio, y queda
 escrita aquí para que sea una decisión y no un descubrimiento.
 
+**Ampliado el 07-OCT-2026: el token también se reenvía a Inspección.** Para ofrecer en el registro
+los trámites asignados a cada inspector, el backend llama a `GET {INSPECCION_API_URL}/operativos?fecha=`
+con el mismo Bearer. Inspección es de la misma familia SIGOC: valida el JWT con el secreto compartido
+de Auth y luego `/auth/session/validate`, sin token de servicio propio. Lo que lo contiene: la llamada
+es de servidor a servidor (nunca desde el navegador), el token no se escribe en la bitácora ni se
+devuelve, la caché de la consulta usa su SHA-256 y no el token, y la respuesta se recorta a las
+personas que el rol puede asignar (mismo criterio que H-01).
+
 **Y un tercero, que no es nuestro:** `GET /users` de Auth **no comprueba rol**. Cualquier sesión
 válida de cualquier subsistema puede listar al personal de la institución con su cédula y su
 correo. Nuestro endpoint sí exige `ADMINISTRADOR_DMIP`; el de Auth se reporta a ese equipo.

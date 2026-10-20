@@ -36,7 +36,17 @@ export type EstadoDisponibilidad =
   | "REPOSO_MEDICO"
   | "CALAMIDAD"
   | "PERMISO"
+  // Las tres del 2026-10-08 (migración 20261008170000): también excluyen del cuadro (RN-30).
+  | "LICENCIA"
+  | "CAPACITACION"
+  | "COMISION_SERVICIOS"
   | "MANTENIMIENTO";
+
+/**
+ * Dónde cae una ausencia respecto de HOY en Quito. Lo calcula el servidor y viaja en cada
+ * periodo (2026-10-08); `estadoDeAusencia` de `utils/ausencias.util.ts` es su espejo.
+ */
+export type MomentoAusencia = "EN_CURSO" | "PROXIMA" | "PASADA";
 
 /** Respuesta de `GET /administracion/personal`. */
 export interface Funcionario {
@@ -159,6 +169,33 @@ export interface Disponibilidad {
   /** Solo lo ve el ADMINISTRADOR: puede describir una condición de salud. */
   motivo: string | null;
   registradoPor: number;
+  /** Respecto de hoy en Quito (2026-10-08). Opcional para tolerar respuestas anteriores. */
+  momento?: MomentoAusencia;
+}
+
+/**
+ * Ausencia de `GET /administracion/personal/ausencias` (2026-10-08): las EN CURSO y PRÓXIMAS de
+ * todo el maestro al alcance, en UNA consulta y SIN motivo (puede ser un dato de salud). Alimenta
+ * la columna «Estado» de la lista; antes era una petición por fila.
+ */
+export interface AusenciaDelMaestro {
+  id: number;
+  funcionarioId: number;
+  estado: EstadoDisponibilidad;
+  desde: string;
+  hasta: string;
+  momento: MomentoAusencia;
+}
+
+/**
+ * Operativo activo de una persona en un rango (`GET /administracion/personal/:id/operativos`,
+ * 2026-10-08). Para avisar, al registrar una ausencia, de lo que ya tiene asignado: la ausencia
+ * NO lo retira y no se notifica a nadie.
+ */
+export interface OperativoDeLaPersona {
+  operativoId: number;
+  identificador: string;
+  fecha: string;
 }
 
 export interface CrearFuncionario {
@@ -172,10 +209,16 @@ export interface CrearFuncionario {
   area: AreaPersonal;
   tipoContrato: TipoContrato;
   /**
-   * Zonal de trabajo. Se envía para el personal DMIP (OPERATIVOS/GENERAL/TECNICO), donde el
-   * servidor la exige; para Instrucción no viaja (la fija la matriz de cobertura). 2026-09-21.
+   * Zonal de trabajo, opcional, para todas las áreas (2026-09-21; Instrucción incluida desde el
+   * 2026-10-08). Sin valor no viaja y el servidor conserva la que hubiera.
    */
   zonalId?: number | null;
+  /**
+   * De dónde sale la persona (2026-10-08). Con «AUTH» el SERVIDOR toma el correo institucional de
+   * Auth central por la cédula y descarta el que se envíe; con «MANUAL» (o sin él) guarda el del
+   * cliente. Solo en el alta: la edición no lo lleva.
+   */
+  origen?: "AUTH" | "MANUAL";
   /*
     SIN `direccion`, DESDE EL 2026-09-01. La deduce el servidor del área y el contrato ya
     no la admite. Sigue viajando **de vuelta** en `Funcionario`, porque el maestro la
@@ -184,7 +227,7 @@ export interface CrearFuncionario {
 }
 
 /** Cuerpo de `PUT /administracion/personal/:id`. Se envía lo que cambia. */
-export type ActualizarFuncionario = Partial<CrearFuncionario> & {
+export type ActualizarFuncionario = Partial<Omit<CrearFuncionario, "origen">> & {
   activo?: boolean;
 };
 

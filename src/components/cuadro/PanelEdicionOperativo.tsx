@@ -21,28 +21,35 @@
  * registrar no existía todavía el operativo al que colgarlas, así que allí se difieren;
  * aquí existe, y diferirlas solo serviría para perderlas si alguien cierra la pantalla.
  *
- * EL PANEL VA ARRIBA, NO EN UN MODAL. El formulario ocupa cuatro columnas a 1440 px
- * (FASE5 §4.1); dentro de un modal habría que estrecharlo a una, que es justo la
- * disposición que el Product Owner descartó por lenta.
+ * VIVE SIEMPRE DENTRO DEL CAJÓN `DrawerOperativo` (2026-10-08). Ya no hay uso en línea: la marca
+ * y la cabecera propias se retiraron, y el formulario va siempre por SECCIONES —Personal y
+ * horario · Lugar · Control · Transporte y observaciones—, igual que el adicional. El pie de acción
+ * es el del cajón (`idForm`), y el estado del envío le llega por `onEstadoEnvio`.
  */
 
-import type { FC, Ref } from "react";
-import type { FormikHelpers, FormikProps } from "formik";
+import type { FC } from "react";
+import type { FormikHelpers } from "formik";
 
-import FormularioOperativo from "./FormularioOperativo.tsx";
+import FormOperativo, {
+  type EstadoEnvio,
+  type ExtrasDelEnvio,
+} from "./FormOperativo.tsx";
 import {
   comoValoresDeFormulario,
   type ValoresOperativo,
 } from "../../utils/valoresOperativo.util.ts";
-import { colorDeTextoSobre } from "../../utils/banner.util.ts";
 import { NOMBRE_AREA } from "../../utils/personal.util.ts";
-import type { CatalogosFormulario } from "../../interfaces/Formulario.ts";
+import type {
+  AreaPersonal,
+  CatalogosFormulario,
+} from "../../interfaces/Formulario.ts";
 import type { Operativo, PersonaAsignada } from "../../interfaces/Operativo.ts";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
 import type { PersonaAgregada } from "./SelectorPersonal.tsx";
 import RosterPatrulla, { type MiembroPatrulla } from "./RosterPatrulla.tsx";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
-type PanelEdicionOperativoProps = {
+export type PanelEdicionOperativoProps = {
   operativo: Operativo;
   catalogos: CatalogosFormulario | null;
   puntos: CatalogosFormulario["puntos"];
@@ -70,14 +77,24 @@ type PanelEdicionOperativoProps = {
    * dueño del formulario llega en lectura. Por defecto, todo el personal es editable. 2026-09-18.
    */
   puedeEditarPersona?: (persona: PersonaAsignada) => boolean;
+  /**
+   * TRÁMITE DE INSPECCIÓN (2026-10-07): quién fija el trámite de una persona. Con él, cada inspector
+   * del operativo ofrece su combo con los trámites de la fecha de la jornada.
+   */
+  onCambiarTramitePersona?: (
+    funcionarioId: number,
+    codigoTramite: string | null,
+  ) => void;
   avisoPersonal: string | null;
+  /** A quién se refiere `avisoPersonal`, si el servidor lo nombró (R2): el motivo va bajo su horario. */
+  idPersonaRechazada?: number | null;
   /** Que la asignación se guardó. Ver `SelectorPersonal.confirmacion`. */
   confirmacionPersonal?: string | null;
 
   bloqueado: boolean;
   /**
    * PER-06. El departamento que **aporta** al formulario compartido ve todo en lectura
-   * menos el personal. Ver la nota de `FormularioOperativo`.
+   * menos el personal. Ver la nota de `FormOperativo`.
    */
   soloPersonal?: boolean;
   /**
@@ -99,29 +116,23 @@ type PanelEdicionOperativoProps = {
   onGuardar: (
     valores: ValoresOperativo,
     ayudas: FormikHelpers<ValoresOperativo>,
+    extras?: ExtrasDelEnvio,
   ) => void | Promise<void>;
-  onCancelar: () => void;
-  /**
-   * DENTRO DEL CAJÓN (2026-09-30). `sinMarco` quita la tarjeta y la cabecera propias —las pone el
-   * `DrawerLateral`—; `idForm`/`ocultarAcciones` mueven el pie de acción al pie fijo del cajón; y
-   * `bandejaSinTope` aplana las bandejas de personal. Por omisión (uso en línea de P-01) nada cambia.
-   */
-  sinMarco?: boolean;
   /**
    * ¿El personal se guarda al instante? (2026-10-01). Por omisión true (conducta de P-02 hasta hoy y
    * del aporte). En la edición DIFERIDA del operativo propio la página lo pasa false: el personal se
    * acumula y se aplica al «Guardar cambios», así que se apaga el rótulo «Se guarda al instante».
    */
   personalInmediato?: boolean;
-  /** Reflujo a 1 columna dentro del cajón (`max-w-2xl`). Se pasa al formulario. */
-  enCajon?: boolean;
-  idForm?: string;
-  ocultarAcciones?: boolean;
-  bandejaSinTope?: boolean;
-  refFormik?: Ref<FormikProps<ValoresOperativo>>;
-  /** Avisa si hay GENERALES sin guardar (`dirty`), para el indicador del pie del cajón (Fase D). */
-  onCambiosSinGuardar?: (hayCambios: boolean) => void;
+  /** `id` del `<form>`: el botón del pie del cajón lo envía con `form=`. */
+  idForm: string;
+  /** Qué falta, si hay cambios y las zonales elegidas, para el pie y el aviso del cajón. */
+  onEstadoEnvio?: (estado: EstadoEnvio) => void;
 };
+
+/** ¿El área que llega del servidor es una de las conocidas? Lo que no, viaja como `undefined`. */
+const esAreaPersonal = (area: string): area is AreaPersonal =>
+  Object.hasOwn(NOMBRE_AREA, area);
 
 const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   operativo,
@@ -135,7 +146,9 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   onRetirarPersona,
   onCambiarHorarioPersona,
   puedeEditarPersona = () => true,
+  onCambiarTramitePersona,
   avisoPersonal,
+  idPersonaRechazada = null,
   confirmacionPersonal = null,
   bloqueado,
   soloPersonal = false,
@@ -146,15 +159,9 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   onAgregarMiembroPatrulla,
   guardando,
   onGuardar,
-  onCancelar,
-  sinMarco = false,
   personalInmediato = true,
-  enCajon = false,
   idForm,
-  ocultarAcciones = false,
-  bandejaSinTope = false,
-  refFormik,
-  onCambiosSinGuardar,
+  onEstadoEnvio,
 }) => {
   /**
    * ROSTER DE LA PATRULLA: se pinta cuando la página lo entrega y hay miembros. Sustituye al
@@ -182,19 +189,16 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
       horaFin: persona.horaFin,
       // Quien aporta al formulario ajeno solo retira SU personal; el resto va en lectura.
       editable: puedeEditarPersona(persona),
+      // El área decide si se le consulta trámite de Inspección; el trámite, lo que ya tiene.
+      area: esAreaPersonal(persona.area) ? persona.area : undefined,
+      tramiteCodigo: persona.tramiteInspeccion?.codigoTramite ?? null,
     }),
   );
 
-  const cuerpo = (
-    <div
-      className={
-        sinMarco
-          ? "flex flex-col gap-4"
-          : "app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6"
-      }
-    >
+  return (
+    <div className="flex flex-col gap-4">
         {/* RN-13: el identificador no cambia al editar, y conviene que se vea (ayuda corta). */}
-        <p className="text-xs text-base-content/70">
+        <p className="text-xs text-app-muted">
           {soloPersonal
             ? "Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura. Cada persona se guarda en el momento."
             : "El identificador no cambia al editar."}
@@ -208,7 +212,7 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           el dato viajaba en cada respuesta y se tiraba. Quien armaba la patrulla no tenía
           forma de saber que le faltaba un área hasta que la Dirección no podía cerrar.
 
-          NO ES UN ERROR, ES UN AVISO, y por eso `alert-warning` y no `alert-error`: la
+          NO ES UN ERROR, ES UN AVISO, y por eso `advertencia` y no `error`: la
           composición incompleta es lo normal mientras se está componiendo. Lo que sí
           impide cerrar la jornada es que el departamento que aporta no haya puesto a
           nadie, y de eso avisa el cierre con su propio mensaje.
@@ -216,11 +220,7 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
         */}
         {operativo.composicion.esPatrulla &&
           !operativo.composicion.completa && (
-            <div
-              className="alert alert-warning"
-              role="status"
-            >
-              <span>
+            <AvisoEnLinea variante="advertencia">
                 Falta personal de{" "}
                 {operativo.composicion.areasPendientes.length === 1
                   ? "el área"
@@ -232,8 +232,7 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
                 </strong>
                 . La patrulla se compone con una persona de cada área que admite el
                 formulario.
-              </span>
-            </div>
+              </AvisoEnLinea>
           )}
 
         {/*
@@ -252,7 +251,8 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           />
         )}
 
-        <FormularioOperativo
+        <FormOperativo
+          modo="edicion"
           formularioCodigo={operativo.formulario.codigo}
           catalogos={catalogos}
           puntos={puntos}
@@ -264,13 +264,21 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           onAgregarPersona={onAgregarPersona}
           onRetirarPersona={onRetirarPersona}
           onCambiarHorarioPersona={onCambiarHorarioPersona}
+          fechaTramites={
+            onCambiarTramitePersona ? operativo.cuadroFecha : null
+          }
+          onCambiarTramitePersona={onCambiarTramitePersona}
+          // Form 8 por lote: el trámite de una copia se aplica a todas las de esa persona.
+          tramitePorLote={personalBloqueado && operativo.grupoRegistro !== null}
           avisoPersonal={avisoPersonal}
+          idPersonaRechazada={idPersonaRechazada}
           confirmacionPersonal={confirmacionPersonal}
           // Las notas ya escritas (bitácora): se muestran en solo lectura; aquí solo se agregan.
           observacionesExistentes={operativo.observaciones}
           valoresIniciales={comoValoresDeFormulario(operativo)}
-          textoAccion="Guardar cambios"
-          onCancelar={onCancelar}
+          // Compartir unidad (2026-10-19): coincidencias de su jornada, sin contarse a sí mismo.
+          fechaJornada={soloPersonal || conRoster ? null : operativo.cuadroFecha}
+          operativoId={operativo.id}
           bloqueado={bloqueado}
           soloPersonal={soloPersonal}
           personalBloqueado={personalBloqueado}
@@ -278,42 +286,12 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           personalOculto={conRoster}
           guardando={guardando}
           onGuardar={onGuardar}
-          enCajon={enCajon}
           // Gobierna el rótulo «Se guarda al instante» de la lista compacta. En el aporte el
           // personal es inmediato; en la edición diferida del operativo propio, false.
           personalInmediato={personalInmediato}
           idForm={idForm}
-          ocultarAcciones={ocultarAcciones}
-          bandejaSinTope={bandejaSinTope}
-          refFormik={refFormik}
-          onCambiosSinGuardar={onCambiosSinGuardar}
+          onEstadoEnvio={onEstadoEnvio}
         />
-    </div>
-  );
-
-  // Dentro del cajón: sin tarjeta ni cabecera propias (las pone `DrawerLateral`).
-  if (sinMarco) return cuerpo;
-
-  return (
-    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-      <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-          {soloPersonal ? "Personal de" : "Editando"} {operativo.identificador}
-        </h2>
-        <span
-          className="badge badge-sm min-w-0 max-w-full"
-          title={`${operativo.formulario.numero}. ${operativo.formulario.nombre}`}
-          style={{
-            backgroundColor: operativo.formulario.colorFondo,
-            color: colorDeTextoSobre(operativo.formulario.colorFondo),
-          }}
-        >
-          <span className="min-w-0 truncate">
-            {operativo.formulario.numero}. {operativo.formulario.nombre}
-          </span>
-        </span>
-      </div>
-      {cuerpo}
     </div>
   );
 };

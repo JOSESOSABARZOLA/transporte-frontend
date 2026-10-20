@@ -29,8 +29,13 @@ import TablaOperativos from "./TablaOperativos.tsx";
 import { OperativoService } from "../../services/operativo.service.ts";
 import { PersonalService } from "../../services/personal.service.ts";
 
+// El rango de P-02 viaja en la URL (2026-10-13): cada prueba arranca sin él.
+beforeEach(() => window.history.replaceState(null, "", "/"));
+
 vi.mock("../../services/operativo.service.ts", () => ({
   OperativoService: {
+    // Rango de P-02 (2026-10-13): sin respuesta, rige el vigente calculado en la pantalla.
+    rango: vi.fn(() => new Promise(() => {})),
     consultar: vi.fn(),
     actualizar: vi.fn(),
     retirar: vi.fn(),
@@ -55,9 +60,12 @@ vi.mock("../../hooks/useVentanaCarga.ts", () => ({
   useVentanaCarga: () => ({ ventana: null, puedeEscribir: true, mensaje: null, horaCierre: null }),
 }));
 import {
+  COLUMNAS_FILTRABLES,
   COLUMNAS_LISTADO,
   COLUMNAS_SESION,
-  descripcionDelRetiro,
+  MENSAJE_DEL_RETIRO,
+  filtrarOperativos,
+  tituloDelRetiro,
 } from "../../utils/listadoOperativos.util.ts";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 
@@ -152,7 +160,8 @@ describe("caso 6 · el estado de transporte lleva texto además de color", () =>
 });
 
 describe("la alerta de conductor se explica con texto (RN-40)", () => {
-  it("el mensaje del servidor se muestra tal cual en la celda vacía", () => {
+  // Compacta desde el 2026-10-13: el distintivo «Sin conductor» (sin icono) y la explicación en el `title`.
+  it("sin conductor, un distintivo ámbar con su explicación, no el texto largo", () => {
     const conAlerta = operativo({
       alertas: [
         {
@@ -171,9 +180,161 @@ describe("la alerta de conductor se explica con texto (RN-40)", () => {
       />,
     );
 
+    const distintivo = screen.getByText("Sin conductor");
+    expect(distintivo).toHaveClass("badge-warning");
+    // Sin icono de alarma (2026-10-13): solo la palabra.
+    expect(distintivo.textContent).toBe("Sin conductor");
+    expect(distintivo).toHaveAttribute(
+      "title",
+      "La DAF todavía no ha asignado conductor a este operativo.",
+    );
+    expect(screen.queryByText("Falta asignar conductor. Lo hace la DAF.")).toBeNull();
+    // Sin fondo de celda: el color está en el distintivo.
+    expect(distintivo.closest("td")?.className).not.toContain("bg-warning");
+  });
+
+  it("con conductor asignado, nombre y placa en dos líneas", () => {
+    render(
+      <TablaOperativos
+        operativos={[
+          operativo({
+            estadoTransporte: "ASIGNADO",
+            transporteAsignado: [{ conductor: "PÉREZ JUAN", placa: "PEA-1234" }],
+          }),
+        ]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(screen.getByText("PÉREZ JUAN")).toHaveClass("block");
+    expect(screen.getByText("PEA-1234")).toHaveClass("block");
+    expect(screen.queryByText("Sin conductor")).toBeNull();
+  });
+});
+
+/** Ajustes menores de anchos (2026-10-13): nada se parte ni desborda su cápsula. */
+describe("anchos de Mis operativos · una sola línea donde corresponde", () => {
+  const conPersona = (telefono: string | null): Operativo => {
+    const base = operativo();
+    const [persona] = base.personal;
+    return operativo({
+      personal: [{ ...persona, nombre: "AGUIRRE NOVILLO FLAVIO", telefono }],
+    });
+  };
+
+  it("«Sin conductor» va en una línea, con su relleno, y la columna tiene mínimo de 130 px", () => {
+    render(
+      <TablaOperativos
+        operativos={[
+          operativo({
+            alertas: [
+              { codigo: "ALV-02", campo: "conductor", mensaje: "x", critica: false },
+            ],
+          }),
+        ]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const distintivo = screen.getByText("Sin conductor");
+    expect(distintivo).toHaveClass("whitespace-nowrap", "px-2", "py-0.5");
+    expect(screen.getByRole("columnheader", { name: "Conductor" })).toHaveClass(
+      "min-w-[130px]",
+    );
+  });
+
+  it("el identificador va en una línea y su columna tiene mínimo de 170 px", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo({ identificador: "OCPMO-002-13-OCT-2026" })]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(screen.getByText("OCPMO-002-13-OCT-2026")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByRole("columnheader", { name: "Identificador" })).toHaveClass(
+      "min-w-[170px]",
+    );
+  });
+
+  /** Teléfono en su columna (2026-10-13): debajo del nombre no se distinguía. */
+  it("P-02 lleva la columna Teléfono, justo después de Personal", () => {
+    render(
+      <TablaOperativos operativos={[conPersona("0991234567")]} columnas={COLUMNAS_LISTADO} />,
+    );
+
+    const encabezados = screen
+      .getAllByRole("columnheader")
+      .map((th) => th.textContent?.trim());
+    expect(encabezados[encabezados.indexOf("Personal") + 1]).toBe("Teléfono");
+    expect(screen.getByRole("columnheader", { name: "Teléfono" })).toHaveClass("w-24");
+  });
+
+  it("el teléfono va en su celda, no debajo del nombre, a 12 px y monoespaciado", () => {
+    render(
+      <TablaOperativos operativos={[conPersona("0991234567")]} columnas={COLUMNAS_LISTADO} />,
+    );
+
+    const numero = screen.getByText("0991234567");
+    expect(screen.getAllByText("0991234567")).toHaveLength(1);
+    expect(numero).toHaveClass("font-mono");
+    expect(numero.closest("td")).toHaveClass("text-xs", "whitespace-nowrap");
+    expect(numero.closest("td")).not.toBe(
+      screen.getByText("AGUIRRE NOVILLO FLAVIO").closest("td"),
+    );
+  });
+
+  it("sin teléfono dice «Sin teléfono» en gris, en la columna Teléfono", () => {
+    render(
+      <TablaOperativos operativos={[conPersona(null)]} columnas={COLUMNAS_LISTADO} />,
+    );
+
+    const falta = screen.getByText("Sin teléfono");
+    expect(falta).toHaveClass("text-app-muted");
+    expect(falta).not.toHaveClass("font-mono");
+    expect(falta.closest("td")).toHaveClass("text-xs");
+    expect(falta.closest("td")).not.toBe(
+      screen.getByText("AGUIRRE NOVILLO FLAVIO").closest("td"),
+    );
+  });
+
+  it("el teléfono se filtra en su columna; Personal filtra solo por el nombre", () => {
+    expect(COLUMNAS_FILTRABLES).toContain("telefono");
     expect(
-      screen.getByText("Falta asignar conductor. Lo hace la DAF."),
-    ).toBeInTheDocument();
+      filtrarOperativos([conPersona("0991234567")], { telefono: "0991234" }),
+    ).toHaveLength(1);
+    expect(
+      filtrarOperativos([conPersona("0991234567")], { personal: "0991234" }),
+    ).toHaveLength(0);
+    expect(filtrarOperativos([conPersona(null)], { personal: "aguirre" })).toHaveLength(1);
+  });
+
+  it("el horario va en dos líneas: «08H00 a» arriba y «15H00» abajo", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo({ horario: "08H00 a 15H00" })]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const inicio = screen.getByText("08H00 a");
+    const fin = screen.getByText("15H00");
+    expect(inicio).toHaveClass("block", "whitespace-nowrap");
+    expect(fin).toHaveClass("block", "whitespace-nowrap");
+    expect(inicio.closest("td")).toBe(fin.closest("td"));
+    // El filtro sigue usando el texto de una línea.
+    expect(
+      filtrarOperativos([operativo({ horario: "08H00 a 15H00" })], { horario: "08h00 a 15" }),
+    ).toHaveLength(1);
+  });
+
+  it("la columna Formulario se parte con un ancho menor", () => {
+    render(<TablaOperativos operativos={[operativo()]} columnas={COLUMNAS_LISTADO} />);
+
+    expect(screen.getByRole("columnheader", { name: "Formulario" })).toHaveClass(
+      "w-28",
+      "min-w-24",
+    );
   });
 });
 
@@ -206,7 +367,29 @@ describe("los formularios que operan por propios medios lo dicen (RN-41, RN-42)"
       },
     });
 
-  it("conductor dice «Propios medios» y vehículo «No se activa»", () => {
+  /*
+    SIN COLUMNA TRANSPORTE (P-02): el conductor lo dice, en gris corriente y SIN FONDO (2026-10-13:
+    el distintivo gris se leía como otra celda dentro de la fila).
+  */
+  it("sin la columna Transporte, el conductor dice «Propios medios» en gris, sin fondo", () => {
+    render(
+      <TablaOperativos
+        operativos={[fijos()]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const propios = screen.getByText("Propios medios");
+    expect(propios).toHaveClass("text-app-muted");
+    expect(propios).not.toHaveClass("badge");
+  });
+
+  /*
+    CON COLUMNA TRANSPORTE (P-01, tabla única 2026-10-13): Transporte ya lo dice, así que el
+    conductor pone «—», y que el formulario no pide vehículo va en el `title` de la etiqueta. La
+    columna «Vehículo · No se activa» se retiró.
+  */
+  it("con la columna Transporte, el conductor dice «—» y Transporte explica que no pide vehículo", () => {
     render(
       <TablaOperativos
         operativos={[fijos()]}
@@ -214,51 +397,143 @@ describe("los formularios que operan por propios medios lo dicen (RN-41, RN-42)"
       />,
     );
 
-    expect(screen.getByText("Propios medios")).toBeInTheDocument();
-    expect(screen.getByText("No se activa")).toBeInTheDocument();
+    const encabezados = screen.getAllByRole("columnheader").map((th) => th.textContent?.trim());
+    const fila = screen.getAllByRole("row")[1];
+    const conductor = within(fila).getAllByRole("cell")[encabezados.indexOf("Conductor")];
+    expect(conductor).toHaveTextContent(/^—$/);
+
+    const transporte = within(fila).getAllByRole("cell")[encabezados.indexOf("Transporte")];
+    expect(within(transporte).getByTitle("Este formulario no pide vehículo a la DAF.")).toHaveClass(
+      "badge",
+    );
+    expect(screen.queryByText("No se activa")).toBeNull();
   });
 
-  it("un formulario que sí habilita vehículo no dice ninguna de las dos", () => {
+  it("un formulario que sí habilita vehículo no dice «Propios medios» en el conductor", () => {
     // La fixture por defecto es 8 · INSP, `OBLIGATORIO`: ahí la DAF sí asigna, y lo que
-    // corresponde es la alerta o el guion, nunca «no se activa».
+    // corresponde es «Sin conductor» o el guion.
     render(
       <TablaOperativos
         operativos={[operativo()]}
-        columnas={COLUMNAS_SESION}
+        columnas={COLUMNAS_LISTADO}
       />,
     );
 
     expect(screen.queryByText("Propios medios")).toBeNull();
-    expect(screen.queryByText("No se activa")).toBeNull();
   });
+});
 
-  /**
-   * No es un nombre ni una placa: `Operativo` no los trae. Se pinta como distintivo para
-   * que no se confunda con un dato capturado, igual que los campos calculados.
-   */
-  it("las dos son condiciones derivadas, no datos capturados", () => {
-    render(
-      <TablaOperativos
-        operativos={[fijos()]}
-        columnas={COLUMNAS_SESION}
-      />,
-    );
-
-    expect(screen.getByText("Propios medios")).toHaveClass("badge");
-    expect(screen.getByText("No se activa")).toHaveClass("badge");
-  });
-
-  it("la columna de vehículo existe en P-01 y se llama «Vehículo»", () => {
-    render(
-      <TablaOperativos
-        operativos={[fijos()]}
-        columnas={COLUMNAS_SESION}
-      />,
-    );
+describe("P-01 · la tabla de Mis operativos, con sus columnas (2026-10-13)", () => {
+  it("mismo orden y estilo que P-02, sin Vehículo y con Observaciones al final", () => {
+    render(<TablaOperativos operativos={[operativo()]} columnas={COLUMNAS_SESION} />);
 
     expect(
-      screen.getByRole("columnheader", { name: "Vehículo" }),
-    ).toBeInTheDocument();
+      screen.getAllByRole("columnheader").map((th) => th.textContent?.trim()),
+    ).toEqual([
+      "Identificador",
+      "Horario",
+      "Personal",
+      "Teléfono",
+      "Zonal",
+      "Punto",
+      "Tipo de control",
+      "Transporte",
+      "Conductor",
+      "Estado",
+      "Observaciones",
+    ]);
+  });
+
+  it("P-02 conserva las suyas: con Formulario, sin Transporte, y con Observaciones (2026-10-19)", () => {
+    render(<TablaOperativos operativos={[operativo()]} columnas={COLUMNAS_LISTADO} />);
+
+    expect(
+      screen.getAllByRole("columnheader").map((th) => th.textContent?.trim()),
+    ).toEqual([
+      "Identificador",
+      "Formulario",
+      "Horario",
+      "Personal",
+      "Teléfono",
+      "Zonal",
+      "Punto",
+      "Tipo de control",
+      "Conductor",
+      "Estado",
+      "Observaciones",
+    ]);
+  });
+
+  it("el tipo de control va sin fondo ni negrita aunque el libre traiga alerta, y el libre dice «(libre)»", () => {
+    render(
+      <TablaOperativos
+        operativos={[
+          operativo({
+            tipoControl: null,
+            tiposControl: [],
+            tipoLibre: "Pruebas técnicas",
+            alertas: [
+              {
+                codigo: "ALV-06",
+                campo: "tipoControl",
+                mensaje: "El tipo de control se capturó como adicional.",
+                critica: false,
+              },
+            ],
+          }),
+        ]}
+        columnas={COLUMNAS_SESION}
+      />,
+    );
+
+    const libre = screen.getByText("(libre)");
+    const celda = libre.closest("td") as HTMLElement;
+    expect(celda).toHaveTextContent("Pruebas técnicas (libre)");
+    expect(celda.className).not.toMatch(/bg-warning|font-semibold/);
+  });
+
+  it("las notas van en su columna, una tarjeta por nota, y no como icono junto al identificador", () => {
+    render(
+      <TablaOperativos
+        operativos={[
+          operativo({
+            observaciones: [
+              { texto: "Llevar chalecos", creadoPorRol: "DMIP_OPERATIVOS", creadoEn: "2026-10-13T12:00:00Z" },
+              { texto: "Coordinar con la zonal", creadoPorRol: "DMIP_OPERATIVOS", creadoEn: "2026-10-13T12:05:00Z" },
+            ],
+          }),
+        ]}
+        columnas={COLUMNAS_SESION}
+      />,
+    );
+
+    const celda = screen.getByText("Llevar chalecos").closest("td") as HTMLElement;
+    // Cada observación es su propia tarjeta: nunca texto pegado.
+    expect(celda.querySelectorAll(".app-nota")).toHaveLength(2);
+    expect(within(celda).getByText("Coordinar con la zonal")).toBeInTheDocument();
+    expect(celda).not.toHaveTextContent("·  Coordinar");
+    expect(celda).not.toHaveTextContent("IG-002-31-JUL-2026");
+    const identificador = screen.getByText("IG-002-31-JUL-2026").closest("td") as HTMLElement;
+    expect(identificador).not.toHaveTextContent(/Notas|Llevar chalecos/);
+    expect(identificador.querySelector("svg")).toBeNull();
+  });
+
+  it("Mis operativos también lleva la columna Observaciones (2026-10-19)", () => {
+    render(
+      <TablaOperativos
+        operativos={[
+          operativo({
+            observaciones: [
+              { texto: "Llevar chalecos", creadoPorRol: "DMIP_OPERATIVOS", creadoEn: "2026-10-13T12:00:00Z" },
+            ],
+          }),
+        ]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Observaciones" })).toBeInTheDocument();
+    expect(screen.getByText("Llevar chalecos")).toBeInTheDocument();
   });
 });
 
@@ -316,7 +591,7 @@ describe("casos 4 y 5 · los dos vacíos no dicen lo mismo", () => {
 });
 
 describe("la fila de filtros solo aparece cuando la pantalla la maneja", () => {
-  it("sin `onFiltroChange` no se dibuja: P-01 no filtra", () => {
+  it("sin `onFiltroChange` no se dibuja", () => {
     render(<TablaOperativos operativos={[operativo()]} />);
 
     expect(screen.queryByRole("searchbox")).toBeNull();
@@ -339,6 +614,75 @@ describe("la fila de filtros solo aparece cuando la pantalla la maneja", () => {
 
     await userEvent.type(screen.getByLabelText("Filtrar por punto"), "m");
     expect(cambiar).toHaveBeenCalledWith("punto", "m");
+  });
+});
+
+describe("columna Zonal · lo que el usuario eligió en «Zonales»", () => {
+  const varias = [
+    { id: 1, codigo: "Z1", nombre: "Zonal Eloy Alfaro" },
+    { id: 2, codigo: "Z2", nombre: "Zonal Quitumbe" },
+    { id: 3, codigo: "Z3", nombre: "Zonal Calderón" },
+  ];
+
+  it("va entre Teléfono y Punto", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo()]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const encabezados = screen
+      .getAllByRole("columnheader")
+      .map((th) => th.textContent?.trim());
+    const posicion = encabezados.indexOf("Zonal");
+    expect(posicion).toBeGreaterThan(-1);
+    expect(encabezados[posicion - 1]).toBe("Teléfono");
+    expect(encabezados[posicion + 1]).toBe("Punto");
+  });
+
+  it("muestra TODAS las zonales elegidas, con su nombre tal cual", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo({ zonales: varias })]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(
+      screen.getByText("Zonal Eloy Alfaro, Zonal Quitumbe, Zonal Calderón"),
+    ).toBeInTheDocument();
+  });
+
+  it("sin zonal dice «—»", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo({ zonales: [] })]}
+        columnas={["identificador", "zonal"]}
+      />,
+    );
+
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("filtra por cualquiera de sus zonales, sin tildes ni mayúsculas", async () => {
+    const cambiar = vi.fn();
+    render(
+      <TablaOperativos
+        operativos={[operativo()]}
+        columnas={COLUMNAS_LISTADO}
+        filtros={{}}
+        onFiltroChange={cambiar}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText("Filtrar por zonal"), "q");
+    expect(cambiar).toHaveBeenCalledWith("zonal", "q");
+
+    const conVarias = operativo({ zonales: varias });
+    const otro = operativo({ id: 2, zonales: [] });
+    expect(
+      filtrarOperativos([conVarias, otro], { zonal: "calderon" }),
+    ).toEqual([conVarias]);
   });
 });
 
@@ -397,33 +741,19 @@ describe("caso 3 · con la ventana cerrada no se puede editar ni retirar", () =>
   });
 });
 
+/*
+  La confirmación es la misma en P-01 y P-02 desde el 2026-10-13: el título nombra el operativo y el
+  mensaje dice lo que pasa. La excepción de PV-10 (órdenes emitidas) se explica al terminar.
+*/
 describe("caso 2 · la confirmación nombra el operativo que se retira", () => {
-  it("incluye identificador, punto, horario y formulario", () => {
-    expect(descripcionDelRetiro(operativo())).toContain(
-      "IG-002-31-JUL-2026, AMC Matriz, 09H00 A 18H00, del formulario 8. Inspecciones Técnicas y Generales.",
+  it("el título lleva el identificador", () => {
+    expect(tituloDelRetiro(operativo())).toBe("¿Eliminar IG-002-31-JUL-2026?");
+  });
+
+  it("el mensaje dice que se quita el operativo, que su personal queda libre y que no se deshace", () => {
+    expect(MENSAJE_DEL_RETIRO).toBe(
+      "Se quitará el operativo y su personal quedará libre. Esta acción no se puede deshacer.",
     );
-  });
-
-  /**
-   * PV-10 pasó a borrado real el 2026-08-07. Una confirmación que dice «se quitará» ante
-   * una operación que borra la fila **le miente a quien la acepta**, y es la última
-   * pantalla donde puede arrepentirse.
-   */
-  it("advierte que el borrado es real y no se deshace", () => {
-    const aviso = descripcionDelRetiro(operativo());
-
-    expect(aviso).toContain("Se eliminará");
-    expect(aviso).toContain("no se puede deshacer");
-    expect(aviso).toContain("órdenes");
-  });
-
-  it("con punto adicional, nombra el texto libre", () => {
-    const libre = operativo({
-      puntoEncuentro: null,
-      puntoLibre: "Frente al mercado",
-    });
-
-    expect(descripcionDelRetiro(libre)).toContain("Frente al mercado");
   });
 });
 
@@ -458,7 +788,7 @@ describe("P-02 abre en la jornada que se está armando", () => {
 
     await vi.waitFor(() =>
       expect(OperativoService.consultar).toHaveBeenCalledWith(
-        expect.objectContaining({ fecha: "2026-08-22" }),
+        expect.objectContaining({ desde: "2026-08-22", hasta: "2026-08-22" }),
       ),
     );
   });
@@ -470,7 +800,7 @@ describe("P-02 abre en la jornada que se está armando", () => {
 
     await vi.waitFor(() =>
       expect(OperativoService.consultar).toHaveBeenCalledWith(
-        expect.objectContaining({ fecha: "2027-01-01" }),
+        expect.objectContaining({ desde: "2027-01-01", hasta: "2027-01-01" }),
       ),
     );
   });
@@ -556,7 +886,7 @@ describe("BUG #9 · la fila de la tabla refleja el personal tras asignar", () =>
     render(<MisOperativosPage />);
 
     // La fila arranca diciendo que no tiene a nadie.
-    const editar = await screen.findByRole("button", { name: "Editar" });
+    const editar = await screen.findByRole("button", { name: /^Editar\b/ });
     const tabla = () => screen.getByRole("table");
     expect(
       within(tabla()).getByText(
@@ -567,7 +897,8 @@ describe("BUG #9 · la fila de la tabla refleja el personal tras asignar", () =>
 
     // Se abre el cajón de edición y se asigna al candidato.
     await userEvent.click(editar);
-    const candidato = await screen.findByRole("button", { name: "+ Asignar" });
+    // Por secciones (2026-10-08) el cajón usa el verbo del borrador: «+ Agregar», con el horario a la vista.
+    const candidato = await screen.findByRole("button", { name: "+ Agregar" });
     await userEvent.click(candidato);
 
     // DIFERIDO (2026-10-01): «+ Asignar» NO llama al servidor ni toca la fila de la tabla todavía.

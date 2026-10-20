@@ -38,11 +38,13 @@ import {
   useState,
   type FC,
 } from "react";
+import Boton from "../common/Boton.tsx";
 import { Document as DocumentoPdf, Page as PaginaPdf, pdfjs } from "react-pdf";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 // La capa de texto hace el PDF SELECCIONABLE, como el visor de resolución. Su hoja usa estilos
 // en línea, que la CSP admite (`style-src 'unsafe-inline'`).
 import "react-pdf/dist/Page/TextLayer.css";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 // El worker vive en el propio origen (Vite lo emite como asset); sin CDN, la CSP lo admite.
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -91,7 +93,9 @@ const VisorPdf: FC<VisorPdfProps> = ({
   // Borrador del campo «ir a página»: lo que se teclea NO salta al instante; se aplica al pulsar
   // Enter o al salir del campo (blur). `null` = el campo refleja la página actual (E23).
   const [paginaEnEdicion, setPaginaEnEdicion] = useState<string | null>(null);
+  /** El fallo de pdf.js al dibujar: su texto es técnico y en inglés, así que va al detalle. */
   const [errorRender, setErrorRender] = useState<string | null>(null);
+  const [verDetalle, setVerDetalle] = useState(false);
   const [escala, setEscala] = useState(1);
   const [miniaturas, setMiniaturas] = useState(false);
   const [enPantallaCompleta, setEnPantallaCompleta] = useState(false);
@@ -317,19 +321,32 @@ const VisorPdf: FC<VisorPdfProps> = ({
     // La capa visible cambia sus nodos al intercambiar: se vuelve a observar la nueva.
   }, [paginas, capaVisible]);
 
-  const problema = error ?? errorRender;
+  if (error) {
+    return <AvisoEnLinea variante="error">{error}</AvisoEnLinea>;
+  }
 
-  if (problema) {
+  if (errorRender) {
     return (
-      <div className="alert alert-error" role="alert">
-        <span className="text-xs">{problema}</span>
-      </div>
+      <AvisoEnLinea
+        variante="error"
+        titulo="No se pudo mostrar el PDF"
+        accion={
+          <Boton variante="enlace" tamano="sm" onClick={() => setVerDetalle((antes) => !antes)}>
+            {verDetalle ? "Ocultar detalle" : "Ver detalle"}
+          </Boton>
+        }
+      >
+        <span className="flex flex-col gap-1">
+          <span>Intente descargarlo; si persiste, avise al administrador.</span>
+          {verDetalle && <span className="font-mono text-xs">{errorRender}</span>}
+        </span>
+      </AvisoEnLinea>
     );
   }
 
   if (cargando || !pdf) {
     return (
-      <p className="py-8 text-center text-sm text-base-content/70">
+      <p className="py-8 text-center text-sm text-app-muted">
         {cargando ? "Cargando el documento…" : (vacio ?? "Sin documento.")}
       </p>
     );
@@ -350,26 +367,26 @@ const VisorPdf: FC<VisorPdfProps> = ({
       <div className="flex flex-wrap items-center gap-2">
         {paginas > 1 && (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={pagina <= 1}
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              deshabilitado={pagina <= 1}
               onClick={() => irAPagina(1)}
               aria-label="Primera página"
               title="Primera página"
             >
               «
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={pagina <= 1}
+            </Boton>
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              deshabilitado={pagina <= 1}
               onClick={() => irAPagina(pagina - 1)}
               aria-label="Página anterior"
               title="Página anterior"
             >
               ‹
-            </button>
+            </Boton>
 
             <div className="flex items-center gap-1">
               <input
@@ -387,35 +404,35 @@ const VisorPdf: FC<VisorPdfProps> = ({
                 className="input input-bordered input-xs w-12 text-center"
                 aria-label={`Página ${pagina} de ${paginas}`}
               />
-              <span className="text-xs text-base-content/70">/ {paginas}</span>
+              <span className="text-xs text-app-muted">/ {paginas}</span>
             </div>
 
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={pagina >= paginas}
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              deshabilitado={pagina >= paginas}
               onClick={() => irAPagina(pagina + 1)}
               aria-label="Página siguiente"
               title="Página siguiente"
             >
               ›
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={pagina >= paginas}
+            </Boton>
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              deshabilitado={pagina >= paginas}
               onClick={() => irAPagina(paginas)}
               aria-label="Última página"
               title="Última página"
             >
               »
-            </button>
+            </Boton>
           </div>
         )}
 
         {/* Indicador DISCRETO mientras se prepara la versión nueva: la anterior sigue a la vista. */}
         {actualizando && (
-          <span className="text-xs text-base-content/60" role="status">
+          <span className="text-xs text-app-muted" role="status">
             Actualizando…
           </span>
         )}
@@ -423,51 +440,51 @@ const VisorPdf: FC<VisorPdfProps> = ({
         {/* Zoom · miniaturas · pantalla completa, pegados a la derecha. */}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={escala <= ZOOM_MIN}
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              deshabilitado={escala <= ZOOM_MIN}
               onClick={alejar}
               aria-label="Alejar"
               title="Alejar"
             >
               −
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
+            </Boton>
+            <Boton
+              variante="secundario"
+              tamano="sm"
               onClick={() => setEscala(1)}
               aria-label="Ajustar el zoom al 100 %"
               title="Ajustar (100 %)"
             >
               {Math.round(escala * 100)}%
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={escala >= ZOOM_MAX}
+            </Boton>
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              deshabilitado={escala >= ZOOM_MAX}
               onClick={acercar}
               aria-label="Acercar"
               title="Acercar"
             >
               +
-            </button>
+            </Boton>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
+          <Boton
+            variante="secundario"
+            tamano="sm"
             onClick={() => setMiniaturas((valor) => !valor)}
             aria-pressed={miniaturas}
             aria-label={miniaturas ? "Ocultar miniaturas" : "Ver miniaturas"}
             title={miniaturas ? "Ocultar miniaturas" : "Ver miniaturas"}
           >
             ▤ Miniaturas
-          </button>
+          </Boton>
 
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
+          <Boton
+            variante="secundario"
+            tamano="sm"
             onClick={alternarPantallaCompleta}
             aria-label={
               enPantallaCompleta
@@ -481,7 +498,7 @@ const VisorPdf: FC<VisorPdfProps> = ({
             }
           >
             {enPantallaCompleta ? "⛶ Salir" : "⛶ Pantalla completa"}
-          </button>
+          </Boton>
         </div>
       </div>
 
@@ -521,7 +538,7 @@ const VisorPdf: FC<VisorPdfProps> = ({
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
                   />
-                  <span className="mt-1 block text-center text-xs text-base-content/70">
+                  <span className="mt-1 block text-center text-xs text-app-muted">
                     {indice + 1}
                   </span>
                 </button>
@@ -556,16 +573,14 @@ const VisorPdf: FC<VisorPdfProps> = ({
                     onLoadError={(fallo) => setErrorRender(fallo.message)}
                     loading={
                       visible ? (
-                        <p className="py-8 text-center text-sm text-base-content/70">
+                        <p className="py-8 text-center text-sm text-app-muted">
                           Cargando el documento…
                         </p>
                       ) : null
                     }
                     error={
                       visible ? (
-                        <div className="alert alert-error" role="alert">
-                          <span className="text-xs">No se pudo mostrar el PDF.</span>
-                        </div>
+                        <AvisoEnLinea variante="error">No se pudo mostrar el PDF.</AvisoEnLinea>
                       ) : null
                     }
                   >

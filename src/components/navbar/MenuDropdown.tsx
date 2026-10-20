@@ -9,20 +9,33 @@
  */
 
 
+import {
+  ID_BOTON_MENU,
+  ID_MENU_FLOTANTE,
+} from "../../hooks/useBarraPlegada";
+
 type MenuDropdownProps = {
   open: boolean;
   onToggle: () => void;
+  /**
+   * Barra plegada (2026-10-13): en Mis operativos bajo 1700 px el menú es flotante, y el botón
+   * lleva el texto «Menú» a la vista para que se sepa dónde quedó la navegación.
+   */
+  plegado?: boolean;
 };
 
-const MenuDropdown = ({ open, onToggle }: MenuDropdownProps) => {
+const MenuDropdown = ({ open, onToggle, plegado = false }: MenuDropdownProps) => {
   return (
     <button
       type="button"
+      id={ID_BOTON_MENU}
       aria-label={open ? "Cerrar menú lateral" : "Abrir menú lateral"}
       aria-expanded={open}
-      className={`app-topbar-icon-button app-topbar-menu-button btn btn-circle ${
-        open ? "app-topbar-menu-button-open" : ""
-      }`}
+      aria-controls={plegado ? ID_MENU_FLOTANTE : undefined}
+      // eslint-disable-next-line no-restricted-syntax -- botón del armazón (barra superior), con su estilo propio
+      className={`app-topbar-icon-button app-topbar-menu-button btn ${
+        plegado ? "gap-2 rounded-full px-3" : "btn-circle"
+      } ${open ? "app-topbar-menu-button-open" : ""}`}
       onClick={onToggle}
     >
       {open ? (
@@ -46,6 +59,7 @@ const MenuDropdown = ({ open, onToggle }: MenuDropdownProps) => {
           <path d="M64,384H448V341.33H64Zm0-106.67H448V234.67H64ZM64,128v42.67H448V128Z" />
         </svg>
       )}
+      {plegado && <span className="text-sm font-semibold">Menú</span>}
     </button>
   );
 };

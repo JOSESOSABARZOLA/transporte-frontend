@@ -78,7 +78,7 @@ const CeldaAlerta: FC<CeldaAlertaProps> = ({
       rowSpan={rowSpan}
     >
       {vacia ? (
-        <span className="text-xs text-base-content/70">{texto || "—"}</span>
+        <span className="text-xs text-app-muted">{texto || "—"}</span>
       ) : (
         children
       )}

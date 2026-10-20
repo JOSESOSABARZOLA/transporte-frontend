@@ -7,8 +7,9 @@ sql
 .env.*.local
 # .env.dev dejo de versionarse el 2026-08-19. Se describe a si mismo como "modo LOCAL",
 # asi que era el archivo donde alguien acabaria escribiendo una clave real, y estaba
-# rastreado. Las cuatro VITE_ tienen valor por defecto en config/env.ts, de modo que un
-# clon nuevo arranca sin el; para personalizar, copie .env.example.
+# rastreado. Tres de las cuatro VITE_ tienen valor por defecto en config/env.ts; el portal
+# de Auth (VITE_AUTH_PORTAL_URL) es obligatorio desde 2026-10-16: copie .env.example a .env.development.local
+# (ignorado) y ponga ahi su valor.
 .env.dev
 
 # Build

@@ -31,6 +31,18 @@ describe("BotonRepartoCarga", () => {
     );
   });
 
+  it("lleva el icono de barras antes del rótulo (2026-10-07)", () => {
+    render(<BotonRepartoCarga onClick={vi.fn()} expandido={false} />);
+
+    const boton = screen.getByRole("button", { name: "Ver reparto de carga" });
+    const svg = boton.querySelector("svg");
+    expect(svg).toHaveAttribute("data-icon", "barras");
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    // El icono acompaña: va antes del texto «Ver reparto de carga».
+    expect(boton.textContent?.trim().startsWith("Ver reparto de carga")).toBe(true);
+    expect(boton.firstElementChild?.contains(svg ?? null)).toBe(true);
+  });
+
   it("refleja el reparto abierto con aria-expanded", () => {
     render(<BotonRepartoCarga onClick={vi.fn()} expandido />);
 
@@ -50,7 +62,7 @@ describe("BotonRepartoCarga", () => {
 
     const boton = screen.getByRole("button", { name: "Ver reparto de carga" });
     expect(boton).toHaveAccessibleDescription(
-      "Carga baja: 3; media: 2; alta: 1.",
+      "Carga Baja: 3; Carga Media: 2; Carga Alta: 1.",
     );
   });
 

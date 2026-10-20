@@ -22,7 +22,7 @@
 
 import type { FC } from "react";
 
-import Iconos from "../common/Iconos.tsx";
+import Boton from "../common/Boton.tsx";
 import type { Operativo, PersonaAsignada } from "../../interfaces/Operativo.ts";
 import {
   nombreDePersona,
@@ -30,6 +30,7 @@ import {
 } from "../../interfaces/Personal.ts";
 import type { AreaPersonal } from "../../interfaces/Formulario.ts";
 import { NOMBRE_AREA } from "../../utils/personal.util.ts";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 /** Un código de la patrulla: su operativo de una persona y si quien mira lo puede tocar. */
 export type MiembroPatrulla = {
@@ -73,17 +74,12 @@ const RosterPatrulla: FC<RosterPatrullaProps> = ({
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="app-modules-modal-label label-text font-medium">
+      <span className="app-modules-modal-label label-text">
         Personal de la patrulla
       </span>
 
       {aviso && (
-        <div
-          className="alert alert-error"
-          role="alert"
-        >
-          <span>{aviso}</span>
-        </div>
+        <AvisoEnLinea variante="error">{aviso}</AvisoEnLinea>
       )}
 
       <ul className="flex flex-col gap-2">
@@ -126,18 +122,19 @@ const RosterPatrulla: FC<RosterPatrullaProps> = ({
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
+                <Boton
+                  variante="peligro"
+                  tamano="sm"
+                  icono="desactivar"
                   aria-label={`Quitar a ${persona.nombre}`}
-                  className="btn btn-ghost btn-sm text-error"
-                  disabled={bloqueado}
+                  deshabilitado={bloqueado}
                   onClick={() => onQuitar(operativo)}
                 >
-                  <Iconos nombre="eliminar" />
-                </button>
+                  Quitar
+                </Boton>
               </>
             ) : (
-              <span className="text-xs text-base-content/70">
+              <span className="text-xs text-app-muted">
                 La gestiona su departamento
               </span>
             )}
@@ -147,7 +144,7 @@ const RosterPatrulla: FC<RosterPatrullaProps> = ({
 
       {/* AGREGAR una persona nueva: nace como un código más de su área en esta patrulla. */}
       <label className="flex flex-wrap items-center gap-2">
-        <span className="label-text font-medium">Agregar persona</span>
+        <span className="label-text">Agregar persona</span>
         <select
           aria-label="Agregar persona a la patrulla"
           className="select select-bordered select-sm"

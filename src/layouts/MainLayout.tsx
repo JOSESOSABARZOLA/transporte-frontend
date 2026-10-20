@@ -7,11 +7,16 @@
  * Desarrollador: Johan Freire
  * Fecha: 2026-03-19
  */
-import React, { useState, type FC } from "react";
+import React, { useEffect, useRef, useState, type FC } from "react";
 import AvisoPersonalPendiente from "../components/jornada/AvisoPersonalPendiente";
 import Navbar from "../components/navbar/Navbar";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/navbar/Sidebar";
+import {
+  ID_BOTON_MENU,
+  ID_MENU_FLOTANTE,
+  useBarraPlegada,
+} from "../hooks/useBarraPlegada";
 
 type MainLayoutProps = {
   children?: React.ReactNode;
@@ -28,8 +33,17 @@ const getInitialSidebarOpen = () => {
 };
 
 const MainLayout: FC<MainLayoutProps> = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() =>
-    getInitialSidebarOpen(),
+  /*
+    BARRA PLEGADA EN MIS OPERATIVOS (2026-10-13, opción B). Bajo 1700 px esa pantalla no reserva
+    columna para la barra: se abre como menú flotante —el mismo del móvil— desde el botón «Menú».
+    Al entrar se pliega (cerrada); al salir vuelve al estado de siempre según el ancho.
+  */
+  const { pathname } = useLocation();
+  const plegada = useBarraPlegada(pathname);
+  const panelFlotante = useRef<HTMLDivElement>(null);
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(
+    () => !plegada && getInitialSidebarOpen(),
   );
 
   const toggleSidebar = () => {
@@ -39,6 +53,32 @@ const MainLayout: FC<MainLayoutProps> = () => {
   const closeSidebar = () => {
     setIsSidebarOpen(false);
   };
+
+  // Se ajusta durante el render al cambiar `plegada` (patrón «estado previo» de React), no en un
+  // efecto: así no hay un render intermedio con la barra abierta encima de la tabla.
+  const [plegadaPrevia, setPlegadaPrevia] = useState(plegada);
+  if (plegadaPrevia !== plegada) {
+    setPlegadaPrevia(plegada);
+    setIsSidebarOpen(plegada ? false : getInitialSidebarOpen());
+  }
+
+  // Al abrirse plegada, el foco entra en el menú; Esc lo cierra y devuelve el foco al botón.
+  useEffect(() => {
+    if (!plegada || !isSidebarOpen) return undefined;
+    panelFlotante.current
+      ?.querySelector<HTMLElement>("a[href], button:not([disabled])")
+      ?.focus();
+    const alPulsar = (evento: KeyboardEvent) => {
+      if (evento.key !== "Escape") return;
+      setIsSidebarOpen(false);
+      document.getElementById(ID_BOTON_MENU)?.focus();
+    };
+    document.addEventListener("keydown", alPulsar);
+    return () => document.removeEventListener("keydown", alPulsar);
+  }, [plegada, isSidebarOpen]);
+
+  const columnaAbierta = isSidebarOpen && !plegada;
+
   return (
     // La clase bg-system es la contenedora del fondo con la textura de la Amc
     <div className="app-shell-frame bg-system relative overflow-hidden bg-base-200 text-base-content">
@@ -58,19 +98,30 @@ const MainLayout: FC<MainLayoutProps> = () => {
       <div
         className="app-shell-frame relative z-10 flex min-h-full flex-col overflow-hidden lg:grid lg:transition-[grid-template-columns] lg:duration-460 lg:ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
-          gridTemplateColumns: isSidebarOpen
+          gridTemplateColumns: columnaAbierta
             ? `${DESKTOP_SIDEBAR_WIDTH} minmax(0, 1fr)`
             : "0rem minmax(0, 1fr)",
         }}
       >
-        <div className="hidden h-full overflow-hidden lg:block">
-          <div className="h-full overflow-hidden">
-            <Sidebar className="h-full w-65.5 rounded-none border-y-0 border-l-0 border-r border-base-300 shadow-none" />
-          </div>
+        {/*
+          Plegada, la celda sigue en la rejilla (columna de 0 rem) para que el contenido no ocupe
+          su lugar, pero sin barra dentro: así no queda un segundo menú oculto al que llegue el foco.
+        */}
+        <div
+          className="hidden h-full overflow-hidden lg:block"
+          data-barra-fija={plegada ? undefined : ""}
+        >
+          {!plegada && (
+            <div className="h-full overflow-hidden">
+              <Sidebar className="h-full w-65.5 rounded-none border-y-0 border-l-0 border-r border-base-300 shadow-none" />
+            </div>
+          )}
         </div>
 
         <div
-          className={`fixed inset-0 z-40 transition-opacity duration-420 ease-[cubic-bezier(0.16,1,0.3,1)] lg:hidden ${
+          className={`fixed inset-0 z-40 transition-opacity duration-420 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            plegada ? "" : "lg:hidden"
+          } ${
             isSidebarOpen
               ? "pointer-events-auto opacity-100"
               : "pointer-events-none opacity-0"
@@ -84,6 +135,8 @@ const MainLayout: FC<MainLayoutProps> = () => {
           />
 
           <div
+            ref={panelFlotante}
+            id={ID_MENU_FLOTANTE}
             className={`absolute inset-y-0 left-0 w-63.5 max-w-[calc(100vw-1rem)] p-2 pr-0 transition-transform duration-460 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               isSidebarOpen ? "translate-x-0" : "-translate-x-full"
             }`}
@@ -99,6 +152,7 @@ const MainLayout: FC<MainLayoutProps> = () => {
           <Navbar
             isSidebarOpen={isSidebarOpen}
             onToggleSidebar={toggleSidebar}
+            menuPlegado={plegada}
           />
           <main
             id="contenido-principal"

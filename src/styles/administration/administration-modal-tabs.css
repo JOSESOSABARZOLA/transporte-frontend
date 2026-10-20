@@ -55,7 +55,7 @@
 /*
   MOVIMIENTO REDUCIDO. Ni la aparición de la pestaña ni el subrayado animado comunican
   información: para quien pide menos movimiento se retiran enteros. Alinea esta hoja con la
-  guarda que ya tienen refinamiento.css y administration-feedback.css.
+  guarda que ya tiene refinamiento.css.
 */
 @media (prefers-reduced-motion: reduce) {
   .app-modules-tab-content {

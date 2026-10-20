@@ -25,10 +25,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormikHelpers } from "formik";
+import { useSearchParams } from "react-router-dom";
 
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
-import PanelAdicionalOperativo from "../components/cuadro/PanelAdicionalOperativo.tsx";
+import MensajeModal from "../components/common/MensajeModal.tsx";
+import DrawerOperativo from "../components/cuadro/DrawerOperativo.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
+import { macroSegunTipo } from "../utils/tipoTransporte.util.ts";
+import { MS_RESALTADO } from "../utils/listadoOperativos.util.ts";
 import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
 import VistaPreviaOrden from "../components/ordenes/VistaPreviaOrden.tsx";
 import EditorPlantillaOrden from "../components/ordenes/EditorPlantillaOrden.tsx";
@@ -48,7 +52,7 @@ import { colorEstado } from "../config/env.ts";
 import { nombreEstadoCuadro } from "../interfaces/CuadroDiario.ts";
 import type { Matriz, OrdenServicio } from "../interfaces/Documento.ts";
 import { DocumentoService } from "../services/documento.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, varianteDeAviso, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { turnoDePrimera } from "../utils/personal.util.ts";
 import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
 import { conDiaYMesEnMayuscula } from "../utils/texto.util.ts";
@@ -60,6 +64,7 @@ import {
   resumenEstado,
   type OperativoEmisible,
 } from "../utils/ordenes.util.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
 
 const OrdenesServicioPage = () => {
   /**
@@ -83,7 +88,12 @@ const OrdenesServicioPage = () => {
    */
   // Para devolver el foco a «Editar plantilla» al salir del editor a pantalla completa (E15).
   const editarPlantillaRef = useRef<HTMLButtonElement>(null);
-  const [fecha, setFecha] = useState(() => fechaDeJornadaPorDefecto());
+  // `?fecha=AAAA-MM-DD` la fija quien llega desde la matriz (cuadro recién cerrado → «Ver órdenes»).
+  const [parametros] = useSearchParams();
+  const [fecha, setFecha] = useState(() => {
+    const pedida = parametros.get("fecha");
+    return pedida && /^\d{4}-\d{2}-\d{2}$/.test(pedida) ? pedida : fechaDeJornadaPorDefecto();
+  });
 
   const [matriz, setMatriz] = useState<Matriz | null>(null);
   const [cargando, setCargando] = useState(true);
@@ -127,10 +137,8 @@ const OrdenesServicioPage = () => {
   const [reintentandoId, setReintentandoId] = useState<number | null>(null);
   const [emitiendo, setEmitiendo] = useState(false);
 
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  /** El error de CARGA de la matriz; los de las acciones son mensajes estándar o van en su cajón. */
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -150,6 +158,19 @@ const OrdenesServicioPage = () => {
     null,
   );
   const [abriendoAdicional, setAbriendoAdicional] = useState(false);
+  /** Error del servidor al registrar el adicional: se muestra dentro de su cajón. */
+  const [errorAdicional, setErrorAdicional] = useState<AvisoTexto | null>(null);
+  /**
+   * Aviso breve tras registrar un adicional o emitir órdenes (abajo a la derecha, desaparece
+   * solo). La emisión también va por aquí desde el 2026-10-15: `ModalExito` se retiró.
+   */
+  /** El adicional recién registrado: su fila se resalta unos segundos. */
+  const [resaltadoId, setResaltadoId] = useState<number | null>(null);
+  useEffect(() => {
+    if (resaltadoId === null) return undefined;
+    const apagar = window.setTimeout(() => setResaltadoId(null), MS_RESALTADO);
+    return () => window.clearTimeout(apagar);
+  }, [resaltadoId]);
   const [personalAdicional, setPersonalAdicional] = useState<PersonaAgregada[]>(
     [],
   );
@@ -195,7 +216,7 @@ const OrdenesServicioPage = () => {
       if (error.estado === 404) {
         setSinJornada(true);
       } else {
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        setAviso({ texto: error.mensaje, variante: varianteDeAviso(error.trato) });
       }
     } finally {
       setCargando(false);
@@ -388,18 +409,23 @@ const OrdenesServicioPage = () => {
    * zonal, punto, tipo e instituciones, que solo vienen en `GET /operativos/:id`. La
    * Dirección ya está autorizada ahí: figura entre los roles que ven la jornada entera.
    */
+  // Frena el doble clic mientras se pide el operativo: el botón no se deshabilita (ver la fila).
+  const abriendoAdicionalRef = useRef(false);
   const abrirAdicional = useCallback(async (operativoId: number) => {
+    if (abriendoAdicionalRef.current) return;
+    abriendoAdicionalRef.current = true;
     setAbriendoAdicional(true);
     setAvisoPersonal(null);
     setPersonalAdicional([]);
+    setErrorAdicional(null);
 
     try {
       setCreandoAdicional(await OperativoService.obtener(operativoId));
       setSeleccionado(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      void mensaje.errorDe(fallo, { titulo: "No se pudo abrir el adicional" });
     } finally {
+      abriendoAdicionalRef.current = false;
       setAbriendoAdicional(false);
     }
   }, []);
@@ -407,6 +433,7 @@ const OrdenesServicioPage = () => {
   const cerrarAdicional = useCallback(() => {
     setCreandoAdicional(null);
     setPersonalAdicional([]);
+    setErrorAdicional(null);
   }, []);
 
   const guardarAdicional = useCallback(
@@ -417,7 +444,7 @@ const OrdenesServicioPage = () => {
       if (!creandoAdicional) return;
 
       setEmitiendo(true);
-      setAviso(null);
+      setErrorAdicional(null);
 
       try {
         // La jornada y el formulario los hereda del padre y no viajan: el servidor
@@ -445,6 +472,12 @@ const OrdenesServicioPage = () => {
                 ? valores.tipoLibre
                 : undefined,
             institucionesIds: valores.institucionesIds,
+            // Cómo se moviliza (2026-10-06): lo elige quien registra; por defecto, completo.
+            tipoTransporte: valores.tipoTransporte ?? "COMPLETO",
+            esMacrooperativo: macroSegunTipo(
+              valores.tipoTransporte ?? "COMPLETO",
+              valores.esMacrooperativo,
+            ),
             // Cada persona lleva su horario, OBLIGATORIO (2026-09-08, RN-66): el adicional no
             // tiene horario propio; el servidor toma su ventana de las de su gente.
             personal: personalAdicional.map((persona) => ({
@@ -456,10 +489,14 @@ const OrdenesServicioPage = () => {
           },
         );
 
-        setExito(
-          `Operativo adicional ${adicional.identificador} registrado sobre ${creandoAdicional.identificador}.` +
+        /*
+          AVISO BREVE Y FILA RESALTADA (2026-10-08), en lugar del `ModalExito`: el cajón se cierra,
+          la tabla se recarga y la fila nueva se marca unos segundos, lista para emitir su orden.
+        */
+        toast.exito(
+          `Operativo adicional ${adicional.identificador} registrado.` +
             (cuadroCerrado
-              ? " El cuadro estaba cerrado: queda constancia en la auditoría de que lo dispuso la Dirección. Vuelva a descargar la matriz para que la incluya."
+              ? " Vuelva a descargar la matriz para que la incluya."
               : "") +
             // A esta hora la ventana de la DAF también cerró, así que si no heredó
             // transporte no hay quien se lo asigne hoy. Hay que decirlo.
@@ -472,11 +509,12 @@ const OrdenesServicioPage = () => {
         cerrarAdicional();
         ayudas.resetForm();
         await cargar();
+        setResaltadoId(adicional.id);
       } catch (fallo: unknown) {
-        // El panel sigue abierto con lo capturado: un rechazo se corrige y se reintenta
-        // sin volver a escribirlo todo, que es lo que importa cuando hay prisa.
-        const error = presentarError(fallo);
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        // El cajón sigue abierto con lo capturado: un rechazo se corrige y se reintenta
+        // sin volver a escribirlo todo, que es lo que importa cuando hay prisa. El error se
+        // muestra DENTRO del cajón, sobre su pie (2026-10-08).
+        setErrorAdicional(avisoDeFallo(fallo));
       } finally {
         setEmitiendo(false);
       }
@@ -505,7 +543,6 @@ const OrdenesServicioPage = () => {
   const elegir = useCallback(
     (operativo: OperativoEmisible) => {
       setSeleccionado(operativo);
-      setAviso(null);
       void cargarEmitidas(operativo.id);
     },
     [cargarEmitidas],
@@ -515,7 +552,6 @@ const OrdenesServicioPage = () => {
     if (!seleccionado) return;
 
     setEmitiendo(true);
-    setAviso(null);
 
     try {
       const nuevas = await DocumentoService.emitirOrdenes(seleccionado.id);
@@ -525,25 +561,26 @@ const OrdenesServicioPage = () => {
         [seleccionado.id]: nuevas,
       }));
       setConfirmando(false);
+      setResaltadoId(seleccionado.id);
       // B4: cuántas hojas quedaron en BORRADOR por datos faltantes (no consumen número).
       const borradores = nuevas.filter(
         (orden) => orden.faltantes.length > 0,
       ).length;
-      setExito(
-        `Se emitieron ${nuevas.length} ${
+      // Un HITO (M7): modal de éxito.
+      void mensaje.exito({
+        titulo: `${nuevas.length === 1 ? "Orden emitida" : "Órdenes emitidas"} para ${seleccionado.identificador}`,
+        mensaje: `Se ${nuevas.length === 1 ? "emitió" : "emitieron"} ${nuevas.length} ${
           nuevas.length === 1 ? "orden" : "órdenes"
-        } para ${seleccionado.identificador}, una por funcionario.${
+        }, una por funcionario.${
           borradores > 0
             ? ` ${borradores} ${
                 borradores === 1 ? "quedó" : "quedaron"
               } en borrador por datos faltantes.`
             : ""
         }`,
-      );
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setConfirmando(false);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        textoPrincipal: "Aceptar",
+      });
+      // Si falla, lanza: el error queda en el modal de la confirmación.
     } finally {
       setEmitiendo(false);
     }
@@ -558,9 +595,8 @@ const OrdenesServicioPage = () => {
    * solo los EMISIBLES —la misma vara que cada fila—; los demás ya salen apagados con su motivo.
    */
   const emitirPendientes = useCallback(async () => {
-    setConfirmandoTodas(false);
+    // El modal sigue abierto con «Procesando…» hasta que termina la última.
     setEmitiendo(true);
-    setAviso(null);
     setFallidas([]);
 
     let operativosOk = 0;
@@ -585,6 +621,7 @@ const OrdenesServicioPage = () => {
     }
 
     setEmitiendo(false);
+    setConfirmandoTodas(false);
     setFallidas(noGeneradas);
     // Refresca el estado de las filas emitidas sin re-pedir toda la jornada.
     setOrdenesPorOperativo((previo) => ({ ...previo, ...nuevasPorOperativo }));
@@ -595,8 +632,10 @@ const OrdenesServicioPage = () => {
     }
 
     if (noGeneradas.length === 0) {
-      setExito(
-        `Se emitieron ${ordenesTotales} ${
+      // Un HITO (M7): modal de éxito.
+      void mensaje.exito({
+        titulo: "Órdenes emitidas",
+        mensaje: `Se emitieron ${ordenesTotales} ${
           ordenesTotales === 1 ? "orden" : "órdenes"
         } de ${operativosOk} ${
           operativosOk === 1 ? "operativo" : "operativos"
@@ -607,12 +646,14 @@ const OrdenesServicioPage = () => {
               } en borrador por datos faltantes.`
             : ""
         }`,
-      );
+        textoPrincipal: "Aceptar",
+      });
     } else {
-      // El detalle —cuáles y con su botón de reenviar— vive en el panel «Órdenes no generadas».
-      setAviso({
-        texto: `Se emitieron ${operativosOk} de ${pendientes.length} operativos. Las ${noGeneradas.length} no generadas aparecen abajo para revisarlas y reenviarlas.`,
-        clase: claseDeAviso("generico"),
+      // Emisión PARCIAL: no es un error (lo emitido quedó emitido), es una advertencia. El detalle
+      // —cuáles y con su botón de reenviar— vive en el panel «Órdenes no generadas».
+      void mensaje.advertencia({
+        titulo: "Emisión parcial",
+        mensaje: `Se emitieron ${operativosOk} de ${pendientes.length} operativos. Las ${noGeneradas.length} no generadas aparecen abajo para revisarlas y reenviarlas.`,
       });
     }
   }, [pendientes, seleccionado]);
@@ -621,7 +662,6 @@ const OrdenesServicioPage = () => {
   const reintentar = useCallback(
     async (operativo: OperativoEmisible) => {
       setReintentandoId(operativo.id);
-      setAviso(null);
 
       try {
         const nuevas = await DocumentoService.emitirOrdenes(operativo.id);
@@ -634,14 +674,13 @@ const OrdenesServicioPage = () => {
         }));
         // Si es el que está abierto en la vista previa, se refleja lo recién emitido.
         if (seleccionado?.id === operativo.id) setEmitidas(nuevas);
-        setExito(
+        setResaltadoId(operativo.id);
+        toast.exito(
           `Se emitió la orden de ${operativo.identificador}, una por funcionario.`,
         );
       } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        setAviso({
-          texto: `No se pudo emitir ${operativo.identificador}: ${error.mensaje}`,
-          clase: claseDeAviso(error.trato),
+        void mensaje.errorDe(fallo, {
+          titulo: `No se pudo emitir ${operativo.identificador}`,
         });
       } finally {
         setReintentandoId(null);
@@ -687,33 +726,29 @@ const OrdenesServicioPage = () => {
             «Editar plantilla» abre la plantilla DEL DIRECTOR EN SESIÓN (2026-10-05): cada Director
             tiene la suya y sus órdenes se generan con ella. Vive en el encabezado de la página.
           */}
-          <button
+          <Boton
             ref={editarPlantillaRef}
-            type="button"
-            className="btn btn-outline btn-sm"
+            variante="secundario"
+            tamano="md"
+            icono="editar"
             onClick={() => setPlantillaAbierta(true)}
           >
             Editar plantilla
-          </button>
+          </Boton>
         </div>
 
         {/* Punto 5: la plantilla propia tiene datos generales vacíos → no se puede emitir en firme. */}
         {plantillaIncompleta === true && (
-          <div
-            className="alert alert-warning flex flex-wrap items-center justify-between gap-2"
-            role="status"
+          <AvisoEnLinea
+            variante="advertencia"
+            accion={
+              <Boton variante="secundario" tamano="sm" onClick={() => setPlantillaAbierta(true)}>
+                Editar plantilla
+              </Boton>
+            }
           >
-            <span className="text-sm">
-              Completa los datos de tu plantilla para emitir órdenes.
-            </span>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => setPlantillaAbierta(true)}
-            >
-              Editar plantilla
-            </button>
-          </div>
+            Completa los datos de tu plantilla para emitir órdenes.
+          </AvisoEnLinea>
         )}
 
         {cabecera && (
@@ -735,7 +770,7 @@ const OrdenesServicioPage = () => {
             className="label"
             htmlFor="fechaOrdenes"
           >
-            <span className="label-text text-xs font-semibold uppercase tracking-[0.12em]">
+            <span className="text-app-label text-xs uppercase tracking-[0.12em]">
               Fecha del cuadro
             </span>
           </label>
@@ -750,12 +785,10 @@ const OrdenesServicioPage = () => {
       </header>
 
       {sinJornada && (
-        <div className="alert alert-info">
-          <span>
-            No hay una jornada abierta para el {fecha}. El administrador debe
-            abrir el cuadro del día.
-          </span>
-        </div>
+        <AvisoEnLinea variante="info">
+          No hay una jornada abierta para el {fecha}. El administrador debe
+          abrir el cuadro del día.
+        </AvisoEnLinea>
       )}
 
       {/*
@@ -763,96 +796,98 @@ const OrdenesServicioPage = () => {
         no esté cerrado se explica, y los botones quedan deshabilitados con el motivo.
       */}
       {matriz && !cuadroCerrado && (
-        <div className="alert alert-warning">
-          <span>
-            El cuadro del {fecha} todavía está {estado?.toLowerCase()}. Las
-            órdenes se emiten una vez cerrado, desde la Matriz Consolidada.
-          </span>
-        </div>
+        <AvisoEnLinea variante="advertencia">
+          El cuadro del {fecha} todavía está {estado?.toLowerCase()}. Las
+          órdenes se emiten una vez cerrado, desde la Matriz Consolidada.
+        </AvisoEnLinea>
       )}
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudo cargar la jornada"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
-      {creandoAdicional && (
-        <>
-          {/*
-            SE DICE QUE ESTO ES UNA EXCEPCIÓN, y se dice antes de capturar.
+      {/*
+        EL ADICIONAL, EN EL CAJÓN ÚNICO (2026-10-08). Hasta entonces se insertaba aquí, encima de la
+        tabla, y la empujaba hacia abajo. Ahora es `DrawerOperativo` en modo «adicional», el mismo que Mis
+        operativos: la tabla no se mueve y el cajón se cierra con ✕, Cancelar, Escape o el velo.
 
-            Escribir sobre un cuadro que ya se cerró y se distribuyó no puede parecer una
-            operación rutinaria. RN-58 lo admite porque quien lo hace es la Dirección; que
-            la pantalla lo calle enseñaría que el cierre no significa nada.
-          */}
-          {cuadroCerrado && (
-            <div
-              className="alert alert-warning"
-              role="status"
-            >
-              <span className="text-sm">
+        SE DICE QUE ESTO ES UNA EXCEPCIÓN, y se dice antes de capturar: escribir sobre un cuadro
+        que ya se cerró y se distribuyó no puede parecer rutinario. RN-58 lo admite porque quien lo
+        hace es la Dirección; el aviso va al principio del cuerpo del cajón.
+      */}
+      {creandoAdicional && (
+        <DrawerOperativo
+          modo="adicional"
+          key={creandoAdicional.id}
+          errorServidor={errorAdicional}
+          onCerrar={cerrarAdicional}
+          avisoContexto={
+            cuadroCerrado ? (
+              <AvisoEnLinea variante="advertencia">
                 El cuadro del {fecha} está <strong>cerrado</strong> y su matriz ya
                 se consolidó. Un adicional dispuesto ahora se suma a la jornada
                 bajo su autorización (RN-58), queda registrado en la auditoría, y
                 la matriz que ya se distribuyó dejará de coincidir: vuelva a
                 descargarla al terminar.
-              </span>
-            </div>
-          )}
-
-          <PanelAdicionalOperativo
-            origen={creandoAdicional}
-            catalogos={catalogos.catalogos}
-            puntos={catalogos.puntos}
-            cargandoPuntos={catalogos.cargandoPuntos}
-            onZonalesElegidas={(zonalesIds) => {
-              void catalogos.cargarPuntosDeZonales(zonalesIds);
-            }}
-            candidatos={candidatos}
-            cargandoPersonal={cargandoPersonal}
-            personalAgregado={personalAdicional}
-            // Sin llamada al servidor: el adicional todavía no existe. Entran con él.
-            onAgregarPersona={(persona) =>
-              setPersonalAdicional((actuales) =>
-                actuales.some(
-                  (agregada) => agregada.funcionarioId === persona.id,
-                )
-                  ? actuales
-                  : [
-                      ...actuales,
-                      {
-                        funcionarioId: persona.id,
-                        nombre: nombreDePersona(persona),
-                        // RN-34: el teléfono lo resuelve el servidor al asignar.
-                        telefono: null,
-                        // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la
-                        // primera persona; la primera queda vacía y hay que llenarla.
-                        ...turnoDePrimera(actuales),
-                      },
-                    ],
+              </AvisoEnLinea>
+            ) : null
+          }
+          origen={creandoAdicional}
+          catalogos={catalogos.catalogos}
+          puntos={catalogos.puntos}
+          cargandoPuntos={catalogos.cargandoPuntos}
+          onZonalesElegidas={(zonalesIds) => {
+            void catalogos.cargarPuntosDeZonales(zonalesIds);
+          }}
+          candidatos={candidatos}
+          cargandoPersonal={cargandoPersonal}
+          personalAgregado={personalAdicional}
+          // Sin llamada al servidor: el adicional todavía no existe. Entran con él.
+          onAgregarPersona={(persona) =>
+            setPersonalAdicional((actuales) =>
+              actuales.some(
+                (agregada) => agregada.funcionarioId === persona.id,
               )
-            }
-            onRetirarPersona={(funcionarioId) =>
-              setPersonalAdicional((actuales) =>
-                actuales.filter(
-                  (agregada) => agregada.funcionarioId !== funcionarioId,
-                ),
-              )
-            }
-            onCambiarHorarioPersona={cambiarHorarioAdicional}
-            avisoPersonal={avisoPersonal}
-            // La Dirección no la bloquea el cuadro cerrado: es su autorización.
-            bloqueado={false}
-            ventanaCerrada={false}
-            guardando={emitiendo}
-            onGuardar={guardarAdicional}
-            onCancelar={cerrarAdicional}
-          />
-        </>
+                ? actuales
+                : [
+                    ...actuales,
+                    {
+                      funcionarioId: persona.id,
+                      nombre: nombreDePersona(persona),
+                      // RN-34: el teléfono lo resuelve el servidor al asignar.
+                      telefono: null,
+                      // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la
+                      // primera persona; la primera queda vacía y hay que llenarla.
+                      ...turnoDePrimera(actuales),
+                    },
+                  ],
+            )
+          }
+          onRetirarPersona={(funcionarioId) =>
+            setPersonalAdicional((actuales) =>
+              actuales.filter(
+                (agregada) => agregada.funcionarioId !== funcionarioId,
+              ),
+            )
+          }
+          onCambiarHorarioPersona={cambiarHorarioAdicional}
+          avisoPersonal={avisoPersonal}
+          // La Dirección no la bloquea el cuadro cerrado: es su autorización.
+          bloqueado={false}
+          ventanaCerrada={false}
+          guardando={emitiendo}
+          onGuardar={guardarAdicional}
+        />
       )}
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
@@ -862,7 +897,7 @@ const OrdenesServicioPage = () => {
               Operativos de la jornada
             </h2>
             {operativos.length > 0 && (
-              <span className="text-xs text-base-content/80">
+              <span className="text-xs text-app-muted">
                 {conOrdenes} de {operativos.length} con todas sus órdenes
                 vigentes
               </span>
@@ -889,25 +924,16 @@ const OrdenesServicioPage = () => {
             cuando no queda ninguno (N=0). Emite de uno en uno (no hay endpoint masivo).
           */}
           {pendientes.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={emitiendo}
+            <Boton
+              variante="primario"
+              tamano="md"
+              enBarraOscura
+              cargando={emitiendo}
               title={`Emitir las órdenes de los ${pendientes.length} operativos pendientes.`}
               onClick={() => setConfirmandoTodas(true)}
             >
-              {emitiendo ? (
-                <>
-                  <span
-                    className="loading loading-spinner loading-sm"
-                    aria-hidden="true"
-                  />
-                  Emitiendo…
-                </>
-              ) : (
-                `Emitir pendientes (${pendientes.length})`
-              )}
-            </button>
+              {emitiendo ? "Emitiendo…" : `Emitir pendientes (${pendientes.length})`}
+            </Boton>
           )}
         </div>
 
@@ -915,7 +941,7 @@ const OrdenesServicioPage = () => {
           <div className="overflow-x-auto">
             <table className="table table-sm table-zebra">
               <thead>
-                <tr className="text-xs uppercase tracking-wider text-base-content/70">
+                <tr className="text-xs uppercase tracking-wider text-app-label">
                   <th scope="col">Identificador</th>
                   <th scope="col">Formulario</th>
                   <th scope="col">Horario</th>
@@ -929,7 +955,7 @@ const OrdenesServicioPage = () => {
                   <tr>
                     <td
                       colSpan={6}
-                      className="px-3 py-6 text-center text-sm text-base-content/70"
+                      className="px-3 py-6 text-center text-sm text-app-muted"
                     >
                       {cargando
                         ? "Cargando la jornada…"
@@ -950,14 +976,20 @@ const OrdenesServicioPage = () => {
                       <tr
                         key={operativo.id}
                         // La fila abierta se resalta: fondo azul claro + borde izquierdo (regla 6).
+                        // El adicional recién registrado se resalta unos segundos (`bg-primary/10`).
+                        data-resaltado={
+                          operativo.id === resaltadoId || undefined
+                        }
                         className={
                           abierta
                             ? "border-l-4 border-primary bg-primary/5"
-                            : "hover:bg-primary/5"
+                            : operativo.id === resaltadoId
+                              ? "bg-primary/10 transition-colors"
+                              : "transition-colors hover:bg-primary/5"
                         }
                       >
                         <td className="px-3 py-1 align-top">
-                          <div className="flex flex-wrap items-center gap-1">
+                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <span className="font-medium">
                               {operativo.identificador}
                             </span>
@@ -968,25 +1000,6 @@ const OrdenesServicioPage = () => {
                               </span>
                             )}
                           </div>
-                          {/*
-                            LA URGENCIA · 2026-08-20. Disponer un adicional sobre este operativo:
-                            va junto al identificador (no en la columna Acción, que es solo para
-                            revisar/emitir/ver). Se ofrece aunque el cuadro esté cerrado (RN-58, es
-                            la Dirección); NO sobre un adicional ni en formularios que no los admiten
-                            (RN-61, dato del servidor).
-                          */}
-                          {!operativo.esAdicional &&
-                            operativo.admiteAdicionales && (
-                              <button
-                                type="button"
-                                className="badge badge-outline badge-xs mt-1 whitespace-nowrap"
-                                onClick={() => void abrirAdicional(operativo.id)}
-                                disabled={emitiendo || abriendoAdicional}
-                                title="Disponer un operativo adicional por urgencia sobre éste."
-                              >
-                                Adicional
-                              </button>
-                            )}
                         </td>
                         <td className="px-3 py-1 align-top">
                           {operativo.formulario}
@@ -1012,28 +1025,46 @@ const OrdenesServicioPage = () => {
                             órdenes» (ya emitida) o «Revisar y emitir» (pendiente, deshabilitado con
                             su motivo en el `title`, regla 6).
                           */}
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm whitespace-nowrap"
+                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                          <Boton
+                            variante={abierta || emitido ? "secundario" : "primario"}
+                            tamano="sm"
                             onClick={() =>
                               abierta ? setSeleccionado(null) : elegir(operativo)
                             }
-                            disabled={
-                              emitiendo ||
-                              (!abierta && !emitido && motivo !== null)
-                            }
-                            title={
-                              !abierta && !emitido
-                                ? (motivo ?? undefined)
-                                : undefined
-                            }
+                            deshabilitado={emitiendo}
+                            motivoDeshabilitado={!abierta && !emitido ? motivo : null}
                           >
                             {abierta
                               ? "Mostrando"
                               : emitido
                                 ? "Ver órdenes"
                                 : "Revisar y emitir"}
-                          </button>
+                          </Boton>
+                          {/*
+                            «+ ADICIONAL» · LA URGENCIA (2026-08-20; a la columna Acción el 2026-10-08,
+                            junto a «Ver órdenes», como en Mis operativos). Abre el cajón del
+                            adicional. Se ofrece aunque el cuadro esté cerrado (RN-58, es la
+                            Dirección); NO sobre un adicional ni en formularios que no los admiten
+                            (RN-61, dato del servidor). NO se deshabilita mientras carga el
+                            operativo: un botón deshabilitado pierde el foco, y al cerrar el cajón
+                            el foco tiene que volver aquí; el doble clic lo frena `abrirAdicional`.
+                          */}
+                          {!operativo.esAdicional &&
+                            operativo.admiteAdicionales && (
+                              <Boton
+                                variante="acento"
+                                tamano="sm"
+                                icono="agregar"
+                                onClick={() => void abrirAdicional(operativo.id)}
+                                deshabilitado={emitiendo}
+                                aria-busy={abriendoAdicional || undefined}
+                                title={`Registrar un operativo adicional a partir de ${operativo.identificador}`}
+                              >
+                                Adicional
+                              </Boton>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1073,29 +1104,21 @@ const OrdenesServicioPage = () => {
                       Orden no generada
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-base-content/70">
+                  <p className="mt-1 text-xs text-app-muted">
                     {operativo.formulario}
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  disabled={reintentandoId !== null || emitiendo}
+                <Boton
+                  variante="secundario"
+                  tamano="sm"
+                  icono="actualizar"
+                  cargando={reintentandoId === operativo.id}
+                  deshabilitado={reintentandoId !== null || emitiendo}
                   onClick={() => void reintentar(operativo)}
                 >
-                  {reintentandoId === operativo.id ? (
-                    <>
-                      <span
-                        className="loading loading-spinner loading-sm"
-                        aria-hidden="true"
-                      />
-                      Reenviando…
-                    </>
-                  ) : (
-                    "Reintentar"
-                  )}
-                </button>
+                  {reintentandoId === operativo.id ? "Reenviando…" : "Reintentar"}
+                </Boton>
               </div>
             ))}
           </div>
@@ -1130,18 +1153,22 @@ const OrdenesServicioPage = () => {
               })()}
             </div>
             {/* El panel se cierra con la fila «Mostrando» o al abrir otra: ya no hay botón «Cerrar». */}
-            <button
-              type="button"
-              className="btn btn-sm app-modules-panel-action"
+            {/* Regla 6: apagado CON su motivo. Solo el Director que generó las órdenes las reemite. */}
+            <Boton
+              variante="primario"
+              tamano="md"
+              enBarraOscura
               onClick={() => setConfirmando(true)}
-              disabled={emitiendo || !cuadroCerrado || reemisionAjena !== null}
-              // Regla 6: apagado CON su motivo. Solo el Director que generó las órdenes las reemite.
-              title={reemisionAjena ?? undefined}
+              cargando={emitiendo}
+              motivoDeshabilitado={
+                reemisionAjena ??
+                (cuadroCerrado ? null : "Disponible cuando el cuadro esté cerrado.")
+              }
             >
               {emitidas.length > 0
                 ? "Reemitir órdenes"
                 : `Emitir órdenes (${seleccionado.personal.length})`}
-            </button>
+            </Boton>
           </div>
 
           <div className="app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6">
@@ -1157,11 +1184,10 @@ const OrdenesServicioPage = () => {
             ) : emitidas.length > 0 ? (
               <VistaPreviaOrden
                 ordenes={emitidas}
-                onRecargar={() => void cargarEmitidas(seleccionado.id)}
                 onEditarPlantilla={() => setPlantillaAbierta(true)}
               />
             ) : (
-              <p className="text-sm text-base-content/70">
+              <p className="text-sm text-app-muted">
                 Aún no se emiten las órdenes de este operativo. Se emitirá una
                 por cada una de las {seleccionado.personal.length} personas
                 asignadas, y cada hoja contendrá únicamente horario, funcionario,
@@ -1172,8 +1198,9 @@ const OrdenesServicioPage = () => {
         </div>
       )}
 
-      <ModalConfirmacion
+      <MensajeModal
         abierto={confirmando}
+        variante="advertencia"
         titulo={
           emitidas.length > 0
             ? "¿Reemitir las órdenes?"
@@ -1186,33 +1213,23 @@ const OrdenesServicioPage = () => {
               : `Se emitirá una orden por cada una de las ${seleccionado.personal.length} personas de ${seleccionado.identificador}.`
             : ""
         }
-        textoSi={emitidas.length > 0 ? "Sí, reemitir" : "Sí, emitir"}
-        textoNo="Cancelar"
-        procesando={emitiendo}
-        onConfirmar={() => void emitir()}
-        onCancelar={() => setConfirmando(false)}
+        textoPrincipal={emitidas.length > 0 ? "Sí, reemitir" : "Sí, emitir"}
+        tituloError="No se pudieron emitir las órdenes"
+        onPrincipal={emitir}
+        onSecundario={() => setConfirmando(false)}
       />
 
-      <ModalConfirmacion
+      <MensajeModal
         abierto={confirmandoTodas}
+        variante="advertencia"
         titulo="¿Emitir las órdenes pendientes?"
         mensaje={`Se emitirán las órdenes de ${pendientes.length} ${
           pendientes.length === 1 ? "operativo" : "operativos"
         } pendientes, una por cada funcionario asignado.`}
-        textoSi="Sí, emitir pendientes"
-        textoNo="Cancelar"
-        procesando={emitiendo}
-        onConfirmar={() => void emitirPendientes()}
-        onCancelar={() => setConfirmandoTodas(false)}
+        textoPrincipal="Sí, emitir pendientes"
+        onPrincipal={emitirPendientes}
+        onSecundario={() => setConfirmandoTodas(false)}
       />
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
-        />
-      )}
     </section>
   );
 };

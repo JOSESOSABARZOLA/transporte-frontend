@@ -338,6 +338,14 @@
   top: 0.02rem;
 }
 
+/* Divisor fino dentro de un grupo (2026-10-08, «Transporte · DAF» entre «Mantenimiento» y
+   «Flota…»). Sin texto: sustituye a los encabezados de sección. Mismo trazo que los bordes del menú. */
+.app-sidebar-sublist > li[role="separator"] {
+  height: 0;
+  margin: 0.3rem 0.5rem;
+  border-top: 1px solid var(--app-shell-sidebar-border-subtle);
+}
+
 .app-sidebar-subitem-active {
   background: var(--app-shell-sidebar-subitem-active-fill) !important;
   border-color: transparent !important;

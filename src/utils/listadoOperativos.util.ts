@@ -26,8 +26,21 @@
 import type { EstadoTransporte, Operativo } from "../interfaces/Operativo";
 import { comoHorario } from "./horario.util";
 import { normalizar } from "./texto.util";
+import { notasDe, textoDeNotas } from "./notasDeTabla.util.ts";
+import { DISTINTIVO_EXCLUSIVO, nombreTipoTransporte } from "./tipoTransporte.util.ts";
 
-/** Columnas que la tabla sabe pintar. El orden lo decide quien la usa. */
+/**
+ * Columnas que la tabla sabe pintar. El orden lo decide quien la usa.
+ *
+ * LA TABLA ES UNA SOLA EN P-01 Y P-02 (2026-10-13), y estas son sus columnas. Se retiraron:
+ *  - «Fecha»: con un rango de varios días, P-02 pinta una fila de cabecera por día;
+ *  - «Tipo» (con fondo de alerta y negrita): la sustituye «Tipo de control», la de P-02;
+ *  - «Vehículo» («No se activa»): la placa va con el conductor, y que el formulario no pida
+ *    vehículo lo dice el `title` de «Transporte»;
+ *
+ * «Observaciones» sigue en P-01 (2026-10-13): se probó como icono junto al identificador y no
+ * se leía; volvió a ser columna, la última.
+ */
 export type ColumnaOperativo =
   | "identificador"
   | "formulario"
@@ -36,9 +49,10 @@ export type ColumnaOperativo =
   | "telefono"
   | "zonal"
   | "punto"
-  | "tipo"
+  // Tipo de control (2026-10-13): hasta dos tipos, «+N» y el texto libre aparte.
+  | "tipoControl"
+  | "transporte"
   | "conductor"
-  | "vehiculo"
   | "estado"
   | "observaciones";
 
@@ -51,25 +65,18 @@ export const TITULO_COLUMNA: Record<ColumnaOperativo, string> = {
   telefono: "Teléfono",
   zonal: "Zonal",
   punto: "Punto",
-  tipo: "Tipo",
+  tipoControl: "Tipo de control",
+  transporte: "Transporte",
   conductor: "Conductor",
-  vehiculo: "Vehículo",
   estado: "Estado",
   observaciones: "Observaciones",
 };
 
 /**
- * Columnas de P-01: el resultado inmediato de lo que se acaba de registrar.
- *
- * No lleva estado de transporte porque **allí siempre sería el mismo**: RN-40 dice que
- * conductor y placa nacen nulos, así que una columna recién registrada solo puede decir
- * «Pendiente». Una columna constante ocupa ancho y no informa.
- *
- * SÍ LLEVA VEHÍCULO DESDE EL 2026-08-24, y es la pareja de conductor: en los formularios
- * que operan por propios medios las dos dicen algo —«Propios medios» y «No se activa»—, y
- * en los demás las dos llevan la alerta de que la DAF todavía no ha asignado. Nunca
- * muestran un nombre ni una placa: `Operativo` no los trae, porque en esta pantalla el
- * operativo acaba de nacer y la DAF ni lo ha visto.
+ * Columnas de P-01 · «Operativos de este formulario» (2026-10-13): el mismo orden y el mismo
+ * estilo que P-02, sin «Formulario» —la tabla ya es de uno— y con «Transporte», que es lo que
+ * quien registra acaba de elegir. Lleva «Estado» como P-02, aunque aquí casi siempre diga
+ * «Pendiente»: las dos tablas se leen igual.
  */
 export const COLUMNAS_SESION: ColumnaOperativo[] = [
   "identificador",
@@ -78,9 +85,14 @@ export const COLUMNAS_SESION: ColumnaOperativo[] = [
   "telefono",
   "zonal",
   "punto",
-  "tipo",
+  "tipoControl",
+  // Transporte requerido (2026-10-07): qué se pide a la DAF, para revisar de un vistazo qué
+  // operativos no piden vehículo.
+  "transporte",
   "conductor",
-  "vehiculo",
+  "estado",
+  // Las notas de coordinación (bitácora, 2026-09-09): una tarjeta por nota desde el 2026-10-19
+  // (`NotasObservacion`), con la de «Comparte con X».
   "observaciones",
 ];
 
@@ -90,10 +102,20 @@ export const COLUMNAS_LISTADO: ColumnaOperativo[] = [
   "formulario",
   "horario",
   "personal",
+  // Teléfono en su propia columna (2026-10-13): debajo del nombre no se distinguía. Va estrecho,
+  // a 12 px.
   "telefono",
+  // Zonal (2026-10-08): las que eligió el usuario en «Zonales», con su nombre tal cual y todas.
+  // Mismo sitio que en P-01, la Matriz y la Jornada: entre Teléfono y Punto.
+  "zonal",
   "punto",
+  // Tipo de control (2026-10-13): entre Punto y Conductor.
+  "tipoControl",
   "conductor",
   "estado",
+  // Observaciones como notas (2026-10-19, plan «acciones-icono-notas»): P-02 no la tenía; ahora la
+  // lleva igual que P-01, con la nota «Comparte con X» que abre el operativo compartido.
+  "observaciones",
 ];
 
 /**
@@ -110,8 +132,13 @@ export const COLUMNAS_FILTRABLES: ColumnaOperativo[] = [
   "horario",
   "personal",
   "telefono",
+  "zonal",
   "punto",
+  "tipoControl",
+  // P-01 (2026-10-13): filtrar por «Propios medios» o «Completo» es una pregunta real.
+  "transporte",
   "estado",
+  "observaciones",
 ];
 
 /**
@@ -130,6 +157,9 @@ export const COLUMNAS_FILTRABLES: ColumnaOperativo[] = [
  * palabra la misma.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+/** Lo que se lee cuando la persona no tiene teléfono en el maestro (RN-34). */
+export const SIN_TELEFONO = "Sin teléfono";
+
 export const filasDePersonal = (
   operativo: Operativo,
 ): { nombre: string; telefono: string; horario: string }[] => {
@@ -140,7 +170,7 @@ export const filasDePersonal = (
   return operativo.personal.map((persona) => ({
     nombre: persona.nombre,
     // RN-34: sale del maestro. Que falte es un caso real, y se dice con palabras.
-    telefono: persona.telefono ?? "Sin teléfono",
+    telefono: persona.telefono ?? SIN_TELEFONO,
     // RN-66: la ventana EFECTIVA de esta persona, que el servidor ya resuelve. Es lo que se
     // pinta por renglón cuando los turnos difieren, en vez de la envolvente del operativo.
     // Sin ventana propia se hereda la del operativo, igual que resuelve el servidor.
@@ -192,6 +222,45 @@ export const nombreEstadoTransporte: Record<EstadoTransporte, string> = {
 export const operaPorPropiosMedios = (operativo: Operativo): boolean =>
   operativo.formulario.politicaVehiculo === "NO_APLICA";
 
+/**
+ * Los tipos de control del operativo, en orden: los de la tabla de varios tipos si los hay y, si no,
+ * el único. El texto libre («Otro tipo (adicional)») NO va aquí: la celda lo pinta aparte.
+ */
+export const tiposDelOperativo = (operativo: Operativo): string[] => {
+  const varios = (operativo.tiposControl ?? []).map((tipo) => tipo.nombre);
+  if (varios.length > 0) return varios;
+  return operativo.tipoControl ? [operativo.tipoControl.nombre] : [];
+};
+
+/** «2026-10-14» → «14/10/2026». */
+export const fechaCorta = (fecha: string): string => {
+  const [anio, mes, dia] = fecha.split("-");
+  return `${dia}/${mes}/${anio}`;
+};
+
+const DIAS_DE_LA_SEMANA = [
+  "Domingo",
+  "Lunes",
+  "Martes",
+  "Miércoles",
+  "Jueves",
+  "Viernes",
+  "Sábado",
+] as const;
+
+/**
+ * La fila de cabecera de un día en P-02 con varios días (2026-10-13), que sustituye a la columna
+ * «Fecha»: «Martes 14/10/2026 · 3 operativos». El día de la semana se calcula sobre la fecha del
+ * cuadro en UTC, así no depende de la zona del navegador.
+ */
+export const cabeceraDeFecha = (fecha: string, cantidad: number): string => {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  const nombre = DIAS_DE_LA_SEMANA[new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay()];
+  return `${nombre} ${fechaCorta(fecha)} · ${cantidad} ${
+    cantidad === 1 ? "operativo" : "operativos"
+  }`;
+};
+
 /** Texto que muestra —y por el que se filtra— una columna. */
 export const valorDeColumna = (
   operativo: Operativo,
@@ -212,8 +281,9 @@ export const valorDeColumna = (
         ? `${operativo.identificador} Adicional de ${operativo.origen.identificador}`
         : operativo.identificador;
 
+    // Compacto en la celda («2 · PMO», 2026-10-19), pero se filtra por número, código O nombre.
     case "formulario":
-      return `${operativo.formulario.numero}. ${operativo.formulario.nombre}`;
+      return `${operativo.formulario.numero} · ${operativo.formulario.codigo} · ${operativo.formulario.nombre}`;
 
     /*
       SE FILTRA LO QUE SE VE (RN-66): cuando el horario baja por persona, el texto es el de
@@ -250,46 +320,54 @@ export const valorDeColumna = (
     case "punto":
       return operativo.puntoEncuentro?.nombre ?? operativo.puntoLibre ?? "";
 
-    case "tipo": {
-      // Form 8: varios tipos unidos por coma, más el adicional; en el resto, el único.
-      const tipos = (operativo.tiposControl ?? []).map((tipo) => tipo.nombre);
-      if (operativo.tipoLibre) {
-        tipos.push(operativo.tipoLibre);
-      }
-      return tipos.length > 0
-        ? tipos.join(", ")
-        : (operativo.tipoControl?.nombre ?? "");
-    }
+    // Se filtra por TODOS los tipos y por el texto libre, aunque la celda muestre dos y «+N».
+    case "tipoControl":
+      return [...tiposDelOperativo(operativo), operativo.tipoLibre ?? ""]
+        .filter(Boolean)
+        .join(", ");
+
+    case "transporte":
+      return `${nombreTipoTransporte(operativo.tipoTransporte)}${
+        operativo.esMacrooperativo ? ` · ${DISTINTIVO_EXCLUSIVO}` : ""
+      }`;
 
     /**
      * ═══════════════════════════════════════════════════════════════════════════════
-     * LAS DOS COLUMNAS DEL TRANSPORTE DICEN «NO LLEVA» CUANDO NO LLEVA. 2026-08-24.
+     * EL CONDUCTOR DICE «NO LLEVA» CUANDO NO LLEVA. 2026-08-24.
      *
      * RN-40: conductor y placa los completa la DAF, y mientras no lo haga la celda no
-     * tiene texto propio: lo que se ve es la alerta que pone `CeldaAlerta`.
+     * tiene texto propio: lo que se ve es «Sin conductor».
      *
      * **Salvo en los formularios que no habilitan vehículo** —1 FIJOS, 3 LIMPIA y 9 CBQ,
      * RN-41 y RN-42—. Ahí no hay alerta, y con razón: el servidor no emite ninguna sobre
-     * un operativo que nadie puede resolver. El resultado era un guion, que se lee como
-     * «todavía no asignado» cuando en realidad nunca va a asignarse.
-     *
-     * Las palabras son las del instrumento aprobado: el operativo se cubre **por propios
-     * medios** y la columna de vehículo **no se activa**.
+     * un operativo que nadie puede resolver. Las palabras son las del instrumento aprobado:
+     * el operativo se cubre **por propios medios**. La celda lo pinta en gris, o con «—»
+     * cuando la tabla ya tiene la columna «Transporte» (P-01), que lo dice ahí.
      * ═══════════════════════════════════════════════════════════════════════════════
      */
     case "conductor":
       return operaPorPropiosMedios(operativo) ? "Propios medios" : "";
 
-    case "vehiculo":
-      return operaPorPropiosMedios(operativo) ? "No se activa" : "";
-
     case "estado":
       return nombreEstadoTransporte[operativo.estadoTransporte];
 
+    // Bitácora (2026-09-09): cada nota es independiente. Desde el 2026-10-19 la celda las pinta
+    // como tarjetas (`NotasObservacion`) y el filtro busca en todas, incluido «Comparte con X».
     case "observaciones":
-      // Notas independientes (bitácora, 2026-09-09): se unen para mostrar y filtrar.
-      return operativo.observaciones.map((nota) => nota.texto).join(" · ");
+      return textoDeNotas(notasDe(operativo));
   }
+};
+
+/**
+ * El horario en sus dos mitades, para pintarlo en dos líneas (2026-10-13): «08H00 a» arriba y
+ * «15H00» abajo. Solo un rango simple: varios horarios unidos por coma, o un texto sin «a», dan
+ * `null` y se pintan tal cual. El filtro sigue usando el texto de una línea (`valorDeColumna`).
+ */
+export const partesDeHorario = (
+  horario: string,
+): { inicio: string; fin: string } | null => {
+  const partes = /^(\S+)\s+(a)\s+(\S+)$/i.exec(horario.trim());
+  return partes ? { inicio: `${partes[1]} ${partes[2]}`, fin: partes[3] } : null;
 };
 
 /** `true` si el operativo satisface **todos** los filtros activos. */
@@ -315,25 +393,33 @@ export const hayFiltrosActivos = (filtros: FiltrosListado): boolean =>
   Object.values(filtros).some((valor) => Boolean(valor && valor.trim()));
 
 /**
- * Texto de la confirmación de retiro, con los cuatro datos que pide el plan:
- * identificador, punto, horario y formulario.
- *
- * «¿Está seguro?» a secas obliga a cerrar el modal para comprobar qué fila se pulsó, y
- * quien tiene prisa no lo cierra: confirma. Ver FASE5 §4.6.
+ * La confirmación de «Eliminar», la misma en P-01 y P-02 (2026-10-13): el título nombra el
+ * operativo —«¿Está seguro?» a secas obliga a cerrar el modal para comprobar qué fila se pulsó,
+ * FASE5 §4.6— y el mensaje dice lo que pasa. La excepción de PV-10 (órdenes emitidas) se explica
+ * al terminar, porque hasta preguntarle al servidor no se sabe si las hay.
  */
-export const descripcionDelRetiro = (operativo: Operativo): string => {
-  const punto =
-    operativo.puntoEncuentro?.nombre ?? operativo.puntoLibre ?? "sin punto";
+export const tituloDelRetiro = (operativo: Operativo): string =>
+  `¿Eliminar ${operativo.identificador}?`;
+export const MENSAJE_DEL_RETIRO =
+  "Se quitará el operativo y su personal quedará libre. Esta acción no se puede deshacer.";
 
-  return (
-    `Se eliminará ${operativo.identificador}, ${punto}, ${operativo.horario}, ` +
-    `del formulario ${operativo.formulario.numero}. ${operativo.formulario.nombre}. ` +
-    // PV-10: el borrado es real y no se deshace. Decirlo antes es la única oportunidad
-    // de que quien confirma sepa lo que confirma; la excepción se explica al terminar,
-    // porque hasta preguntarle al servidor no se sabe si hay órdenes emitidas.
-    `Se borra de la base y no se puede deshacer. Si el operativo ya tiene órdenes ` +
-    `emitidas, se conservará desactivado y se le indicará.`
-  );
+/** Una casilla del paginador numerado: una página (contada desde 1) o la elipsis. */
+export type CasillaPagina = number | "…";
+
+/**
+ * Las páginas que muestra el paginador numerado (2026-10-15, «Flota y garajes»), contadas desde 1.
+ * Hasta siete páginas, todas; con más, siempre siete casillas —la primera, la última, la actual
+ * con sus vecinas y la elipsis donde hay hueco—: `1 … 4 5 6 … 12`. Así los botones no saltan de
+ * sitio al avanzar.
+ */
+export const rangoPaginas = (actual: number, total: number): CasillaPagina[] => {
+  if (total <= 7) return Array.from({ length: Math.max(1, total) }, (_, i) => i + 1);
+  const pagina = Math.min(Math.max(1, actual), total);
+  if (pagina <= 4) return [1, 2, 3, 4, 5, "…", total];
+  if (pagina >= total - 3) {
+    return [1, "…", total - 4, total - 3, total - 2, total - 1, total];
+  }
+  return [1, "…", pagina - 1, pagina, pagina + 1, "…", total];
 };
 
 /**
@@ -360,3 +446,9 @@ export const paginar = <T,>(
     totalPaginas,
   };
 };
+
+/**
+ * Cuánto se resalta la fila de un operativo recién registrado (2026-10-08): el adicional que se
+ * acaba de crear desde el cajón se marca en la tabla para encontrarlo, y luego vuelve a su banda.
+ */
+export const MS_RESALTADO = 3000;

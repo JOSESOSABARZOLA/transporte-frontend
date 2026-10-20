@@ -3,48 +3,19 @@
  * Módulo: Cuadro de Colores
  * Feature: Asignación de transporte
  * Archivo: Transporte.ts
- * Responsabilidad: Declarar la asignación logística de la DAF.
+ * Responsabilidad: Tipos de la flota, el mantenimiento y los propios medios de la DAF.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-06
  *
- * ═══════════════════════════════════════════════════════════════════════════════
- * `ActualizarTransporte` TIENE EXACTAMENTE DOS PROPIEDADES.
- *
- * Es el reflejo del DTO más sensible del backend, y la regla 3 de su CLAUDE.md: la DAF
- * escribe **dos campos** de los nueve formularios. El servidor rechaza cualquier otro con
- * `400 CAMPOS_NO_PERMITIDOS`, así que ampliarlo aquí solo produciría errores.
- *
- * **No se le agrega ninguna propiedad bajo ninguna circunstancia.**
- * ═══════════════════════════════════════════════════════════════════════════════
+ * La asignación clásica de dos campos (`ActualizarTransporte`, `PATCH /transporte/operativos/:id`) y
+ * la bandeja heredada se retiraron el 2026-10-08 con «Planificar el día»: la DAF asigna por TRAMOS
+ * (`Planificacion.ts`). La regla 3 del servidor —dos campos, ni uno más— sigue en su DTO; aquí ya
+ * no hay pantalla que lo use.
  */
 
 import type { EstadoTransporte } from "./Operativo";
-import type { NivelFatiga } from "./Personal";
 
-/** Cuerpo de `PATCH /transporte/operativos/:id`. Dos propiedades. */
-export interface ActualizarTransporte {
-  conductorId: number;
-  vehiculoId: number;
-}
-
-/** Fila de `GET /transporte/pendientes/:fecha`. */
-export interface OperativoPendiente {
-  id: number;
-  identificador: string;
-  formularioNombre: string;
-  formularioCodigo: string;
-  colorFondo: string;
-  horario: string;
-  esNocturno: boolean;
-  /** RN-43. Si es nocturno y lleva condicionante, el conductor es obligatorio. */
-  requiereConductor: boolean;
-  personasAsignadas: number;
-  puntoEncuentro: string;
-  zonales: string[];
-  estadoTransporte: EstadoTransporte;
-}
-
-/** Respuesta de la asignación. */
+/** Respuesta de `PATCH /transporte/operativos/:id/propios-medios`. */
 export interface ResultadoTransporte {
   id: number;
   identificador: string;
@@ -53,25 +24,6 @@ export interface ResultadoTransporte {
   vehiculo: { id: number; placa: string } | null;
   asignadoEn: string | null;
   alertaActiva: boolean;
-}
-
-/**
- * Conductor ofrecido a la DAF. RN-45: la lista llega **ya filtrada** de ausencias.
- *
- * `vehiculoHabitual` es de donde la pantalla propone la placa al elegir conductor.
- */
-export interface ConductorDisponible {
-  id: number;
-  nombreCompleto: string;
-  licenciaTipo: string | null;
-  vehiculoHabitual: { id: number; placa: string } | null;
-  /**
-   * Semáforo de carga del conductor (FRMS / ISO 39001+45001, 2026-09-24). **Advisory**: da
-   * visibilidad de cuánto lleva ese día/período para repartir de forma pareja; NO lo saca del
-   * desplegable ni bloquea (la fatiga que impide conducir la comprueba el servidor al asignar).
-   * Opcional: solo llega si el servidor lo calculó.
-   */
-  nivelCarga?: NivelFatiga;
 }
 
 /**
@@ -115,7 +67,14 @@ export interface MantenimientoVehiculo {
   /** `HH:MM`. Es el `08H00` de «CITA AMBACAR 08H00». */
   hora: string | null;
   motivo: string | null;
+  /** Estado de la cita de taller (Fase 5, 2026-10-06). Las paradas antiguas llegan PROGRAMADO. */
+  estado?: EstadoMantenimiento;
+  /** Zonal del taller: destino de la TAREA «Llevar a taller». */
+  zonalTallerId?: number | null;
 }
+
+/** PROGRAMADO → EN_TALLER → LISTO (LISTO es final; EN_TALLER puede volver a PROGRAMADO). */
+export type EstadoMantenimiento = "PROGRAMADO" | "EN_TALLER" | "LISTO";
 
 /** Cuerpo de `POST /transporte/vehiculos/:id/mantenimiento`. */
 export interface CrearMantenimiento {
@@ -124,6 +83,8 @@ export interface CrearMantenimiento {
   taller?: string;
   hora?: string;
   motivo?: string;
+  /** Con `hora`, la cita genera la TAREA «Llevar a taller» hacia esta zonal (Fase 5). */
+  zonalTallerId?: number | null;
 }
 
 export interface Conductor {
@@ -132,15 +93,45 @@ export interface Conductor {
   nombreCompleto: string;
   telefono: string | null;
   licenciaTipo: string | null;
-  vehiculoHabitual: { id: number; placa: string } | null;
+  /**
+   * `descripcion` y `activo` llegan desde el 2026-10-14 (Flota y garajes): la tabla pone la
+   * descripción bajo la placa, y un habitual dado de baja cuenta como «Sin vehículo».
+   */
+  vehiculoHabitual: {
+    id: number;
+    placa: string;
+    descripcion?: string | null;
+    activo?: boolean;
+  } | null;
   activo: boolean;
+  /**
+   * Lo que le falta a la ficha (2026-10-14), calculado por el servidor y en este orden. Vacío =
+   * completo. Alimenta el indicador «Conductores con datos incompletos» y sus distintivos.
+   */
+  faltantes?: FaltanteConductor[];
   /**
    * Los tres del 2026-08-31. `null` significa **no consta**, y cada regla lo respeta: sin
    * contrato registrado, la que impide conducir de noche NO se aplica a ese conductor.
    */
   sector: "NORTE" | "SUR" | "CENTRO" | "VALLE" | null;
   parqueaderoAutorizado: boolean;
-  tipoContrato: "NOMBRAMIENTO" | "CONTRATO" | null;
+  /**
+   * El enumerado del servidor es NOMBRAMIENTO | OCASIONAL («contrato» en el habla de la DAF).
+   * Hasta el 2026-10-06 la pantalla enviaba «CONTRATO», que el servidor rechazaba.
+   */
+  tipoContrato: "NOMBRAMIENTO" | "OCASIONAL" | null;
+  /**
+   * Acta de parqueadero (Art. 8, 2026-10-06). Sin acta VIGENTE no se declara DOMICILIO como
+   * guarda del vehículo. Fechas AAAA-MM-DD (regla 12). Opcionales en la respuesta (contratos viejos).
+   */
+  actaParqueaderoNumero?: string | null;
+  actaParqueaderoDesde?: string | null;
+  actaParqueaderoHasta?: string | null;
+  /**
+   * Patrón de rotación (2026-10-06), p. ej. «DDDDDLL». Lo sigue la propuesta del mes. NO cuenta
+   * para «Incompleto»: sin él, el conductor se planifica igual.
+   */
+  patronRotacion?: string | null;
 }
 
 /** Zonal donde puede quedar un vehiculo. Catalogo del administrador. RN-DAF-03. */
@@ -148,61 +139,45 @@ export interface UbicacionFlota {
   id: number;
   nombre: string;
   activo: boolean;
+  /** Garaje autorizado (Art. 8, 2026-10-06): Matriz, Eloy Alfaro, Calderón, Quitumbe, Los Chillos. */
+  garajeAutorizado?: boolean;
+  /** Zonal donde queda el garaje (para calcular el traslado al primer punto). */
+  zonalId?: number | null;
+  /**
+   * El zonal asociado, con su nombre (2026-10-06). `null` = sin zonal: el garaje «Matriz» no
+   * se asocia a ninguno por decisión del negocio, y sus traslados usan la regla «otro sector».
+   */
+  zonal?: { id: number; nombre: string } | null;
+  /** `activo && garajeAutorizado` (2026-10-14): lo único que la pantalla llama «Vigente». */
+  vigente?: boolean;
+  /** Última vez que cada vehículo quedó aquí, de la más reciente a la más antigua. */
+  usos?: UsoDeGaraje[];
 }
 
-/**
- * Donde queda un vehiculo al terminar la jornada. RN-DAF-03.
- *
- * ES DEL VEHICULO Y DEL DIA, no del operativo: en la hoja de la DAF la coordinacion se
- * escribe una vez por turno, y un conductor encadena varios operativos dentro de el.
- */
-export interface DestinoVehiculo {
+/** Lo que el servidor señala como faltante en la ficha de un conductor (2026-10-14). */
+export type FaltanteConductor =
+  | "VEHICULO_HABITUAL"
+  | "TIPO_CONTRATO"
+  | "PATRON_ROTACION";
+
+/** Un vehículo que quedó en un garaje, con la última fecha (AAAA-MM-DD). */
+export interface UsoDeGaraje {
   vehiculoId: number;
   placa: string;
-  fecha: string;
-  ubicacion: { id: number; nombre: string } | null;
-  /** Se lo lleva el conductor a casa. Excluyente con `ubicacion`. */
-  domicilio: boolean;
-  observacion: string | null;
-}
-
-/** Cuerpo de `PUT /transporte/vehiculos/:id/destino/:fecha`. */
-export interface DeclararDestino {
-  ubicacionId?: number | null;
-  domicilio?: boolean;
-  observacion?: string;
-}
-
-/** Un operativo dentro de la jornada de un conductor. P-14. */
-export interface TramoDeJornada {
-  identificador: string;
-  horario: string;
-  horaInicio: string;
-  horaFin: string;
-  esNocturno: boolean;
-  placa: string | null;
-  punto: string;
+  ultimaFecha: string;
 }
 
 /**
- * La jornada de un conductor ese dia. P-14.
- *
- * ES EL HALLAZGO CENTRAL DEL LEVANTAMIENTO: el sistema modelaba un operativo con un
- * conductor, y el 38 por ciento de las asignaciones reales encadenan mas de uno.
- *
- * `disponible` en falso NO significa ocultar: el tablero muestra a los ausentes marcados,
- * porque saber que cinco conductores estan de vacaciones es lo que explica por que no
- * alcanza la flota.
+ * El estado de los documentos de un vehículo (2026-10-14): el MÁS CRÍTICO de matrícula y SOAT.
+ * Lo calcula el servidor con `DAF_DIAS_AVISO_VENCIMIENTO`; `dias` es negativo si venció.
+ * INCOMPLETO (2026-10-15): falta exactamente una fecha y `documento` dice cuál; si la otra está en
+ * alerta, gana la alerta (VENCIDO > POR_VENCER > INCOMPLETO > AL_DIA).
  */
-export interface JornadaDeConductor {
-  conductorId: number;
-  nombreCompleto: string;
-  sector: "NORTE" | "SUR" | "CENTRO" | "VALLE" | null;
-  parqueaderoAutorizado: boolean;
-  tipoContrato: "NOMBRAMIENTO" | "CONTRATO" | null;
-  tramos: TramoDeJornada[];
-  horasAcumuladas: number;
-  disponible: boolean;
+export interface EstadoDocumentos {
+  estado: "VENCIDO" | "POR_VENCER" | "INCOMPLETO" | "AL_DIA" | "SIN_FECHAS";
+  documento: "MATRICULA" | "SOAT" | null;
+  vence: string | null;
+  dias: number | null;
 }
 
 export interface Vehiculo {
@@ -210,37 +185,39 @@ export interface Vehiculo {
   placa: string;
   descripcion: string | null;
   activo: boolean;
+  /** Ficha del vehículo (2026-10-06). Opcionales: contratos viejos no los traen. */
+  tipo?: string | null;
+  /** Plazas de pasajeros: decide si cabe el personal de un operativo. */
+  asientos?: number | null;
+  kilometraje?: number | null;
+  /** AAAA-MM-DD (regla 12). */
+  matriculaVencimiento?: string | null;
+  soatVencimiento?: string | null;
+  /**
+   * Avisos de vencimiento que CALCULA EL SERVIDOR (versión consolidada, 2026-10-06), con el umbral
+   * `DAF_DIAS_AVISO_VENCIMIENTO`. El navegador ya no cuenta días contra un 30 fijo (regla 2).
+   */
+  alertasVencimiento?: AlertaVencimiento[];
+  /** El más crítico de los dos documentos (2026-10-14). Lo pinta la columna «Documentos». */
+  documentos?: EstadoDocumentos;
 }
 
-/** Comparación de un recurso contra lo declarado. RN-46. */
-export interface HolguraFlota {
-  declarados: number;
-  requeridos: number;
-  excedente: number;
-  suficiente: boolean;
+/** Un documento del vehículo vencido o por vencer. `vence` es AAAA-MM-DD (regla 12). */
+export interface AlertaVencimiento {
+  documento: "SOAT" | "MATRICULA";
+  vence: string;
+  dias: number;
+  estado: "VENCIDO" | "POR_VENCER";
 }
 
-/** Respuesta de `GET /transporte/capacidad/:fecha`. */
-export interface CapacidadFlota {
-  fecha: string;
-  /** `null` mientras la DAF no declare: no es lo mismo que declarar cero hábiles. */
-  declarada: {
-    vehiculosHabiles: number;
-    conductoresHabiles: number;
-    observacion: string | null;
-    declaradoPor: number;
-    declaradoEn: string;
-  } | null;
-  demanda: { vehiculos: number; conductores: number };
-  vehiculos: HolguraFlota | null;
-  conductores: HolguraFlota | null;
-  hayAdvertencia: boolean;
-  /** VAL-24. Se muestra tal cual y **no impide nada**. */
-  advertencia: string | null;
+/** Un vehículo en la vista semanal de mantenimiento (2026-10-06). */
+export interface SemanaMantenimiento {
+  vehiculoId: number;
+  placa: string;
+  dias: {
+    fecha: string;
+    estado: "PROGRAMADO" | "EN_TALLER" | "LISTO" | null;
+    motivo?: string;
+  }[];
 }
 
-export interface DeclararCapacidad {
-  vehiculosHabiles: number;
-  conductoresHabiles: number;
-  observacion?: string;
-}

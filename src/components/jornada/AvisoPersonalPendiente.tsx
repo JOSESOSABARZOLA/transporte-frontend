@@ -45,7 +45,9 @@
  */
 
 import { useEffect, useState, type FC } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+
+import BotonEnlace from "../common/BotonEnlace.tsx";
 
 import type { AreaPersonal } from "../../interfaces/Formulario.ts";
 import { JornadaService } from "../../services/jornada.service.ts";
@@ -53,6 +55,7 @@ import { NOMBRE_AREA } from "../../utils/personal.util.ts";
 import { fechaDeJornadaPorDefecto } from "../../utils/jornada.util.ts";
 import { rolUser } from "../../config/env.ts";
 import { useUser } from "../../hooks/useUser.ts";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -167,23 +170,15 @@ const AvisoPersonalPendiente: FC = () => {
      * distinga el amarillo lee exactamente lo mismo. Y termina en un enlace, porque un
      * aviso que no se puede resolver desde donde se lee obliga a buscar el camino.
      */
-    <div
-      className="alert alert-warning mb-4"
-      role="status"
-    >
-      <span>
+    <AvisoEnLinea variante="advertencia" className="mb-4">
         {pendiente.operativos}{" "}
         {pendiente.operativos === 1 ? "operativo espera" : "operativos esperan"}{" "}
         personal que a su departamento le toca asignar:{" "}
         {pendiente.areas.map((area) => NOMBRE_AREA[area]).join(", ")}.{" "}
-        <Link
-          to={RUTA_DESTINO}
-          className="btn btn-ghost btn-xs"
-        >
+        <BotonEnlace to={RUTA_DESTINO} variante="enlace" tamano="sm">
           Ir a Mis operativos
-        </Link>
-      </span>
-    </div>
+        </BotonEnlace>
+      </AvisoEnLinea>
   );
 };
 

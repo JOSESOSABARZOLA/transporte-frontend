@@ -1,0 +1,66 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`FormOperativo · misma salida en el Registro y en el cajón > el alta y la edición tienen los mismos campos en el mismo orden > alta 1`] = `
+[
+  {
+    "campos": [],
+    "titulo": "Personal y horario*",
+  },
+  {
+    "campos": [
+      "Zonales*",
+      "Punto de encuentro*",
+    ],
+    "titulo": "Lugar",
+  },
+  {
+    "campos": [
+      "Instituciones*",
+      "Tipo de control*",
+    ],
+    "titulo": "Control",
+  },
+  {
+    "campos": [
+      "Requiere vehículo exclusivo (macrooperativo)No comparte vehículo con otros operativos aunque coincidan en hora y zona.",
+    ],
+    "titulo": "Transporte",
+  },
+  {
+    "campos": [
+      "Observaciones",
+    ],
+    "titulo": "Observaciones",
+  },
+]
+`;
+
+exports[`FormOperativo · misma salida en el Registro y en el cajón > el alta y la edición tienen los mismos campos en el mismo orden > edicion 1`] = `
+[
+  {
+    "campos": [],
+    "titulo": "Personal y horario*",
+  },
+  {
+    "campos": [
+      "Zonales*",
+      "Punto de encuentro*",
+    ],
+    "titulo": "Lugar",
+  },
+  {
+    "campos": [
+      "Instituciones*",
+      "Tipo de control*",
+    ],
+    "titulo": "Control",
+  },
+  {
+    "campos": [
+      "Requiere vehículo exclusivo (macrooperativo)No comparte vehículo con otros operativos aunque coincidan en hora y zona.",
+      "Observaciones",
+    ],
+    "titulo": "Transporte y observaciones",
+  },
+]
+`;

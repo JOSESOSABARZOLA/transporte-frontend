@@ -49,7 +49,7 @@ describe("el operativo completo se admite", () => {
 
 describe("VAL-02 y VAL-03 · el horario del operativo salió del esquema (RN-66)", () => {
   // Desde el 2026-09-08 el operativo ya no tiene horario propio en el registro —lo lleva
-  // cada persona— y en el adicional el horario único lo valida `FormularioOperativo`, que
+  // cada persona— y en el adicional el horario único lo valida `FormOperativo`, que
   // sabe en qué modo está. El esquema ya no lo exige: sin horario NO se rechaza aquí.
   it("no rechaza un operativo por no traer horario", async () => {
     const motivo = await motivoDeRechazo({

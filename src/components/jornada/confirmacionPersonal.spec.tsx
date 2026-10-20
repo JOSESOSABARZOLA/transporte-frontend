@@ -24,11 +24,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import PanelPersonalJornada from "./PanelPersonalJornada.tsx";
+import { resumenCajon } from "../../pruebas/resumenCajon.ts";
 import type { FilaJornada, SeccionJornada } from "../../interfaces/Jornada.ts";
 import { OperativoService } from "../../services/operativo.service.ts";
 import { PersonalService } from "../../services/personal.service.ts";
@@ -129,7 +130,7 @@ describe("P-13 · asignar personal lo dice", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "Se agregó a YUNDA JESSICA al operativo OCECU-001-02-SEP-2026.",
+          "Se agregó a YUNDA JESSICA al operativo OCECU-001-02-SEP-2026",
         ),
       ).toBeInTheDocument(),
     );
@@ -160,5 +161,49 @@ describe("P-13 · asignar personal lo dice", () => {
       expect(screen.getByText(/ya asignó las 2 personas/)).toBeInTheDocument(),
     );
     expect(screen.queryByText(/Se agregó a/)).toBeNull();
+  });
+});
+
+/**
+ * H7 (2026-10-15). «Reparto de carga» era un cajón aparte (z-40) que se abría DETRÁS del modal de la
+ * jornada (z-10002). Ahora el personal de la jornada es un cajón estándar y el reparto se abre DENTRO
+ * de él, como una vista: no hay un segundo diálogo que pueda quedar debajo.
+ */
+describe("P-13 · cajón estándar y reparto de carga (H7)", () => {
+  it("es un cajón de consulta: [Cerrar], sin «Guardar»", async () => {
+    abrirPanel();
+
+    const cajon = await screen.findByRole("dialog", {
+      name: "Personal de OCECU-001-02-SEP-2026",
+    });
+    expect(within(cajon).queryByRole("button", { name: "Guardar" })).toBeNull();
+    expect(within(cajon).getAllByRole("button", { name: "Cerrar" }).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("Este formulario no es de su departamento: aporta personal dentro de su cupo."),
+    ).toBeInTheDocument();
+    // La estructura del cajón estándar (R10): ancho, cabecera, secciones y pie.
+    expect(resumenCajon(cajon)).toMatchSnapshot();
+  });
+
+  it("«Ver reparto de carga» se abre dentro del mismo cajón, delante", async () => {
+    vi.mocked(OperativoService.obtener).mockResolvedValue(OPERATIVO);
+    vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([
+      { ...CANDIDATA, indiceCarga: 1, cuotaJusta: 2 },
+    ] as never);
+    render(
+      <PanelPersonalJornada
+        fila={FILA}
+        seccion={SECCION}
+        fecha="2026-09-02"
+        onCerrar={vi.fn()}
+        onCambio={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /Ver reparto de carga/ }));
+
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    const cajon = screen.getByRole("dialog", { name: "Personal de OCECU-001-02-SEP-2026" });
+    expect(within(cajon).getByRole("button", { name: /Volver al operativo/ })).toBeInTheDocument();
   });
 });

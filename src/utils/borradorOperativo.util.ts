@@ -101,7 +101,8 @@ export const esBorradorVacio = (
   valores.tipoControl === "" &&
   valores.tipoLibre === "" &&
   valores.institucionesIds.length === 0 &&
-  valores.observaciones.length === 0;
+  valores.observaciones.length === 0 &&
+  (valores.notaPendiente ?? "").trim() === "";
 
 /** Guarda el puntero de sesión. Silencioso ante un fallo de `sessionStorage`. */
 export const guardarPuntero = (

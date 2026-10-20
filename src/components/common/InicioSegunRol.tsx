@@ -44,6 +44,7 @@ import { Navigate } from "react-router-dom";
 import { useUser } from "../../hooks/useUser.ts";
 import { pantallas, ROLES_REQUERIDOS } from "../../config/routes.tsx";
 import { tieneRol } from "../../hooks/usePermiso.ts";
+import AvisoEnLinea from "./AvisoEnLinea.tsx";
 
 const InicioSegunRol = () => {
   const { user } = useUser();
@@ -71,15 +72,10 @@ const InicioSegunRol = () => {
    * útil que se puede hacer desde aquí (regla 6).
    */
   return (
-    <div
-      className="alert alert-info"
-      role="status"
-    >
-      <span>
+    <AvisoEnLinea variante="info">
         Su perfil no tiene todavía ninguna pantalla asignada en el Cuadro de
         Colores. Solicite a la Administración que le asigne un rol del módulo.
-      </span>
-    </div>
+      </AvisoEnLinea>
   );
 };
 

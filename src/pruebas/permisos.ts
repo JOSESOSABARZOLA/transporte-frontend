@@ -38,6 +38,8 @@ const PERMISO_ROLES: Record<string, RolDepartamental[]> = {
   "transporte:desasignar": ["DAF"],
   "flota:administrar": ["ADMINISTRADOR_DAF", "DAF", "ADMINISTRADOR"],
   "flota:mantenimiento": ["ADMINISTRADOR_DAF", "DAF", "ADMINISTRADOR"],
+  // Ausencias de los conductores desde «Flota y garajes» (2026-10-16).
+  "flota:ausencias": ["ADMINISTRADOR_DAF", "DAF", "ADMINISTRADOR"],
   "flota:capacidad:ver": ["DAF", "DIRECTOR"],
   "flota:capacidad:declarar": ["DAF", "ADMINISTRADOR_DMIP", "ADMINISTRADOR"],
   "matriz:ver": ["DIRECTOR"],
@@ -50,8 +52,10 @@ const PERMISO_ROLES: Record<string, RolDepartamental[]> = {
   "ventanas:administrar": ["ADMINISTRADOR_DMIP", "ADMINISTRADOR"],
   "roles-auth:administrar": ["ADMINISTRADOR_DMIP", "ADMINISTRADOR"],
   "roles:ver": ["ADMINISTRADOR_DMIP", "ADMINISTRADOR"],
-  "parametros:administrar": ["ADMINISTRADOR_DMIP", "ADMINISTRADOR", "ADMINISTRADOR_DMIT"],
+  "parametros:administrar": ["ADMINISTRADOR_DMIP", "ADMINISTRADOR", "ADMINISTRADOR_DMIT", "ADMINISTRADOR_DAF"],
   "permisos:administrar": ["ADMINISTRADOR"],
+  // Versión consolidada de la DAF (2026-10-06): la carga inicial, solo el administrador general.
+  "carga-inicial:administrar": ["ADMINISTRADOR"],
 };
 
 /** Los permisos efectivos (unión) de un conjunto de roles, como los daría el servidor. */

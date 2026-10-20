@@ -7,13 +7,14 @@
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-06
  *
- * VIVE FUERA DE `FormularioOperativo.tsx` PORQUE LO USAN DOS PANTALLAS. P-01 parte de
+ * VIVE FUERA DE `FormOperativo.tsx` PORQUE LO USAN DOS PANTALLAS. P-01 parte de
  * los valores vacíos y P-02 parte de un operativo existente; dejar la conversión dentro
  * del componente obligaba a exportar una función desde un archivo de componentes, que es
  * justo lo que rompe el refresco rápido de Vite.
  */
 
-import type { Operativo } from "../interfaces/Operativo";
+import type { Operativo, TipoTransporte } from "../interfaces/Operativo";
+import { macroSegunTipo } from "./tipoTransporte.util.ts";
 
 /**
  * Opción del desplegable que activa la captura libre.
@@ -60,7 +61,47 @@ export type ValoresOperativo = {
    * edición son solo las que se AGREGAN (las ya escritas se muestran aparte, en lectura).
    */
   observaciones: string[];
+  /**
+   * Hora en que se agregó cada nota nueva (ISO), alineada por posición con `observaciones`
+   * (2026-10-16). Viaja en el borrador; no se envía al servidor. Opcional: un borrador anterior no
+   * la trae y entonces la nota se muestra sin hora.
+   */
+  observacionesHoras?: (string | null)[];
+  /**
+   * Lo escrito en «Escriba una nota…» y aún no agregado (2026-10-16). Al registrar o guardar se
+   * agrega solo (`conNotaPendiente`). Viaja en el borrador; no se envía al servidor.
+   */
+  notaPendiente?: string;
+  /**
+   * Cómo se moviliza y si es macrooperativo (2026-10-06). Opcionales en el TIPO porque un borrador
+   * guardado antes de esa fecha no los trae: quien los lee usa `?? "COMPLETO"` / `?? false`.
+   */
+  tipoTransporte?: TipoTransporte;
+  esMacrooperativo?: boolean;
+  /**
+   * Transporte requerido (2026-10-07). Verdadero en cuanto quien registra elige el tipo A MANO: desde
+   * ahí la sugerencia del formulario ya no lo pisa. Viaja en el borrador; no se envía al servidor.
+   */
+  tipoTransporteManual?: boolean;
+  /**
+   * COMPARTIR UNIDAD (2026-10-19). «COMPARTIR» si quien registra marcó «Solicitar compartir unidad
+   * con X» ante una coincidencia del mismo punto y horario; sin marcar, decide la DAF. Solo de la
+   * interfaz: viaja en el borrador, no al servidor. Opcional: un borrador anterior no la trae, y uno
+   * con las opciones retiradas («PROPIOS», «EXCLUSIVO», «DAF») se lee como «sin solicitud».
+   */
+  eleccionCompartir?: EleccionCompartir;
+  /** El operativo con el que pide compartir unidad (la intención; la ejecuta la DAF). */
+  compartirConOperativoId?: number | null;
+  /** Identificador de ese operativo, para decirlo en el pie y en el aviso. Solo de la interfaz. */
+  compartirConIdentificador?: string | null;
 };
+
+/**
+ * La respuesta a «¿Desea solicitar esta movilización en la misma unidad?»: solo «COMPARTIR». Las
+ * otras tres opciones (propios medios, vehículo exclusivo, dejar que decida la DAF) se retiraron el
+ * 2026-10-19 porque repetían «Transporte requerido» y el check del macrooperativo.
+ */
+export type EleccionCompartir = "COMPARTIR";
 
 export const VALORES_INICIALES: ValoresOperativo = {
   formularioCodigo: "",
@@ -75,6 +116,8 @@ export const VALORES_INICIALES: ValoresOperativo = {
   tipoLibre: "",
   institucionesIds: [],
   observaciones: [],
+  tipoTransporte: "COMPLETO",
+  esMacrooperativo: false,
 };
 
 /**
@@ -111,4 +154,36 @@ export const comoValoresDeFormulario = (
   // En edición las notas NUEVAS arrancan vacías: las ya escritas no se editan (bitácora),
   // se muestran aparte en lectura. Solo se agregan.
   observaciones: [],
+  tipoTransporte: operativo.tipoTransporte ?? "COMPLETO",
+  // Solo COMPLETO admite el macrooperativo (2026-10-19): un dato viejo con otro tipo no se arrastra.
+  esMacrooperativo: macroSegunTipo(operativo.tipoTransporte, operativo.esMacrooperativo),
+  // Compartir unidad (2026-10-19): la intención guardada vuelve como el check marcado.
+  eleccionCompartir: operativo.compartirCon ? "COMPARTIR" : undefined,
+  compartirConOperativoId: operativo.compartirCon?.id ?? null,
+  compartirConIdentificador: operativo.compartirCon?.identificador ?? null,
 });
+
+/**
+ * LO QUE VIAJA DE «COMPARTIR UNIDAD» (2026-10-19). En el ALTA, la solicitud tal cual. En la EDICIÓN
+ * solo lo que CAMBIÓ respecto de lo guardado (`iniciales`): lo que no viene, el servidor lo
+ * conserva, y reenviar una intención que no se tocó la volvería un pedido nuevo —y un destino que ya
+ * no coincide pasaría de «se retira con aviso» a error—.
+ *
+ * La justificación del vehículo exclusivo ya no sale del formulario (2026-10-19, opción A del
+ * usuario): la de un operativo que la trae de antes no se toca, y el servidor la limpia sola si se
+ * quita el macrooperativo.
+ */
+export const camposCompartirParaEnvio = (
+  valores: ValoresOperativo,
+  iniciales?: ValoresOperativo,
+): { compartirConOperativoId?: number | null } => {
+  const compartirCon =
+    valores.eleccionCompartir === "COMPARTIR" ? (valores.compartirConOperativoId ?? null) : null;
+
+  if (!iniciales) {
+    return compartirCon !== null ? { compartirConOperativoId: compartirCon } : {};
+  }
+
+  const compartirAntes = iniciales.compartirConOperativoId ?? null;
+  return compartirCon !== compartirAntes ? { compartirConOperativoId: compartirCon } : {};
+};

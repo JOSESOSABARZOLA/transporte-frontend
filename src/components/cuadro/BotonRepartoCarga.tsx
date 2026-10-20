@@ -10,14 +10,14 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * ANTES PARECÍA TEXTO. Era un `btn-ghost` junto al rótulo «Personal asignado», y nada lo
  * distinguía de una etiqueta: quien no sabía que existía el reparto no lo descubría. Ahora es un
- * botón secundario (`btn-outline btn-primary`), del alto de los «+ Agregar» (`btn-sm`), con la
- * balanza a la izquierda.
+ * botón secundario (`<Boton variante="secundario" tamano="sm">`, estándar del 2026-10-15), con la
+ * icono a la izquierda: unas barras (SVG propio de `Iconos.tsx`, 2026-10-07; antes una balanza).
  *
  * UN SOLO COMPONENTE PARA LOS DOS SITIOS: el alta de P-01 y el cajón de edición de Mis operativos
  * renderizan el mismo `SelectorPersonal`, que lo usa. Así no pueden divergir.
  *
  * EL RESUMEN DEL SEMÁFORO sale de los MISMOS datos que el reparto (el `nivelFatiga` de cada
- * candidato) y usa los tonos del TEMA —success/warning/error, los de la barra del reparto—, no
+ * candidato) y usa los tonos del TEMA —`TONO_CARGA`, los mismos del borde de la etiqueta y de la barra del reparto—, no
  * hexadecimales a mano (regla 2). Cada punto lleva su conteo, y el resumen completo en palabras va
  * como DESCRIPCIÓN (`aria-describedby`, texto `sr-only`): el color nunca es la única señal
  * (regla 6). El NOMBRE accesible se queda en «Ver reparto de carga», estable para quien lo busca.
@@ -26,7 +26,8 @@
 
 import { useId, type FC, type Ref } from "react";
 
-import Iconos from "../common/Iconos.tsx";
+import Boton from "../common/Boton.tsx";
+import { NIVEL_FATIGA, TONO_CARGA } from "../../utils/personal.util.ts";
 
 /** Cuántos candidatos hay en cada nivel de carga (fatiga). */
 export type ConteoSemaforo = { baja: number; media: number; alta: number };
@@ -60,30 +61,30 @@ const BotonRepartoCarga: FC<BotonRepartoCargaProps> = ({
 
   return (
     <>
-      <button
+      <Boton
         ref={ref}
-        type="button"
-        className="btn btn-sm btn-outline btn-primary whitespace-nowrap"
+        variante="secundario"
+        tamano="sm"
+        icono="barras"
         onClick={onClick}
         aria-haspopup="dialog"
         aria-expanded={expandido}
         aria-describedby={hayConteo ? idResumen : undefined}
         title="Ver cómo se distribuye la carga entre el personal"
       >
-        <Iconos nombre="reparto" />
         Ver reparto de carga
         {hayConteo && (
           <span className="ml-1 inline-flex items-center gap-2 text-xs">
-            <Punto clase="bg-success" valor={conteo.baja} />
-            <Punto clase="bg-warning" valor={conteo.media} />
-            <Punto clase="bg-error" valor={conteo.alta} />
+            <Punto clase={TONO_CARGA.VERDE} valor={conteo.baja} />
+            <Punto clase={TONO_CARGA.AMBAR} valor={conteo.media} />
+            <Punto clase={TONO_CARGA.ROJO} valor={conteo.alta} />
           </span>
         )}
-      </button>
+      </Boton>
       {/* Fuera del botón: es su DESCRIPCIÓN, no parte de su nombre accesible. */}
       {hayConteo && (
         <span id={idResumen} className="sr-only">
-          {`Carga baja: ${conteo.baja}; media: ${conteo.media}; alta: ${conteo.alta}.`}
+          {`${NIVEL_FATIGA.VERDE}: ${conteo.baja}; ${NIVEL_FATIGA.AMBAR}: ${conteo.media}; ${NIVEL_FATIGA.ROJO}: ${conteo.alta}.`}
         </span>
       )}
     </>

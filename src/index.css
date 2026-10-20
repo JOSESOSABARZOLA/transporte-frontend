@@ -5,7 +5,6 @@
 @import "./styles/layout/app-sidebar.css";
 @import "./styles/ui/page-header.css";
 @import "./styles/ui/tables.css";
-@import "./styles/ui/confirm-dialog.css";
 @import "./styles/ui/componentes-propios.css";
 @import "./styles/administration/administration-feedback.css";
 @import "./styles/administration/administration-table.css";
@@ -15,10 +14,12 @@
 @import "./styles/layout/app-shell-theme-light.css";
 @import "./styles/layout/app-shell-theme-dark.css";
 @import "./styles/ui/panels-theme.css";
+@import "./styles/ui/tipografia.css";
 @import "./styles/administration/administration-theme-light.css";
 @import "./styles/administration/administration-theme-dark.css";
 
 @plugin "daisyui";
+@plugin "./styles/ui/tipografia.plugin.js";
 
 @plugin "daisyui/theme" {
   name: "light";

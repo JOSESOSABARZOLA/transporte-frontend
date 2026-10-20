@@ -14,6 +14,7 @@
  */
 
 import type { RolDepartamental } from "../config/env";
+import type { TipoTransporte } from "./Operativo.ts";
 
 /** Qué puede hacer el rol actual sobre el formulario. PER-01. */
 /**
@@ -142,6 +143,11 @@ export interface Formulario {
   orden: number;
   areas: AreaFormulario[];
   acceso: AccesoFormulario;
+  /**
+   * El «Transporte» que el registro propone para este formulario (2026-10-06): el PMO, «Dejar y
+   * retirar». Editable al registrar. Opcional: un servidor anterior no lo envía.
+   */
+  tipoTransportePorDefecto?: TipoTransporte;
 }
 
 export interface Zonal {
@@ -156,7 +162,31 @@ export interface Zonal {
   activo?: boolean;
 }
 
-export interface PuntoEncuentro {
+/** Un formulario nombrado en pocas palabras: el que se está configurando en P-08. */
+export interface FormularioBreve {
+  codigo: string;
+  numero: number;
+  nombre: string;
+}
+
+/**
+ * Lo que el camino de ADMINISTRACIÓN agrega a cada valor de catálogo (rediseño de P-08,
+ * 2026-10-12). El registro de operativos no lo recibe: por eso todo es opcional.
+ *
+ * `puedeEliminar` y `motivoNoEliminar` son la MISMA política que aplica el `DELETE …/permanente`
+ * del servidor, calculada en la lista: la pantalla apaga «Eliminar» y explica por qué antes de
+ * que alguien lo pulse y reciba un 409.
+ *
+ * Desde el 2026-10-13 cada formulario tiene su configuración PROPIA: no hay copias ni vínculos
+ * entre formularios, así que un valor ya no dice «en qué otros formularios está».
+ */
+export interface DatosDeAdministracion {
+  usos?: number;
+  puedeEliminar?: boolean;
+  motivoNoEliminar?: string | null;
+}
+
+export interface PuntoEncuentro extends DatosDeAdministracion {
   id: number;
   /** El punto PERTENECE A UN FORMULARIO (2026-09-29): ya no se comparte entre formularios. */
   formularioId: number;
@@ -168,20 +198,42 @@ export interface PuntoEncuentro {
 }
 
 /** El tipo de control pertenece a UN formulario (2026-09-07): no se comparte. */
-export interface TipoControl {
+export interface TipoControl extends DatosDeAdministracion {
   id: number;
   nombre: string;
   activo?: boolean;
   formularioId: number;
 }
 
-export interface Institucion {
+export interface Institucion extends DatosDeAdministracion {
   id: number;
   /** La institución PERTENECE A UN FORMULARIO (2026-09-29): ya no se comparte. */
   formularioId: number;
   sigla: string;
   nombre: string;
   activo?: boolean;
+}
+
+/**
+ * Zonal DEL FORMULARIO tal como la ve la ADMINISTRACIÓN (`GET /administracion/catalogos/:codigo/zonales`,
+ * 2026-10-13). `id` es el de la ZONA DE LA CIUDAD (el `zonalId` de puntos y operativos); el
+ * nombre, el estado y los conteos son de ESTE formulario. `zonalFormularioId` es informativo.
+ */
+export interface ZonalAdmin {
+  id: number;
+  zonalFormularioId: number;
+  codigo: string;
+  nombre: string;
+  esDmq: boolean;
+  activo: boolean;
+  orden: number;
+  /** Operativos DE ESTE formulario con esa zona. */
+  usos: number;
+  /** Puntos de ESTE formulario en la zonal, activos o no. */
+  puntos: number;
+  puntosActivos: number;
+  puedeEliminar: boolean;
+  motivoNoEliminar: string | null;
 }
 
 /** Respuesta de `GET /formularios/:codigo/catalogos`. */
@@ -212,37 +264,37 @@ export interface CatalogosFormulario {
    * teclea texto en el operativo): esto CREA el punto y queda para todos. 2026-09-24.
    */
   puntoManual: boolean;
+  /** Igual que en `Formulario`: lo que el adicional propone en «Transporte» (2026-10-06). */
+  tipoTransportePorDefecto?: TipoTransporte;
 }
 
 // ─────────────────── Administración de catálogos (P-08) ───────────────────
 
 /**
- * Cuerpos de alta. Cada valor PERTENECE A UN FORMULARIO (2026-09-29): `formularioId` es
- * obligatorio y P-08 envía siempre el formulario que se está administrando.
+ * Cuerpos de alta. Cada valor PERTENECE A UN FORMULARIO, y ese formulario viaja en la RUTA
+ * (`/administracion/catalogos/:codigo/…`, 2026-10-13), no en el cuerpo: el servidor rechaza
+ * los campos de más.
  */
 export interface CrearPunto {
   nombre: string;
   zonalId: number;
-  formularioId: number;
 }
 
 export interface CrearTipoControl {
   nombre: string;
-  formularioId: number;
 }
 
 export interface CrearInstitucion {
   sigla: string;
   nombre: string;
-  formularioId: number;
 }
 
 /**
- * Alta de una zonal. Solo el nombre: el código se autogenera en el servidor a partir de
- * él y se garantiza único, así que aquí no viaja. La zonal es GLOBAL —transversal a los
- * nueve formularios—, por eso no lleva `formularioId`.
+ * Alta de una zonal DEL FORMULARIO (2026-10-13): la ZONA DE LA CIUDAD a la que corresponde
+ * (`GET …/:codigo/zonas-disponibles`; una por formulario) y el nombre que tendrá en él.
  */
 export interface CrearZonal {
+  zonaId: number;
   nombre: string;
 }
 
@@ -284,10 +336,28 @@ export interface FormularioAdmin {
   orden: number;
   activo: boolean;
   areas: AreaPersonal[];
-  prefijo: string;
+  /** El prefijo GENERAL, el único editable; `null` si el formulario numera solo por área. */
+  prefijo: string | null;
+  /** El que se ve en la tabla: el general o, si no lo hay, el primero. */
+  prefijoMostrado: string | null;
+  /** Todos sus prefijos (general, por área y de adicionales), en el orden del servidor. */
+  prefijos: PrefijoFormulario[];
+  /** Lo que el registro propone en «Transporte» (2026-10-06). Sin él, el servidor no lo tiene. */
+  tipoTransportePorDefecto?: TipoTransporte;
 }
 
-/** Alta de un formulario. Número y código SOLO viajan aquí: son inmutables tras crear. */
+/** Un prefijo del identificador de operativos de un formulario (`t_formulario_prefijo`). */
+export interface PrefijoFormulario {
+  prefijo: string;
+  area: AreaPersonal | null;
+  predeterminado: boolean;
+  adicional: boolean;
+}
+
+/**
+ * Alta de un formulario. Número y código SOLO viajan aquí: son inmutables tras crear. SIN áreas
+ * (2026-10-13): nace sin ellas y se configuran en Catálogos del cuadro, su única puerta.
+ */
 export interface CrearFormulario {
   numero: number;
   codigo: string;
@@ -297,7 +367,6 @@ export interface CrearFormulario {
   colorNombre: string;
   rolDueno: RolDepartamental;
   prefijo: string;
-  areas: AreaPersonal[];
   politicaVehiculo: PoliticaVehiculo;
   condicionanteNoct: boolean;
   esPatrulla: boolean;
@@ -309,9 +378,13 @@ export interface CrearFormulario {
   variosPorPersona: boolean;
   cantidadPorPersona: boolean;
   orden?: number;
+  tipoTransportePorDefecto?: TipoTransporte;
 }
 
-/** Edición: todo opcional, SIN número ni código. `activo: true` reactiva. */
+/**
+ * Edición: todo opcional, SIN número, código ni áreas (el servidor responde 400 si llegan). Solo
+ * viaja lo que cambió. `activo: true` reactiva.
+ */
 export type ActualizarFormulario = Partial<
   Omit<CrearFormulario, "numero" | "codigo">
 > & {
@@ -372,7 +445,16 @@ export interface EstadoVentana {
   horaCierre: string | null;
   diaApertura: number | null;
   diaCierre: number | null;
-  /** Redactado para el funcionario: se muestra tal cual. */
+  /** Redactado para el funcionario: se muestra tal cual. Calculado de las horas reales. */
   mensaje: string;
+  /**
+   * El horario en UNA frase, calculado por el servidor de las horas reales (2026-10-06). Es lo
+   * único que se muestra como horario; opcional para no romper respuestas anteriores.
+   */
+  horarioTexto?: string;
+  /** Solo la DAF: «cuando cierra el registro de operativos» si abre justo entonces (RN-56). */
+  motivoApertura?: string | null;
+  /** El texto libre de «Ventanas y parámetros»: nota secundaria, NUNCA el horario. */
+  notaAdministrador?: string | null;
   evaluadoEn: string;
 }

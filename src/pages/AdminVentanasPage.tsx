@@ -32,14 +32,18 @@
  *
  * Arriba se administra **cuándo puede escribir cada rol**; abajo, **los umbrales que no
  * dependen del rol**: la hora límite del cuadro entero (RN-57), la franja nocturna, el
- * descanso de patrulla y el tope de salidas pesadas. Las `advertencias` que devuelve el
- * servidor al guardar una ventana siguen mostrándose, y siguen sin impedir nada.
+ * descanso de patrulla y el tope de salidas pesadas.
+ *
+ * LA PANTALLA SOLO PARAMETRIZA (2026-10-08). Cada ventana se guarda por su cuenta, sin compararla
+ * con las otras: la coherencia entre ventanas la aplica el sistema en ejecución. Se retiraron la
+ * franja «Error de configuración» (RN-56) y las advertencias RN-56/RN-57 tras guardar.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
 import ModalVentana from "../components/administracion/ModalVentana.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
 import TablaParametros from "../components/administracion/TablaParametros.tsx";
 import TablaVentanas from "../components/administracion/TablaVentanas.tsx";
 import type {
@@ -48,9 +52,11 @@ import type {
   VentanaCarga,
 } from "../interfaces/Administracion.ts";
 import { AdministracionService } from "../services/administracion.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
 import { usePermiso } from "../hooks/usePermiso.ts";
+import { useAvisoAlSalir } from "../hooks/useAvisoAlSalir.ts";
+import { toast } from "../utils/mensaje.ts";
 
 const AdminVentanasPage = () => {
   /** El catálogo de roles sale del servidor: aquí no hay ninguno escrito. */
@@ -78,13 +84,27 @@ const AdminVentanasPage = () => {
   const [enEdicion, setEnEdicion] = useState<VentanaCarga | null>(null);
   const [guardandoVentana, setGuardandoVentana] = useState(false);
   const [avisoVentana, setAvisoVentana] = useState<string | null>(null);
-  const [advertencias, setAdvertencias] = useState<string[]>([]);
 
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  /**
+   * La ventana o el parámetro guardado: un aviso breve que se va solo y la fila resaltada en
+   * verde unos segundos (ventanas desde el 2026-10-07; parámetros desde el 2026-10-15, en lugar
+   * del `ModalExito`, que se retiró).
+   */
+  const [resaltado, setResaltado] = useState<VentanaCarga["rol"] | null>(null);
+  const [parametroResaltado, setParametroResaltado] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!resaltado) return undefined;
+    const quitar = window.setTimeout(() => setResaltado(null), 4000);
+    return () => window.clearTimeout(quitar);
+  }, [resaltado]);
+
+  useEffect(() => {
+    if (!parametroResaltado) return undefined;
+    const quitar = window.setTimeout(() => setParametroResaltado(null), 4000);
+    return () => window.clearTimeout(quitar);
+  }, [parametroResaltado]);
   const cargar = useCallback(async () => {
     setCargando(true);
 
@@ -100,10 +120,9 @@ const AdminVentanasPage = () => {
       setVentanas(listaVentanas);
       setAviso(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
       setParametros([]);
       setVentanas([]);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      setAviso(avisoDeFallo(fallo));
     } finally {
       setCargando(false);
     }
@@ -112,6 +131,19 @@ const AdminVentanasPage = () => {
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  // Parámetros con un valor escrito sin guardar: avisan antes de salir de la pantalla.
+  const [sinGuardar, setSinGuardar] = useState<ReadonlySet<string>>(new Set());
+  const alCambiarParametro = useCallback((clave: string, cambiado: boolean) => {
+    setSinGuardar((antes) => {
+      if (antes.has(clave) === cambiado) return antes;
+      const siguiente = new Set(antes);
+      if (cambiado) siguiente.add(clave);
+      else siguiente.delete(clave);
+      return siguiente;
+    });
+  }, []);
+  useAvisoAlSalir(sinGuardar.size > 0);
 
   const guardarParametro = useCallback(
     async (clave: string, valor: string) => {
@@ -137,7 +169,8 @@ const AdminVentanasPage = () => {
             parametro.clave === clave ? actualizado : parametro,
           ),
         );
-        setExito(
+        setParametroResaltado(clave);
+        toast.exito(
           `${clave} quedó en ${actualizado.valor}${
             actualizado.unidad ? ` ${actualizado.unidad}` : ""
           }. El cambio rige desde ahora, sin desplegar código.`,
@@ -174,18 +207,16 @@ const AdminVentanasPage = () => {
             ventana.rol === enEdicion.rol ? resultado.ventana : ventana,
           ),
         );
-        setAdvertencias(resultado.advertencias);
         setEnEdicion(null);
-        setExito(
-          `La ventana de ${nombreDe(enEdicion.rol)} quedó guardada. Rige desde la próxima evaluación.`,
-        );
+        setResaltado(enEdicion.rol);
+        toast.exito(`Ventana de ${nombreDe(enEdicion.rol)} actualizada`);
       } catch (fallo: unknown) {
         setAvisoVentana(presentarError(fallo).mensaje);
       } finally {
         setGuardandoVentana(false);
       }
     },
-    [enEdicion],
+    [enEdicion, nombreDe],
   );
 
   return (
@@ -205,26 +236,17 @@ const AdminVentanasPage = () => {
       </header>
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudieron cargar las ventanas y los parámetros"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
-      )}
-
-      {/* Las advertencias del servidor: aceptó el cambio y avisa de lo que deja apretado. */}
-      {advertencias.length > 0 && (
-        <div
-          className="alert alert-warning"
-          role="alert"
-        >
-          <div className="flex flex-col gap-1">
-            {advertencias.map((advertencia) => (
-              <span key={advertencia}>{advertencia}</span>
-            ))}
-          </div>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       {gestionaVentanas && (
@@ -239,10 +261,10 @@ const AdminVentanasPage = () => {
           </div>
 
           <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-            <p className="text-xs text-base-content/70">
+            <p className="text-xs text-app-muted">
               Hay una ventana por rol y no se crean ni se eliminan: eliminar una
               abriría la carga de ese rol las veinticuatro horas. Para quitar la
-              restricción se desactiva, que dice lo mismo y deja rastro.
+              restricción se elige «Sin restricción», que dice lo mismo y deja rastro.
             </p>
 
             <TablaVentanas
@@ -250,10 +272,10 @@ const AdminVentanasPage = () => {
               ventanas={ventanas}
               cargando={cargando}
               procesando={guardandoVentana}
+              resaltado={resaltado}
               onEditar={(ventana) => {
                 setEnEdicion(ventana);
                 setAvisoVentana(null);
-                setAdvertencias([]);
               }}
             />
           </div>
@@ -271,7 +293,7 @@ const AdminVentanasPage = () => {
         </div>
 
         <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-base-content/70">
+          <p className="text-xs text-app-muted">
             Cada valor rige desde el momento en que se guarda. Cambiar un umbral
             de descanso altera de inmediato a quién ofrece el sistema al armar el
             cuadro.
@@ -283,6 +305,8 @@ const AdminVentanasPage = () => {
             guardando={guardandoClave}
             avisos={avisosParametro}
             onGuardar={(clave, valor) => void guardarParametro(clave, valor)}
+            onCambios={alCambiarParametro}
+            resaltada={parametroResaltado}
           />
         </div>
       </div>
@@ -297,14 +321,6 @@ const AdminVentanasPage = () => {
           aviso={avisoVentana}
           onGuardar={(cambios) => void guardarVentana(cambios)}
           onCancelar={() => setEnEdicion(null)}
-        />
-      )}
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
         />
       )}
     </section>

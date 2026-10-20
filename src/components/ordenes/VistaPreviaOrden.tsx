@@ -25,15 +25,16 @@
  * DOS HUECOS, DOS CAMINOS DISTINTOS (B9, 2026-10-02). Lo que le falta a una orden se completa en
  * dos sitios, y la tarjeta los separa:
  *   · El CONDUCTOR y la PLACA son los dos únicos campos de la DAF (RN-40). Aquí NO se escriben: si
- *     faltan, «Asignar transporte» ENLAZA a «Asignación de transporte», donde la DAF los completa.
- *   · Los datos del DOCUMENTO (cargo del destinatario, nº de memorando, NUT, firmante…) se completan
+ *     faltan, «Asignar transporte» ENLAZA a «Planificar el día», donde la DAF los completa.
+ *   · Los datos del DOCUMENTO (cargo del destinatario, nº de memorando, firmante…) se completan
  *     dentro de «Ver documento», agrupados por quién los llena. La tarjeta solo RESUME cuántos faltan
  *     —de la persona y de configuración— para que se sepa que hay que abrirlo.
  */
 
 import { useState, type FC } from "react";
-import { Link } from "react-router-dom";
 
+import Boton from "../common/Boton.tsx";
+import BotonEnlace from "../common/BotonEnlace.tsx";
 import CamposDeLaOrden from "./CamposDeLaOrden.tsx";
 import VisorPdfMemorando from "./VisorPdfMemorando.tsx";
 import type { Faltante, OrdenServicio } from "../../interfaces/Documento.ts";
@@ -41,7 +42,7 @@ import { DatetimeUtil } from "../../utils/datetime.util.ts";
 
 /**
  * La asignación de transporte está incompleta si falta conductor o placa. Son los dos campos de la
- * DAF (RN-40): cuando faltan, la tarjeta ofrece el enlace a «Asignación de transporte».
+ * DAF (RN-40): cuando faltan, la tarjeta ofrece el enlace a «Planificar el día».
  */
 const asignacionIncompleta = (orden: OrdenServicio): boolean =>
   !orden.datoAislado.conductor || !orden.datoAislado.placa;
@@ -53,9 +54,9 @@ const unirEnEspanol = (partes: string[]): string => {
 };
 
 /**
- * Resumen del aviso de borrador, agrupado por quién completa el dato (B9/E21), con los MISMOS cinco
- * orígenes que el visor (2026-10-05): del funcionario, de la plantilla (datos generales), del
- * firmante, del cuadro (NUT, elaborado por) y de configuración (siglas). El detalle y las acciones
+ * Resumen del aviso de borrador, agrupado por quién completa el dato (B9/E21), con los MISMOS cuatro
+ * orígenes que el visor (2026-10-08): del funcionario, de la plantilla (datos generales y tabla de
+ * control), del firmante y de configuración. El de «cuadro» (NUT) se retiró. El detalle y las acciones
  * viven en el cajón de «Ver documento»; aquí solo se cuenta para dirigir a abrirlo.
  */
 const resumenFaltantes = (faltantes: Faltante[]): string => {
@@ -65,7 +66,6 @@ const resumenFaltantes = (faltantes: Faltante[]): string => {
     { origen: "persona", etiqueta: "del funcionario" },
     { origen: "plantilla", etiqueta: "de la plantilla" },
     { origen: "firmante", etiqueta: "del firmante" },
-    { origen: "cuadro", etiqueta: "del cuadro" },
     { origen: "configuracion", etiqueta: "de configuración" },
   ];
   const partes = grupos
@@ -78,11 +78,6 @@ const resumenFaltantes = (faltantes: Faltante[]): string => {
 type VistaPreviaOrdenProps = {
   ordenes: OrdenServicio[];
   /**
-   * Recarga la lista de órdenes del operativo. Se llama tras completar datos/configuración desde el
-   * visor (E21), para que la tarjeta y el chip reflejen el nuevo estado (p. ej. pasar a «Vigente»).
-   */
-  onRecargar?: () => void;
-  /**
    * Abre el editor de la plantilla (2026-10-02): el visor lo ofrece para completar los datos
    * generales del Director (origen 'plantilla'), que no se piden por orden.
    */
@@ -91,7 +86,6 @@ type VistaPreviaOrdenProps = {
 
 const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
   ordenes,
-  onRecargar,
   onEditarPlantilla,
 }) => {
   /** La orden cuyo PDF se está viendo en el visor; `null` con el visor cerrado. */
@@ -104,7 +98,7 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs text-base-content/70">
+      <p className="text-xs text-app-muted">
         Una hoja por funcionario. Cada una contiene únicamente su propia
         asignación: horario, funcionario, conductor y placa.
       </p>
@@ -125,7 +119,7 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
                   {orden.numeroOrden}
                 </span>
               ) : (
-                <span className="text-xs text-base-content/60">
+                <span className="text-xs text-app-muted">
                   Sin número · se asigna al quedar vigente
                 </span>
               )}
@@ -164,7 +158,7 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
               PLANTILLA POR DIRECTOR (2026-10-05): cada orden se generó con la plantilla de UN Director
               y solo él la edita o la reemite. Las ajenas se ven en solo lectura, y se dice de quién son.
             */}
-            <p className="mt-2 text-xs text-base-content/70">
+            <p className="mt-2 text-xs text-app-muted">
               Generada por {orden.directorNombre ?? "un Director"}
               {!orden.esPropia && " · solo lectura"}
             </p>
@@ -179,31 +173,28 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
             )}
 
             <footer className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-base-content/70">
+              <span className="text-xs text-app-muted">
                 Emitida el {DatetimeUtil.formatDate(new Date(orden.emitidaEn))}
               </span>
               <div className="flex gap-2">
                 {/*
                   RN-40: conductor y placa son los DOS campos de la DAF; aquí no se escriben. Si la
-                  asignación está incompleta, se ENLAZA a «Asignación de transporte», donde la DAF los
+                  asignación está incompleta, se ENLAZA a «Planificar el día», donde la DAF los
                   completa. No es un formulario en esta pantalla, es un camino al sitio que corresponde.
                 */}
                 {orden.esPropia && asignacionIncompleta(orden) && (
-                  <Link
+                  <BotonEnlace
                     to="/home/cuadro/transporte"
-                    className="btn btn-ghost btn-xs"
-                    title="Asignar conductor y placa en «Asignación de transporte» (DAF)."
+                    variante="enlace"
+                    tamano="sm"
+                    title="Asignar conductor y placa en «Planificar el día» (DAF)."
                   >
                     Asignar transporte
-                  </Link>
+                  </BotonEnlace>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-outline btn-xs"
-                  onClick={() => setViendo(orden.codigo)}
-                >
+                <Boton variante="secundario" tamano="sm" onClick={() => setViendo(orden.codigo)}>
                   Ver documento
-                </button>
+                </Boton>
               </div>
             </footer>
           </article>
@@ -221,8 +212,6 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
           // D13: la lista real de datos sin completar llega del backend en `faltantes`, cada uno con
           // su origen, para agrupar el aviso de borrador (E21).
           datosFaltantes={ordenViendo.faltantes}
-          fechaJornada={ordenViendo.fechaJornada}
-          onActualizado={onRecargar}
           onEditarPlantilla={onEditarPlantilla}
           esPropia={ordenViendo.esPropia}
           directorNombre={ordenViendo.directorNombre}

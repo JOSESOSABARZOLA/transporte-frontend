@@ -10,19 +10,21 @@
 
 import { type PropsWithChildren } from "react";
 import { ThemeProvider } from "./ThemeProvider";
-import { ModalProvider } from "./ModalProvider";
 import { UserProvider } from "./UserProvider";
-import ModalContainer from "../components/modals/ModalContainer";
+import { FechaDafProvider } from "../context/FechaDafContext.tsx";
+import MensajeHost from "../components/common/MensajeHost.tsx";
 
 /** Compone los providers globales del módulo. */
 export function AppProviders({ children }: PropsWithChildren) {
   return (
     <ThemeProvider>
       <UserProvider>
-        <ModalProvider>
+        {/* La fecha de trabajo de la DAF, compartida entre sus pantallas (2026-10-06). */}
+        <FechaDafProvider>
           {children}
-          <ModalContainer />
-        </ModalProvider>
+          {/* El único host de los mensajes estándar (`utils/mensaje.ts`), 2026-10-16. */}
+          <MensajeHost />
+        </FechaDafProvider>
       </UserProvider>
     </ThemeProvider>
   );

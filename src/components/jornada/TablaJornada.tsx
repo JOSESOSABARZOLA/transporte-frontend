@@ -32,8 +32,11 @@
 
 import type { FC } from "react";
 
+import Boton from "../common/Boton.tsx";
 import BannerJornada from "./BannerJornada.tsx";
 import CeldaAlerta from "../cuadro/CeldaAlerta.tsx";
+import NotasDeFila, { ProveedorNotas } from "../cuadro/NotasDeFila.tsx";
+import { useAnclaDeFila } from "../../hooks/useAnclaDeFila.ts";
 import FilaSinCarga from "./FilaSinCarga.tsx";
 import type { FilaJornada, SeccionJornada } from "../../interfaces/Jornada.ts";
 import type { AreaPersonal } from "../../interfaces/Formulario.ts";
@@ -153,7 +156,10 @@ const TablaJornada: FC<TablaJornadaProps> = ({
    * El desplazamiento vive **dentro** del contenedor, no en la página: a 375 px las doce
    * columnas no caben de ninguna manera, y lo que no puede pasar es que la página entera
    * se desplace en horizontal y arrastre la navegación con ella.
+   *
+   * `ProveedorNotas` (2026-10-19): la nota «Comparte con X» lleva a la fila de X si está aquí.
    */
+  <ProveedorNotas ids={secciones.flatMap((seccion) => seccion.filas.map((fila) => fila.id))}>
   <div className="overflow-x-auto">
     {/*
       SIN `table-zebra`: esa clase alterna el fondo por `<tr>`, y aquí un operativo ocupa
@@ -163,11 +169,12 @@ const TablaJornada: FC<TablaJornadaProps> = ({
     */}
     <table className="table table-sm">
       <thead>
-        <tr className="text-xs uppercase tracking-wider text-base-content/70">
+        <tr className="text-xs uppercase tracking-wider text-app-label">
           {COLUMNAS.map((titulo) => (
             <th
               key={titulo}
               scope="col"
+              className={titulo === "Observaciones" ? "app-columna-notas" : undefined}
             >
               {titulo}
             </th>
@@ -180,7 +187,7 @@ const TablaJornada: FC<TablaJornadaProps> = ({
           <tr>
             <td
               colSpan={COLUMNAS.length}
-              className="px-3 py-6 text-center text-sm text-base-content/70"
+              className="px-3 py-6 text-center text-sm text-app-muted"
             >
               {mensajeVacio}
             </td>
@@ -199,6 +206,7 @@ const TablaJornada: FC<TablaJornadaProps> = ({
       </tbody>
     </table>
   </div>
+  </ProveedorNotas>
 );
 
 /**
@@ -318,6 +326,7 @@ const Fila: FC<{
         ];
 
   const abarca = personas.length > 1 ? personas.length : undefined;
+  const anclaDeFila = useAnclaDeFila();
 
   // HORARIO POR PERSONA cuando los turnos difieren (2026-09-08); si todas heredan el del
   // operativo, el marcado queda idéntico al de antes.
@@ -329,6 +338,8 @@ const Fila: FC<{
         p.horaFin !== fila.personal[0].horaFin,
     );
 
+  const { ancla, destello } = anclaDeFila(fila.id);
+
   return (
     <>
       {personas.map((persona, indice) => {
@@ -338,11 +349,13 @@ const Fila: FC<{
         return (
           <tr
             key={persona.funcionarioId || "sin-personal"}
-            className={`${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+            // La primera fila es el ancla del operativo: la busca la nota «Comparte con X».
+            {...(indice === 0 ? ancla : {})}
+            className={`${indice === 0 ? destello : ""}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
           >
             {indice === 0 && (
               <td
-                className={`px-3 py-1 align-top font-mono text-xs font-semibold${borde}`}
+                className={`px-3 py-1 align-top font-mono font-semibold${borde}`}
                 rowSpan={abarca}
               >
                 {fila.identificador}
@@ -404,7 +417,7 @@ const Fila: FC<{
                 que no existe. Se dice con palabras qué ocurre.
                 ═══════════════════════════════════════════════════════════════════
               */
-              <span className="text-xs text-base-content/70">
+              <span className="text-xs text-app-muted">
                 No se publica
               </span>
             ) : null}
@@ -412,7 +425,7 @@ const Fila: FC<{
 
           {/* RN-34. Sale del maestro; que falte es un caso real y se dice con palabras. */}
           <td
-            className={`px-3 py-1 align-top whitespace-nowrap font-mono text-xs${borde}`}
+            className={`px-3 py-1 align-top whitespace-nowrap font-mono${borde}`}
           >
             {persona.nombre ? (persona.telefono ?? "Sin teléfono") : ""}
           </td>
@@ -536,23 +549,15 @@ const RestoDeLaFila: FC<{
       NOTAS INDEPENDIENTES (bitácora, 2026-09-21): cada observación es una nota aparte y se pinta
       en SU renglón, separada de la anterior. Antes se pintaban seguidas y varias notas se leían
       como una sola. Mismo criterio que `TablaMatriz`.
+
+      COMO TARJETAS (2026-10-19, plan «notas-jornada-matriz»): `NotasDeFila` → `NotasObservacion`,
+      el mismo componente de Mis operativos, con la nota «Comparte con X». Sin notas, «—».
     */}
     <td
       className={`px-2 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
       rowSpan={abarca}
     >
-      {fila.observaciones.length > 0
-        ? fila.observaciones.map((texto, indice) => (
-            <div
-              key={indice}
-              className={
-                indice > 0 ? "mt-1 border-t border-base-300 pt-1" : undefined
-              }
-            >
-              {texto}
-            </div>
-          ))
-        : null}
+      <NotasDeFila fila={fila} />
     </td>
 
     {/*
@@ -583,15 +588,15 @@ const RestoDeLaFila: FC<{
     >
       {seccion.puedeEditarPersonal && (
         <>
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs"
+          <Boton
+            variante="acento"
+            tamano="sm"
             onClick={() => onEditarPersonal(fila, seccion)}
-            disabled={bloqueado}
-            title={bloqueado ? (motivoBloqueo ?? undefined) : undefined}
+            deshabilitado={bloqueado}
+            motivoDeshabilitado={bloqueado ? motivoBloqueo : null}
           >
             Agregar personal
-          </button>
+          </Boton>
 
           {/*
             QUÉ FALTA DE LO QUE A ESTE DEPARTAMENTO LE TOCA PONER.
@@ -606,7 +611,7 @@ const RestoDeLaFila: FC<{
             única traducción del sistema.
           */}
           {(areasPendientes ?? fila.areasPendientesDelRol).length > 0 && (
-            <span className="mt-1 block text-xs text-base-content/70">
+            <span className="mt-1 block text-xs text-app-muted">
               Falta{" "}
               {(areasPendientes ?? fila.areasPendientesDelRol)
                 .map((area) => NOMBRE_AREA[area])
@@ -640,17 +645,19 @@ const GrupoForm8: FC<{
   const persona = cabeza.personal[0];
   const total = filas.length;
   const nombreConConteo = `${persona.esResponsable ? `${persona.nombre} (R)` : persona.nombre} (${total})`;
+  const anclaDeFila = useAnclaDeFila();
 
   return (
     <>
       {filas.map((fila, indice) => (
         <tr
           key={fila.id}
-          className={`${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+          {...anclaDeFila(fila.id).ancla}
+          className={`${anclaDeFila(fila.id).destello}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
         >
           {/* El identificador NO se fusiona: una fila por operativo. Borde solo en la primera. */}
           <td
-            className={`px-3 py-1 align-top font-mono text-xs font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+            className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
           >
             {fila.identificador}
           </td>
@@ -679,7 +686,7 @@ const GrupoForm8: FC<{
               </CeldaAlerta>
 
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono text-xs ${BORDE_OPERATIVO}`}
+                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono ${BORDE_OPERATIVO}`}
                 rowSpan={total}
               >
                 {persona.telefono ?? "Sin teléfono"}
@@ -722,6 +729,7 @@ const GrupoForm6: FC<{
 }> = ({ filas, seccion, onEditarPersonal, bloqueado, motivoBloqueo, bandaGris }) => {
   const cabeza = filas[0];
   const total = filas.length;
+  const anclaDeFila = useAnclaDeFila();
 
   // PENDIENTE COLECTIVO DE LA PATRULLA (2026-09-21). Cada código reclama las áreas que ÉL no tiene;
   // un área solo le falta a la patrulla si NO la cubre NINGÚN código, es decir, si está pendiente en
@@ -771,11 +779,12 @@ const GrupoForm6: FC<{
         return (
           <tr
             key={fila.id}
-            className={`${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+            {...anclaDeFila(fila.id).ancla}
+            className={`${anclaDeFila(fila.id).destello}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
           >
             {/* Identificador POR FILA: cada persona lleva su propio código por área. */}
             <td
-              className={`px-3 py-1 align-top font-mono text-xs font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+              className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
             >
               {fila.identificador}
             </td>
@@ -829,7 +838,7 @@ const GrupoForm6: FC<{
 
             {esPrimeraDeLaPersona && (
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono text-xs${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
                 rowSpan={abarcaPersona}
               >
                 {persona?.telefono ?? "Sin teléfono"}

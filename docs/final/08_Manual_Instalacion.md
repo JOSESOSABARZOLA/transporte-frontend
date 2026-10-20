@@ -10,7 +10,7 @@
 > 2026-08-28 los pasos se mantienen en un solo sitio y aquí queda lo que es propio de este
 > manual —requisitos, instalación local, base de pruebas y resolución de problemas—.
 >
-> **Para el servidor `172.20.136.127`, la sección 7 de `DESPLIEGUE.md`**: las imágenes se
+> **Para el servidor de producción (`<IP_SERVIDOR_PRODUCCION>`), la sección 7 de `DESPLIEGUE.md`**: las imágenes se
 > llevan construidas en un `.tar`, no se construyen allí.
 
 ---
@@ -59,7 +59,7 @@ TZ=America/Guayaquil
 CORS_ORIGINS=http://localhost:5180
 
 # Sesión con Auth central. Sin estas cuatro el contenedor arranca, pero NADIE puede entrar.
-AUTH_EXCHANGE_URL=http://172.20.136.127:10004/auth/exchange
+AUTH_EXCHANGE_URL=http://<IP_SERVIDOR_AUTH>:10004/auth/exchange
 AUTH_JWT_SECRET=<la entrega el equipo de Auth central>
 AUTH_SUBSYSTEM_ID=11
 SESSION_JWT_SECRET=<una clave propia de este módulo, DISTINTA de la anterior>

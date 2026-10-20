@@ -39,7 +39,7 @@
     rgba(241, 243, 246, 0.98) 100%
   ) !important;
   border-bottom: 1px solid rgba(90, 109, 153, 0.12);
-  /* color: var(--color-base-content); */
+  /* El color del encabezado lo fija ui/tipografia.plugin.js para todas las tablas (2026-10-08). */
 }
 
 [data-theme="light"] .app-data-panel .app-data-table thead th:first-child {

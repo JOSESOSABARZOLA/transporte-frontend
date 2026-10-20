@@ -126,15 +126,15 @@ describe("VisorPdf · navegación y sus límites", () => {
 
     expect(
       screen.getByRole("button", { name: "Primera página" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     expect(
       screen.getByRole("button", { name: "Página anterior" }),
-    ).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
     // Y las de avanzar, habilitadas.
     expect(
       screen.getByRole("button", { name: "Página siguiente" }),
-    ).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Última página" })).toBeEnabled();
+    ).not.toHaveAttribute("aria-disabled");
+    expect(screen.getByRole("button", { name: "Última página" })).not.toHaveAttribute("aria-disabled");
   });
 
   it("«siguiente» avanza una página y desplaza el documento", async () => {
@@ -165,10 +165,10 @@ describe("VisorPdf · navegación y sus límites", () => {
     ).toHaveValue(3);
     expect(
       screen.getByRole("button", { name: "Página siguiente" }),
-    ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Última página" })).toBeDisabled();
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Última página" })).toHaveAttribute("aria-disabled", "true");
     // Y las de retroceder quedan habilitadas.
-    expect(screen.getByRole("button", { name: "Primera página" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Primera página" })).not.toHaveAttribute("aria-disabled");
   });
 
   it("el campo «ir a página» ACOTA a 1..total: un número mayor cae en la última", async () => {
@@ -226,7 +226,7 @@ describe("VisorPdf · zoom", () => {
     expect(
       screen.getByRole("button", { name: "Ajustar el zoom al 100 %" }),
     ).toHaveTextContent("100%");
-    expect(screen.getByRole("button", { name: "Acercar" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Acercar" })).not.toHaveAttribute("aria-disabled");
 
     // Acercar sube el porcentaje (paso del 20 %).
     await userEvent.click(screen.getByRole("button", { name: "Acercar" }));

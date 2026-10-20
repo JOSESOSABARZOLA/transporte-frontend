@@ -30,6 +30,8 @@ import type { FC } from "react";
 
 import BannerFormulario from "./BannerFormulario.tsx";
 import CeldaAlerta from "../cuadro/CeldaAlerta.tsx";
+import NotasDeFila, { ProveedorNotas } from "../cuadro/NotasDeFila.tsx";
+import { useAnclaDeFila } from "../../hooks/useAnclaDeFila.ts";
 import FilaSinInformacion from "./FilaSinInformacion.tsx";
 import type { FilaMatriz, SeccionMatriz } from "../../interfaces/Documento.ts";
 import { colorEstado } from "../../config/env.ts";
@@ -133,7 +135,10 @@ const TablaMatriz: FC<TablaMatrizProps> = ({ secciones, mensajeVacio }) => (
    * El desplazamiento vive **dentro** del contenedor, no en la página. Es el caso 8 del
    * plan: a 375 px las once columnas no caben de ninguna manera, y lo que no puede pasar
    * es que la página entera se desplace en horizontal y arrastre la navegación con ella.
+   *
+   * `ProveedorNotas` (2026-10-19): la nota «Comparte con X» lleva a la fila de X si está aquí.
    */
+  <ProveedorNotas ids={secciones.flatMap((seccion) => seccion.filas.map((fila) => fila.id))}>
   <div className="overflow-x-auto">
     {/*
       SIN `table-zebra`: esa clase alterna el fondo por `<tr>`, y aquí un operativo ocupa
@@ -144,11 +149,12 @@ const TablaMatriz: FC<TablaMatrizProps> = ({ secciones, mensajeVacio }) => (
     */}
     <table className="table table-sm">
       <thead>
-        <tr className="text-xs uppercase tracking-wider text-base-content/70">
+        <tr className="text-xs uppercase tracking-wider text-app-label">
           {COLUMNAS.map((titulo) => (
             <th
               key={titulo}
               scope="col"
+              className={titulo === "Observaciones" ? "app-columna-notas" : undefined}
             >
               {titulo}
             </th>
@@ -161,7 +167,7 @@ const TablaMatriz: FC<TablaMatrizProps> = ({ secciones, mensajeVacio }) => (
           <tr>
             <td
               colSpan={COLUMNAS.length}
-              className="px-3 py-6 text-center text-sm text-base-content/70"
+              className="px-3 py-6 text-center text-sm text-app-muted"
             >
               {mensajeVacio}
             </td>
@@ -177,6 +183,7 @@ const TablaMatriz: FC<TablaMatrizProps> = ({ secciones, mensajeVacio }) => (
       </tbody>
     </table>
   </div>
+  </ProveedorNotas>
 );
 
 /**
@@ -266,6 +273,8 @@ const Fila: FC<{ fila: FilaMatriz; bandaGris: boolean }> = ({
         ];
 
   const abarca = personas.length > 1 ? personas.length : undefined;
+  const anclaDeFila = useAnclaDeFila();
+  const { ancla, destello } = anclaDeFila(fila.id);
 
   /*
     HORARIO POR PERSONA CUANDO LOS TURNOS DIFIEREN. 2026-09-08. Si el operativo reúne
@@ -290,11 +299,13 @@ const Fila: FC<{ fila: FilaMatriz; bandaGris: boolean }> = ({
         return (
           <tr
             key={persona.funcionarioId || "sin-personal"}
-            className={`${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+            // La primera fila es el ancla del operativo: la busca la nota «Comparte con X».
+            {...(indice === 0 ? ancla : {})}
+            className={`${indice === 0 ? destello : ""}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
           >
             {indice === 0 && (
               <td
-                className={`px-3 py-1 align-top font-mono text-xs font-semibold${borde}`}
+                className={`px-3 py-1 align-top font-mono font-semibold${borde}`}
                 rowSpan={abarca}
               >
                 {fila.identificador}
@@ -344,7 +355,7 @@ const Fila: FC<{ fila: FilaMatriz; bandaGris: boolean }> = ({
 
             {/* RN-34. Sale del maestro; que falte es un caso real y se dice con palabras. */}
             <td
-              className={`px-3 py-1 align-top whitespace-nowrap font-mono text-xs${borde}`}
+              className={`px-3 py-1 align-top whitespace-nowrap font-mono${borde}`}
             >
               {persona.nombre ? (persona.telefono ?? "Sin teléfono") : ""}
             </td>
@@ -446,23 +457,14 @@ const RestoDeLaFila: FC<{
       —ALV-05, «este operativo no tiene ninguna nota»— se retiró por ruido a petición del
       negocio, así que cuando no hay notas la celda queda VACÍA (ni «—» ni mensaje ni el
       Amarillo de Alerta). Notas independientes (bitácora, 2026-09-09): cada una en su renglón.
+      COMO TARJETAS (2026-10-19, plan «notas-jornada-matriz»): `NotasDeFila` → `NotasObservacion`,
+      con la nota «Comparte con X», que lleva a la fila de X. Sin notas, «—».
     */}
     <td
       className={`px-2 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
       rowSpan={abarca}
     >
-      {fila.observaciones.length > 0
-        ? fila.observaciones.map((texto, indice) => (
-            <div
-              key={indice}
-              className={
-                indice > 0 ? "mt-1 border-t border-base-300 pt-1" : undefined
-              }
-            >
-              {texto}
-            </div>
-          ))
-        : null}
+      <NotasDeFila fila={fila} />
     </td>
   </>
 );
@@ -486,17 +488,19 @@ const GrupoForm8: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
   const persona = cabeza.personal[0];
   const total = filas.length;
   const nombreConConteo = `${persona.esResponsable ? `${persona.nombre} (R)` : persona.nombre} (${total})`;
+  const anclaDeFila = useAnclaDeFila();
 
   return (
     <>
       {filas.map((fila, indice) => (
         <tr
           key={fila.id}
-          className={`${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+          {...anclaDeFila(fila.id).ancla}
+          className={`${anclaDeFila(fila.id).destello}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
         >
           {/* El identificador NO se fusiona: una fila por operativo. Borde solo en la primera. */}
           <td
-            className={`px-3 py-1 align-top font-mono text-xs font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+            className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
           >
             {fila.identificador}
           </td>
@@ -525,7 +529,7 @@ const GrupoForm8: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
               </CeldaAlerta>
 
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono text-xs ${BORDE_OPERATIVO}`}
+                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono ${BORDE_OPERATIVO}`}
                 rowSpan={total}
               >
                 {persona.telefono ?? "Sin teléfono"}
@@ -562,6 +566,7 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
 }) => {
   const cabeza = filas[0];
   const total = filas.length;
+  const anclaDeFila = useAnclaDeFila();
 
   // HORARIO POR PERSONA cuando las ventanas de los códigos difieren (RN-66): el horario baja por
   // fila (cada código el suyo) en vez de fusionarse; si todas coinciden, se fusiona como antes.
@@ -602,11 +607,12 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
         return (
           <tr
             key={fila.id}
-            className={`${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+            {...anclaDeFila(fila.id).ancla}
+            className={`${anclaDeFila(fila.id).destello}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
           >
             {/* Identificador POR FILA: cada persona lleva su propio código por área. */}
             <td
-              className={`px-3 py-1 align-top font-mono text-xs font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+              className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
             >
               {fila.identificador}
             </td>
@@ -660,7 +666,7 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
 
             {esPrimeraDeLaPersona && (
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono text-xs${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
                 rowSpan={abarcaPersona}
               >
                 {persona?.telefono ?? "Sin teléfono"}

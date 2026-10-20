@@ -19,7 +19,7 @@
  * que impide que la DAF y el DMIP acaben leyendo dos redacciones distintas de lo mismo.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * NINGUNA INFORMACIÓN DEPENDE DEL COLOR (regla 6). El tono cambia el `alert`, pero lo que
+ * NINGUNA INFORMACIÓN DEPENDE DEL COLOR (regla 6). El tono cambia la familia, pero lo que
  * dice cuánto queda es **el texto**: «quedan 8 minutos» se lee igual en amarillo, en rojo
  * y en una impresión en blanco y negro.
  *
@@ -30,22 +30,23 @@
 
 import type { FC } from "react";
 
+import AvisoEnLinea from "./AvisoEnLinea.tsx";
+import type { FamiliaMensaje } from "./IconoMensaje.tsx";
 import type { CuentaAtrasDeVentana } from "../../utils/ventanaCarga.util.ts";
 
 /**
  * VERDE, AMARILLO Y ROJO. Un semáforo, y se lee como tal.
  *
- * Las tres clases están en el inventario de FASE5 §2.2 y toman su color de la paleta
- * institucional —verde menta, naranja y rojo—, así que el semáforo no introduce ni un
- * color nuevo: usa los que el manual ya asigna a éxito, advertencia y error, que es
- * exactamente lo que significan aquí.
+ * Desde el 2026-10-16 son las familias de los mensajes estándar (`AvisoEnLinea`): éxito,
+ * advertencia y error, con su icono. El semáforo no introduce ni un color nuevo, y el rol sigue
+ * la regla de abajo: solo el error (lo inminente) va con `role="alert"`.
  *
  * El verde no es decorativo: dice **«tiene tiempo»**, y su ausencia es lo que se nota.
  */
-const CLASE: Record<CuentaAtrasDeVentana["urgencia"], string> = {
-  HOLGADA: "alert alert-success",
-  PROXIMA: "alert alert-warning",
-  INMINENTE: "alert alert-error",
+const FAMILIA: Record<CuentaAtrasDeVentana["urgencia"], FamiliaMensaje> = {
+  HOLGADA: "exito",
+  PROXIMA: "advertencia",
+  INMINENTE: "error",
 };
 
 type AvisoVentanaProps = {
@@ -55,13 +56,8 @@ type AvisoVentanaProps = {
 const AvisoVentana: FC<AvisoVentanaProps> = ({ cuentaAtras }) => {
   if (!cuentaAtras) return null;
 
-  const esInminente = cuentaAtras.urgencia === "INMINENTE";
-
   return (
-    <div
-      className={CLASE[cuentaAtras.urgencia]}
-      role={esInminente ? "alert" : "status"}
-    >
+    <AvisoEnLinea variante={FAMILIA[cuentaAtras.urgencia]}>
       {/*
         «FALTA 00:28 PARA CERRAR LA VENTANA, ESTÁ ACTIVA HASTA LAS 15H00.»
 
@@ -75,9 +71,8 @@ const AvisoVentana: FC<AvisoVentanaProps> = ({ cuentaAtras }) => {
         sueltos. La palabra «Falta» vive aquí y no en el texto porque es lo que enmarca la
         cifra destacada; separarla es lo que permite destacarla.
 
-        El golpe de color lo da la barra de acento del `alert`, a saturación plena: el
-        manual admite «acentos, cajas pequeñas, textos o barras», y prohíbe solo los
-        fondos completos.
+        El color lo dan el icono y el borde de la familia: el manual admite «acentos, cajas
+        pequeñas, textos o barras», y prohíbe solo los fondos completos.
       */}
       <span>
         Falta{" "}
@@ -86,7 +81,7 @@ const AvisoVentana: FC<AvisoVentanaProps> = ({ cuentaAtras }) => {
         </strong>{" "}
         {cuentaAtras.texto}
       </span>
-    </div>
+    </AvisoEnLinea>
   );
 };
 

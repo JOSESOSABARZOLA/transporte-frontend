@@ -25,24 +25,37 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FormikHelpers, FormikProps } from "formik";
+import type { FormikHelpers } from "formik";
 
 import CamposCalculados from "../components/cuadro/CamposCalculados.tsx";
-import Iconos from "../components/common/Iconos.tsx";
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
+import Boton from "../components/common/Boton.tsx";
+import { useConfirmarLiberacion } from "../hooks/useConfirmarLiberacion.tsx";
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import AvisoVentana from "../components/common/AvisoVentana.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
-import PanelAdicionalOperativo from "../components/cuadro/PanelAdicionalOperativo.tsx";
-import PanelEdicionOperativo from "../components/cuadro/PanelEdicionOperativo.tsx";
-import DrawerEdicionOperativo from "../components/cuadro/DrawerEdicionOperativo.tsx";
-import type { MiembroPatrulla } from "../components/cuadro/RosterPatrulla.tsx";
-import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
-import TablaOperativos from "../components/cuadro/TablaOperativos.tsx";
+import AvisoVentanaCerrada from "../components/common/AvisoVentanaCerrada.tsx";
+import DrawerOperativo from "../components/cuadro/DrawerOperativo.tsx";
+import type { ExtrasDelEnvio } from "../components/cuadro/FormOperativo.tsx";
+import { macroSegunTipo } from "../utils/tipoTransporte.util.ts";
+import { AVISO_NOTA_PENDIENTE } from "../utils/notasOperativo.util.ts";
+import AccionesOperativo, {
+  type AccionPrincipal,
+} from "../components/cuadro/AccionesOperativo.tsx";
 import {
+  cambioDeHorario,
+  codigoDeTramite,
+  hayCambiosDePersonal,
+} from "../utils/edicionOperativo.util.ts";
+import type { MiembroPatrulla } from "../components/cuadro/RosterPatrulla.tsx";
+import PanelOperativos from "../components/cuadro/PanelOperativos.tsx";
+import {
+  camposCompartirParaEnvio,
+  comoValoresDeFormulario,
   OPCION_ADICIONALES,
   type ValoresOperativo,
 } from "../utils/valoresOperativo.util.ts";
-import Paginacion from "../components/common/Paginacion.tsx";
+import { avisarCompartirRetirado } from "../utils/compartirUnidad.util.ts";
+import { useAdicionalOperativo } from "../hooks/useAdicionalOperativo.ts";
+import { useTablaOperativos } from "../hooks/useTablaOperativos.ts";
 import { useCatalogosFormulario } from "../hooks/useCatalogosFormulario.ts";
 import { useCuadroDiario } from "../hooks/useCuadroDiario.ts";
 import { useUser } from "../hooks/useUser.ts";
@@ -53,7 +66,6 @@ import {
   nombreDePersona,
   type PersonaElegible,
 } from "../interfaces/Personal.ts";
-import { turnoDePrimera } from "../utils/personal.util.ts";
 import { OperativoService } from "../services/operativo.service.ts";
 import { PersonalService } from "../services/personal.service.ts";
 import {
@@ -61,17 +73,29 @@ import {
   motivoDeSoloLectura,
   puedeAportarA,
 } from "../utils/accesoOperativo.util.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
-import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
 import {
-  COLUMNAS_LISTADO,
-  descripcionDelRetiro,
-  filtrarOperativos,
-  hayFiltrosActivos,
-  paginar,
-  type ColumnaOperativo,
-  type FiltrosListado,
-} from "../utils/listadoOperativos.util.ts";
+  funcionarioDelRechazo,
+  presentarError,
+  varianteDeAviso,
+  type AvisoTexto,
+} from "../utils/errorApi.util.ts";
+import { fechaDeHoy, fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
+import {
+  ATAJOS_RANGO,
+  RANGO_MAX_DIAS_POR_DEFECTO,
+  atajoActivo,
+  busquedaConRango,
+  errorDelRango,
+  esUnSoloDia,
+  incluye,
+  rangoDeAtajo,
+  rangoDeLaUrl,
+  resumenDelRango,
+  type RangoFechas,
+} from "../utils/rangoFechas.util.ts";
+import Insignia from "../components/common/Insignia.tsx";
+import { COLUMNAS_LISTADO, fechaCorta } from "../utils/listadoOperativos.util.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
 
 /**
  * Se pide la jornada entera de una vez, y se filtra y pagina en memoria.
@@ -84,26 +108,17 @@ import {
 const TAMANIO_MAXIMO_SERVIDOR = 200;
 
 /**
- * ¿El borrador de personal difiere del original del servidor? (2026-10-01). En la edición de un
- * operativo PROPIO el personal ya no se guarda al instante: se acumula en el borrador y se aplica
- * al pulsar «Guardar cambios». Esto mira si hay alta/baja o cambio de turno pendiente, para que el
- * pie diga «Cambios sin guardar» y el cierre pregunte antes de descartar.
+ * Con un rango (2026-10-13) se piden TODAS sus páginas, una tras otra, para que el contador, los
+ * filtros de columna y la paginación cubran el rango entero. El tope evita una carga sin fin: si
+ * el rango tiene más, la pantalla lo dice con el mismo aviso de siempre.
  */
-const hayCambiosDePersonal = (
-  actual: PersonaAsignada[],
-  original: PersonaAsignada[],
-): boolean => {
-  if (actual.length !== original.length) return true;
-  const porId = new Map(original.map((persona) => [persona.funcionarioId, persona]));
-  return actual.some((persona) => {
-    const antes = porId.get(persona.funcionarioId);
-    return (
-      !antes ||
-      antes.horaInicio !== persona.horaInicio ||
-      antes.horaFin !== persona.horaFin
-    );
-  });
-};
+const MAX_PAGINAS_SERVIDOR = 10;
+
+/** Por qué una fila de otro cuadro solo se consulta. */
+const MOTIVO_CUADRO_CERRADO = "El cuadro de esa fecha ya está cerrado";
+
+/** Espera tras el último cambio de fecha antes de consultar. */
+const MS_ESPERA_RANGO = 400;
 
 const MisOperativosPage = () => {
   /** El antetítulo nombra al departamento dueño de estos formularios. */
@@ -119,15 +134,49 @@ const MisOperativosPage = () => {
    *
    * Es una propuesta, no una imposición: el selector de fecha la cambia, y hace falta —la
    * AMC arma el lunes desde el viernes—.
+   *
+   * DESDE EL 2026-10-13 ES UN RANGO Desde–Hasta, y la vista inicial sigue siendo la misma: los
+   * dos extremos en el cuadro vigente. El servidor confirma cuál es el vigente y el rango
+   * máximo (`GET /operativos/rango`); mientras responde rige la misma regla calculada aquí.
+   * El rango se guarda en la URL (`?desde=&hasta=`) y se lee al cargar.
    */
-  const [fecha, setFecha] = useState(() => fechaDeJornadaPorDefecto());
+  const [vigente, setVigente] = useState(() => fechaDeJornadaPorDefecto());
+  const [rangoMaxDias, setRangoMaxDias] = useState(RANGO_MAX_DIAS_POR_DEFECTO);
+  const rangoDeUrlRef = useRef(
+    new URLSearchParams(window.location.search).has("desde"),
+  );
+  // Lo que se escribe en los dos campos…
+  const [rango, setRango] = useState<RangoFechas>(() =>
+    rangoDeLaUrl(window.location.search, fechaDeJornadaPorDefecto()),
+  );
+  // …y lo que se consulta, tras la espera y solo si es válido.
+  const [rangoAplicado, setRangoAplicado] = useState<RangoFechas>(rango);
+  const errorRango = errorDelRango(rango, rangoMaxDias);
+  const unDia = esUnSoloDia(rangoAplicado);
 
-  const { cuadro, cargando: cargandoCuadro, puedeEscribir } =
-    useCuadroDiario(fecha);
-  // La ventana del rol de carga bajo el que se opera, no la del primero de la lista de
-  // quien entra. Ver `useVentanaCarga`: con varios roles, el servidor respondía por el
-  // primero y la pantalla miraba una ventana ajena.
-  const ventana = useVentanaCarga(ROLES_DE_CARGA);
+  useEffect(() => {
+    let vivo = true;
+    Promise.resolve(OperativoService.rango())
+      .then((datos) => {
+        if (!vivo || !datos) return;
+        setRangoMaxDias(datos.rangoMaxDias);
+        setVigente((local) => {
+          // Sin rango en la URL, la vista inicial se alinea con el vigente del servidor.
+          if (!rangoDeUrlRef.current && datos.fechaVigente !== local) {
+            const inicial = { desde: datos.fechaVigente, hasta: datos.fechaVigente };
+            setRango(inicial);
+            setRangoAplicado(inicial);
+          }
+          return datos.fechaVigente;
+        });
+      })
+      .catch(() => {
+        // Sin respuesta rige la regla local; el servidor valida igual.
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
 
   const [operativos, setOperativos] = useState<Operativo[]>([]);
   const [totalServidor, setTotalServidor] = useState(0);
@@ -145,27 +194,58 @@ const MisOperativosPage = () => {
    * SE LEE UNA VEZ, AL MONTAR, y después manda el usuario: es una propuesta, no una
    * imposición. Si lo leyera en cada render, borrar el filtro a mano no serviría de nada
    * —volvería a ponerse solo— y la fila de filtros dejaría de obedecer.
+   *
+   * Se lee de `window.location` y no con `useSearchParams`: es una lectura ÚNICA al montar, y
+   * atar la pantalla al enrutador obligaría a envolverla en un Router para poder probarla. Los
+   * filtros, la página y el resaltado viven en `useTablaOperativos` desde el 2026-10-13.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  const [filtros, setFiltros] = useState<FiltrosListado>(() => {
-    // Se lee de `window.location` y no con `useSearchParams`: es una lectura ÚNICA al
-    // montar, y atar la pantalla al enrutador obligaría a envolverla en un Router para
-    // poder probarla, sin ganar nada a cambio.
-    const formulario = new URLSearchParams(window.location.search).get(
-      "formulario",
-    );
+  const tabla = useTablaOperativos(operativos, () => {
+    const formulario = new URLSearchParams(window.location.search).get("formulario");
     return formulario ? { formulario } : {};
   });
-  const [pagina, setPagina] = useState(0);
-  const [tamanio, setTamanio] = useState(10);
+  const { setPagina, resaltar } = tabla;
+
+  // Al cambiar el rango: espera, valida y vuelve a la página 1. Sin consulta si no es válido.
+  useEffect(() => {
+    if (errorDelRango(rango, rangoMaxDias)) return undefined;
+    const espera = window.setTimeout(() => {
+      setRangoAplicado((actual) =>
+        actual.desde === rango.desde && actual.hasta === rango.hasta ? actual : rango,
+      );
+      setPagina(0);
+    }, MS_ESPERA_RANGO);
+    return () => window.clearTimeout(espera);
+  }, [rango, rangoMaxDias, setPagina]);
+
+  // El rango aplicado viaja a la URL sin recargar ni apilar historial.
+  useEffect(() => {
+    const busqueda = busquedaConRango(window.location.search, rangoAplicado);
+    if (busqueda !== window.location.search) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${busqueda}${window.location.hash}`,
+      );
+    }
+  }, [rangoAplicado]);
+
+  /**
+   * El cuadro cuyos chips se muestran (un solo día) o cuyo aviso de ventana se calcula (varios
+   * días que incluyen el vigente). Con varios días no se muestran chips: los reemplaza el resumen.
+   */
+  const fechaDeCuadro = unDia ? rangoAplicado.desde : vigente;
+  const muestraAvisoVentana = incluye(rangoAplicado, vigente);
+
+  const { cuadro, cargando: cargandoCuadro, puedeEscribir } =
+    useCuadroDiario(fechaDeCuadro);
 
   const [editando, setEditando] = useState<Operativo | null>(null);
   // PATRULLA (2026-09-18): «Agregar Personal» abre el panel en modo solo-personal aunque el que
   // mira sea el registrante (que si no vería el editor de generales completo).
   const [agregandoAPatrulla, setAgregandoAPatrulla] = useState(false);
-  // Cajón de edición (2026-09-30): ref al Formik para saber si hay GENERALES sin guardar (`dirty`)
-  // y confirmar el descarte al cerrar. El personal ya se guardó al instante (no entra en `dirty`).
-  const refFormikEdicion = useRef<FormikProps<ValoresOperativo>>(null);
+  // «Ver detalle» (2026-10-13): el cajón se abre en SOLO LECTURA aunque la fila admita edición.
+  const [consultaId, setConsultaId] = useState<number | null>(null);
   /**
    * EDICIÓN DIFERIDA (2026-10-01). El personal de un operativo PROPIO ya no se guarda al instante:
    * los cambios (alta/baja/turno) se acumulan en el borrador local —`editando.personal`— y se
@@ -173,9 +253,6 @@ const MisOperativosPage = () => {
    * o recargar) para calcular el diff a aplicar y para saber si hay cambios pendientes.
    */
   const personalOriginalRef = useRef<PersonaAsignada[]>([]);
-  const [confirmandoDescarte, setConfirmandoDescarte] = useState(false);
-  // Fase D: indicador «Cambios sin guardar / Sin cambios» del pie del cajón (Formik `dirty`).
-  const [hayCambiosSinGuardar, setHayCambiosSinGuardar] = useState(false);
   /**
    * Confirmación en palabras tras asignar/retirar personal en el cajón (2026-10-01). El personal se
    * guarda al instante; esta franja («… asignado/retirado · guardado») lo dice sin color solo
@@ -187,26 +264,8 @@ const MisOperativosPage = () => {
   // Fase D: mensaje del servidor tras un 409 al guardar. Se muestra DENTRO del cajón, con
   // «Recargar datos», y conserva lo capturado (RN de bloqueo optimista). Nulo si no hay conflicto.
   const [conflictoEdicion, setConflictoEdicion] = useState<string | null>(null);
-  /**
-   * Operativo del que se está capturando un adicional. 2026-08-20.
-   *
-   * SOLO UNO DE LOS DOS PANELES ESTÁ ABIERTO A LA VEZ —abrir uno cierra el otro—, y de
-   * ahí que `enPanel` sirva para los tres efectos que dependen de «qué formulario y qué
-   * horario se están mirando»: catálogos, puntos de la zonal y personal elegible. Con dos
-   * juegos de efectos, corregir uno dejaría el otro atrás, que es exactamente el defecto
-   * que este archivo ya arrastró una vez con el horario del personal.
-   */
-  const [creandoAdicional, setCreandoAdicional] = useState<Operativo | null>(
-    null,
-  );
-  /**
-   * Personal del adicional, mientras se captura. Vive aquí y no en el operativo —como sí
-   * ocurre al editar— porque **todavía no existe el operativo al que colgarlo**: entra con
-   * él en una sola transacción, todo o nada. Es el mismo criterio de P-01.
-   */
-  const [personalAdicional, setPersonalAdicional] = useState<PersonaAgregada[]>(
-    [],
-  );
+  /** Otro error del servidor al guardar la edición: dentro del cajón, sobre el pie, sin cerrarlo. */
+  const [errorEdicion, setErrorEdicion] = useState<AvisoTexto | null>(null);
   /**
    * Horario en edición, mientras se cambia en el formulario. Nulo mientras no se toque:
    * entonces manda el del operativo. Ver el efecto de candidatos.
@@ -223,14 +282,55 @@ const MisOperativosPage = () => {
   const [candidatos, setCandidatos] = useState<PersonaElegible[]>([]);
   const [cargandoPersonal, setCargandoPersonal] = useState(false);
   const [avisoPersonal, setAvisoPersonal] = useState<string | null>(null);
+  /*
+    A QUIÉN SE REFIERE EL RECHAZO (R2, 2026-10-16), igual que en P-01: el servidor nombra a la
+    persona en `detalles.funcionarioId` y el motivo se pinta bajo SU horario dentro del cajón. Solo
+    vale mientras `avisoPersonal` siga siendo ese texto: ningún otro aviso hereda el dueño.
+  */
+  const [rechazoDe, setRechazoDe] = useState<{ mensaje: string; id: number } | null>(null);
+  const idPersonaRechazada =
+    rechazoDe !== null && rechazoDe.mensaje === avisoPersonal ? rechazoDe.id : null;
+  const avisarRechazoPersonal = (fallo: unknown) => {
+    const texto = presentarError(fallo).mensaje;
+    const id = funcionarioDelRechazo(fallo);
+    setAvisoPersonal(texto);
+    setRechazoDe(id === null ? null : { mensaje: texto, id });
+  };
 
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
-  const [exito, setExito] = useState<string | null>(null);
+  /** El error de CARGA del listado; los de las acciones son mensajes estándar o van en su cajón. */
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  /**
+   * Aviso breve tras guardar o retirar (abajo a la derecha, desaparece solo). El retiro también
+   * va por aquí desde el 2026-10-15: `ModalExito` se retiró.
+   */
 
-  /** El operativo cuyo formulario y horario gobiernan los catálogos y los elegibles. */
-  const enPanel = editando ?? creandoAdicional;
+  // La ventana del rol de carga bajo el que se opera, no la del primero de la lista de
+  // quien entra. Ver `useVentanaCarga`: con varios roles, el servidor respondía por el
+  // primero y la pantalla miraba una ventana ajena.
+  const ventana = useVentanaCarga(ROLES_DE_CARGA);
+
+  /**
+   * El ADICIONAL, en su cajón único (2026-08-20; hook compartido con P-01 desde el 2026-10-13).
+   * Al registrarlo se recarga la lista y su fila se resalta (`cargar` se declara más abajo: el hook
+   * llama siempre a la última versión de este aviso).
+   */
+  const adicional = useAdicionalOperativo({
+    ventanaAbierta: ventana.puedeEscribir,
+    alRegistrar: async (creado, aviso) => {
+      toast.exito(aviso);
+      await cargar();
+      resaltar(creado.id);
+    },
+  });
+
+  /**
+   * El operativo cuyo formulario y horario gobiernan los catálogos y los elegibles.
+   *
+   * SOLO UNO DE LOS DOS PANELES ESTÁ ABIERTO A LA VEZ —abrir uno cierra el otro—, y de ahí que
+   * `enPanel` sirva para los tres efectos que dependen de «qué formulario y qué horario se están
+   * mirando»: catálogos, puntos de la zonal y personal elegible.
+   */
+  const enPanel = editando ?? adicional.origen;
 
   /**
    * Fase D: al abrir, cerrar o cambiar de operativo en el cajón se olvida el conflicto (409) de la
@@ -247,32 +347,12 @@ const MisOperativosPage = () => {
   }, [editando?.id]);
 
   /**
-   * Sale de la edición. Con cambios sin guardar pregunta antes. Desde 2026-10-01, en la edición
-   * DIFERIDA de un operativo propio los cambios de personal TAMPOCO están guardados, así que cuentan
-   * junto a los generales (`dirty`). En el aporte el personal sí se guardó al instante y no cuenta.
+   * Cierra la edición y descarta lo que no se guardó. `DrawerOperativo` ya preguntó si había
+   * cambios —generales (`dirty`) o, en la edición DIFERIDA, el personal del borrador—: aquí solo se
+   * cierra. En el aporte el personal se guardó al instante y no cuenta.
    */
-  const cerrarEdicion = useCallback(() => {
-    const diferida =
-      editando != null &&
-      !agregandoAPatrulla &&
-      !editando.formulario.esPatrulla &&
-      accesoAlOperativo(editando, user?.rolCodes ?? []) === "PROPIO";
-    const personalPendiente =
-      diferida &&
-      editando != null &&
-      hayCambiosDePersonal(editando.personal, personalOriginalRef.current);
-    if (refFormikEdicion.current?.dirty || personalPendiente) {
-      setConfirmandoDescarte(true);
-      return;
-    }
-    setEditando(null);
-    setAgregandoAPatrulla(false);
-    setConfirmacionPersonal(null);
-  }, [editando, agregandoAPatrulla, user]);
-
-  /** Descarta sin guardar los generales y cierra (el personal ya quedó guardado). */
   const descartarEdicion = useCallback(() => {
-    setConfirmandoDescarte(false);
+    setErrorEdicion(null);
     setEditando(null);
     setAgregandoAPatrulla(false);
     setConfirmacionPersonal(null);
@@ -303,6 +383,46 @@ const MisOperativosPage = () => {
    * ═══════════════════════════════════════════════════════════════════════════════
    */
   const bloqueadoParaAdicional = !puedeEscribir;
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * CON UN RANGO, CADA FILA ES DE SU CUADRO (2026-10-13).
+   *
+   * El servidor dice por fila si admite edición (`admiteEdicion`: no cerrada, cuadro vigente y
+   * ventana abierta). Sin ese dato —respuesta anterior— rige la vara de siempre, la del cuadro
+   * que se mira. Una fila de un cuadro CERRADO o PASADO solo se consulta: «Ver» y «Eliminar»
+   * apagado con su motivo. La del vigente con la ventana cerrada conserva el comportamiento y
+   * los textos de siempre.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const bloqueadoFila = useCallback(
+    (operativo: Operativo): boolean =>
+      operativo.admiteEdicion === undefined ? bloqueado : !operativo.admiteEdicion,
+    [bloqueado],
+  );
+  // Sin el dato del servidor no se distingue «cerrado o pasado»: rige el comportamiento de siempre.
+  const cuadroCerradoFila = useCallback(
+    (operativo: Operativo): boolean =>
+      operativo.admiteEdicion !== undefined &&
+      (operativo.cuadroEstado === "CERRADO" || operativo.cuadroFecha !== vigente),
+    [vigente],
+  );
+  /**
+   * El adicional se salta la ventana y se dispone el día de la ejecución (regla 11): se ofrece
+   * en el cuadro de HOY y en el vigente mientras no estén cerrados, como hasta ahora.
+   */
+  const adicionalBloqueadoFila = useCallback(
+    (operativo: Operativo): boolean =>
+      operativo.cuadroEstado === undefined
+        ? bloqueadoParaAdicional
+        : operativo.cuadroEstado === "CERRADO",
+    [bloqueadoParaAdicional],
+  );
+  const ofreceAdicionalFila = useCallback(
+    (operativo: Operativo): boolean =>
+      operativo.admiteEdicion === undefined || operativo.cuadroFecha >= fechaDeHoy(),
+    [],
+  );
 
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -339,30 +459,44 @@ const MisOperativosPage = () => {
     [accesoDe],
   );
 
+  // Solo cuenta la última consulta: si el rango cambia mientras otra responde, esa se descarta.
+  const consultaVigenteRef = useRef(0);
+
   const cargar = useCallback(async () => {
+    const consulta = ++consultaVigenteRef.current;
     setCargando(true);
     setAviso(null);
 
     try {
-      const respuesta = await OperativoService.consultar({
-        fecha,
-        pagina: 1,
-        tamanio: TAMANIO_MAXIMO_SERVIDOR,
-      });
-      setOperativos(respuesta.datos);
-      setTotalServidor(respuesta.meta.total);
+      const filas: Operativo[] = [];
+      let total = 0;
+      for (let numero = 1; numero <= MAX_PAGINAS_SERVIDOR; numero += 1) {
+        const respuesta = await OperativoService.consultar({
+          desde: rangoAplicado.desde,
+          hasta: rangoAplicado.hasta,
+          pagina: numero,
+          tamanio: TAMANIO_MAXIMO_SERVIDOR,
+        });
+        if (consulta !== consultaVigenteRef.current) return;
+        filas.push(...respuesta.datos);
+        total = respuesta.meta.total;
+        if (filas.length >= total || respuesta.datos.length === 0) break;
+      }
+      setOperativos(filas);
+      setTotalServidor(total);
     } catch (fallo: unknown) {
+      if (consulta !== consultaVigenteRef.current) return;
       const error = presentarError(fallo);
       setOperativos([]);
       setTotalServidor(0);
       // Una fecha sin jornada abierta no es un fallo: es un día sin cuadro.
       if (error.estado !== 404) {
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+        setAviso({ texto: error.mensaje, variante: varianteDeAviso(error.trato) });
       }
     } finally {
-      setCargando(false);
+      if (consulta === consultaVigenteRef.current) setCargando(false);
     }
-  }, [fecha]);
+  }, [rangoAplicado]);
 
   useEffect(() => {
     void cargar();
@@ -432,13 +566,13 @@ const MisOperativosPage = () => {
     // RN-66: el ADICIONAL se pide SIN horario (por área y ausencia): ya no tiene uno único,
     // cada persona lleva el suyo. La EDICIÓN sí filtra por la ventana del operativo, que
     // conserva su envolvente.
-    const esAdicional = Boolean(creandoAdicional) && !editando;
+    const esAdicional = Boolean(adicional.origen) && !editando;
     const conHorario =
       !esAdicional && Boolean(horario.inicio) && Boolean(horario.fin);
 
     PersonalService.consultarElegibles({
       formulario: enPanel.formulario.codigo,
-      inicio: fecha,
+      inicio: enPanel.cuadroFecha,
       ...(conHorario
         ? { horaInicio: horario.inicio, horaFin: horario.fin }
         : {}),
@@ -456,37 +590,28 @@ const MisOperativosPage = () => {
     return () => {
       vigente = false;
     };
-  }, [enPanel, editando, creandoAdicional, fecha, horario.inicio, horario.fin]);
+  }, [enPanel, editando, adicional.origen, horario.inicio, horario.fin]);
 
-  const coincidentes = useMemo(
-    () => filtrarOperativos(operativos, filtros),
-    [operativos, filtros],
-  );
-
-  const pagina0 = useMemo(
-    () => paginar(coincidentes, pagina, tamanio),
-    [coincidentes, pagina, tamanio],
-  );
-
-  // Si el filtro deja menos páginas de las que había, la página actual se corrige sola:
-  // sin esto, quien filtra desde la página 3 se queda mirando una tabla vacía existiendo
-  // resultados.
-  useEffect(() => {
-    if (pagina0.pagina !== pagina) setPagina(pagina0.pagina);
-  }, [pagina0.pagina, pagina]);
-
-  const cambiarFiltro = useCallback(
-    (columna: ColumnaOperativo, valor: string) => {
-      setFiltros((actuales) => ({ ...actuales, [columna]: valor }));
-      setPagina(0);
-    },
-    [],
-  );
-
-  const limpiarFiltros = useCallback(() => {
-    setFiltros({});
-    setPagina(0);
+  /** Cambia el rango que se escribe; la consulta llega tras la espera, si es válido. */
+  const cambiarRango = useCallback((nuevo: RangoFechas) => {
+    setRango(nuevo);
+    setEditando(null);
   }, []);
+
+  // «Limpiar filtros» (2026-10-13) también devuelve el rango al cuadro vigente.
+  const { limpiarFiltros: limpiarColumnas } = tabla;
+  const limpiarFiltros = useCallback(() => {
+    limpiarColumnas();
+    setRango({ desde: vigente, hasta: vigente });
+  }, [vigente, limpiarColumnas]);
+
+  const atajoDelRango = atajoActivo(rango, vigente);
+
+  /** Cuántos cuadros distintos abarca lo cargado, para el resumen de varios días. */
+  const cuadrosDelRango = useMemo(
+    () => new Set(operativos.map((operativo) => operativo.cuadroFecha)).size,
+    [operativos],
+  );
 
   /**
    * BUG #9 (2026-09-30): reemplaza en la lista de la jornada el operativo COMPLETO que devuelve una
@@ -503,16 +628,21 @@ const MisOperativosPage = () => {
     );
   }, []);
 
+  const { ejecutar: conLiberacion, modal: modalLiberacion } =
+    useConfirmarLiberacion();
+
   const guardarEdicion = useCallback(
     async (
       valores: ValoresOperativo,
       ayudas: FormikHelpers<ValoresOperativo>,
+      extras?: ExtrasDelEnvio,
     ) => {
       if (!editando) return;
 
       setProcesando(true);
       setAviso(null);
       setConflictoEdicion(null);
+      setErrorEdicion(null);
 
       // RN-66: el operativo conserva su ventana; la corrección edita zonal, punto, tipo,
       // instituciones y notas (los campos GENERALES), no el horario.
@@ -547,6 +677,12 @@ const MisOperativosPage = () => {
             ? valores.tipoLibre
             : undefined,
         institucionesIds: valores.institucionesIds,
+            // Cómo se moviliza (2026-10-06): lo elige quien registra; por defecto, completo.
+            tipoTransporte: valores.tipoTransporte ?? "COMPLETO",
+            esMacrooperativo: macroSegunTipo(
+              valores.tipoTransporte ?? "COMPLETO",
+              valores.esMacrooperativo,
+            ),
         observacionesNuevas:
           valores.observaciones.length > 0 ? valores.observaciones : undefined,
       };
@@ -554,11 +690,18 @@ const MisOperativosPage = () => {
       try {
         // PATRULLA (2026-09-18): editar los generales los aplica a TODOS los códigos del lote.
         if (editando.grupoRegistro) {
-          await OperativoService.editarPatrulla(
-            editando.grupoRegistro,
-            generales,
+          const grupo = editando.grupoRegistro;
+          // Transporte requerido (2026-10-07): si cambia el tipo con transporte asignado, se pregunta.
+          const hecho = await conLiberacion((confirmarLiberacion) =>
+            OperativoService.editarPatrulla(grupo, {
+              ...generales,
+              ...(confirmarLiberacion ? { confirmarLiberacion } : {}),
+            }),
           );
-          setExito("Patrulla actualizada en todos sus códigos.");
+          if (hecho === null) return;
+          // Aviso breve abajo a la derecha y la fila resaltada, como el adicional (2026-10-08).
+          toast.exito("Patrulla actualizada en todos sus códigos.");
+          resaltar(editando.id);
           setEditando(null);
           ayudas.resetForm();
           await cargar();
@@ -595,6 +738,15 @@ const MisOperativosPage = () => {
                 antes.horaFin !== persona.horaFin)
             );
           });
+          // Trámites de Inspección (2026-10-07): de quien sigue y lo cambió, y de las altas que lo traen.
+          const tramites = editando.personal.filter((persona) => {
+            const antes = original.find(
+              (otra) => otra.funcionarioId === persona.funcionarioId,
+            );
+            return antes === undefined
+              ? codigoDeTramite(persona) !== null
+              : codigoDeTramite(antes) !== codigoDeTramite(persona);
+          });
 
           let actual = editando;
           const aplicado = (operativoAlDia: Operativo) => {
@@ -604,6 +756,24 @@ const MisOperativosPage = () => {
             // así un reintento tras un fallo no vuelve a aplicar lo que ya quedó guardado.
             personalOriginalRef.current = operativoAlDia.personal;
             empalmarEnLaLista(operativoAlDia);
+          };
+          // Un turno que mueve la ventana de un operativo con transporte pide confirmar (2026-10-14).
+          // Con «No», se detiene aquí: lo ya aplicado queda y el cajón sigue abierto.
+          const turnoAplicado = async (
+            funcionarioId: number,
+            turno: { horaInicio: string; horaFin: string },
+          ): Promise<boolean> => {
+            const hecho = await conLiberacion((confirmarLiberacion) =>
+              OperativoService.actualizarTurnoPersonal(
+                actual.id,
+                funcionarioId,
+                turno,
+                confirmarLiberacion,
+              ),
+            );
+            if (hecho === null) return false;
+            aplicado(hecho);
+            return true;
           };
 
           try {
@@ -621,37 +791,53 @@ const MisOperativosPage = () => {
                   funcionarioId: alta.funcionarioId,
                 }),
               );
-              aplicado(
-                await OperativoService.actualizarTurnoPersonal(
-                  actual.id,
-                  alta.funcionarioId,
-                  { horaInicio: alta.horaInicio, horaFin: alta.horaFin },
-                ),
-              );
+              const conTurno = await turnoAplicado(alta.funcionarioId, {
+                horaInicio: alta.horaInicio,
+                horaFin: alta.horaFin,
+              });
+              if (!conTurno) return;
             }
             for (const turno of turnos) {
+              const conTurno = await turnoAplicado(turno.funcionarioId, {
+                horaInicio: turno.horaInicio,
+                horaFin: turno.horaFin,
+              });
+              if (!conTurno) return;
+            }
+            for (const conTramite of tramites) {
               aplicado(
-                await OperativoService.actualizarTurnoPersonal(
+                await OperativoService.fijarTramitePersonal(
                   actual.id,
-                  turno.funcionarioId,
-                  { horaInicio: turno.horaInicio, horaFin: turno.horaFin },
+                  conTramite.funcionarioId,
+                  codigoDeTramite(conTramite),
                 ),
               );
             }
           } catch (falloPersonal: unknown) {
             // Se detiene y se avisa en el bloque de personal; los generales no se tocan (el `finally`
             // del `try` externo repone `procesando`). El cajón queda abierto con lo ya aplicado.
-            setAvisoPersonal(presentarError(falloPersonal).mensaje);
+            avisarRechazoPersonal(falloPersonal);
             return;
           }
         }
 
-        await OperativoService.editar(editando.id, {
-          version: versionVigente,
-          ...generales,
-        });
+        const editado = await conLiberacion((confirmarLiberacion) =>
+          OperativoService.editar(editando.id, {
+            version: versionVigente,
+            ...generales,
+            // Compartir unidad (2026-10-19): solo lo que cambió respecto de lo guardado.
+            ...camposCompartirParaEnvio(valores, comoValoresDeFormulario(editando)),
+            ...(confirmarLiberacion ? { confirmarLiberacion } : {}),
+          }),
+        );
+        if (editado === null) return;
+        avisarCompartirRetirado(editado, editando.compartirCon?.identificador);
 
-        setExito(`Operativo ${editando.identificador} actualizado.`);
+        // La nota escrita sin «Agregar» se sumó sola (2026-10-16): el aviso lo dice.
+        toast.exito(`Operativo ${editando.identificador} actualizado`, {
+          texto: extras?.notaPendienteAgregada ? AVISO_NOTA_PENDIENTE : undefined,
+        });
+        resaltar(editando.id);
         setEditando(null);
         ayudas.resetForm();
         await cargar();
@@ -659,11 +845,12 @@ const MisOperativosPage = () => {
         const error = presentarError(fallo);
         // `conservaCaptura`: el panel sigue abierto con lo escrito. Un 409 de bloqueo optimista se
         // resuelve recargando, así que su aviso va DENTRO del cajón, con «Recargar datos» (Fase D),
-        // donde está mirando quien acaba de pulsar. El resto de errores siguen en el aviso de arriba.
+        // donde está mirando quien acaba de pulsar. El resto, también dentro del cajón, sobre el pie.
         if (error.estado === 409) {
           setConflictoEdicion(error.mensaje);
         } else {
-          setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+          // Dentro del cajón, sobre el pie (2026-10-08): quien pulsó «Guardar» está mirando ahí.
+          setErrorEdicion({ texto: error.mensaje, variante: varianteDeAviso(error.trato) });
         }
       } finally {
         setProcesando(false);
@@ -676,79 +863,176 @@ const MisOperativosPage = () => {
       agregandoAPatrulla,
       esEdicionDiferida,
       empalmarEnLaLista,
+      conLiberacion,
+      resaltar,
     ],
   );
 
   // «Agregar Personal» a una patrulla: abre el panel en modo solo-personal sobre un miembro del
   // grupo. El servidor adopta el `grupoRegistro`. 2026-09-18.
   const abrirAgregarPatrulla = useCallback((operativo: Operativo) => {
+    setConsultaId(null);
     setEditando(operativo);
     setAgregandoAPatrulla(true);
   }, []);
 
-  // Acciones FUSIONADAS de la patrulla (Form 5/6). Un solo «Editar» (los generales, solo el
-  // registrante) + un solo «Agregar Personal»; el «Eliminar» va por persona. 2026-09-18.
-  const accionesDePatrulla = (grupo: Operativo[]) => {
-    const cabeza = grupo[0];
-    const esRegistrante = accesoDe(cabeza) === "PROPIO";
-    // «Agregar Personal» es el APORTE de Instrucción: solo se ofrece a quien aporta a este
-    // formulario —en el Form 6, el DMIT de Instrucción—, no al dueño, que registra a los suyos al
-    // crear la patrulla. Espejo de `reglaCupoCompartido` del servidor. 2026-09-18.
-    const puedeAgregarPersonal = puedeAportarA(cabeza, user?.rolCodes ?? []);
-    const motivoBloqueo = bloqueado
-      ? "La ventana de carga está cerrada o el cuadro fue cerrado."
-      : undefined;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * EL GRUPO DE ACCIONES DE UNA FILA (2026-10-13), el mismo en todas: `AccionesOperativo`.
+   *
+   * La fila que no se puede escribir —cuadro cerrado o pasado, o la ventana cerrada— solo se
+   * CONSULTA: «Ver» abre el cajón en solo lectura y «Eliminar» queda apagado en el menú con su
+   * motivo. La excepción es «+ Adicional»: se salta la ventana y se dispone el día de la ejecución
+   * (regla 11, RN-61), así que sigue ofreciéndose mientras su cuadro no esté cerrado.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const motivoBloqueoDe = useCallback(
+    (operativo: Operativo): string =>
+      cuadroCerradoFila(operativo)
+        ? MOTIVO_CUADRO_CERRADO
+        : "La ventana de carga está cerrada o el cuadro fue cerrado.",
+    [cuadroCerradoFila],
+  );
+
+  /** Abre el cajón del operativo; con `consulta`, en solo lectura aunque la fila admita edición. */
+  const abrirCajon = useCallback((operativo: Operativo, consulta: boolean) => {
+    setAgregandoAPatrulla(false);
+    setConsultaId(consulta ? operativo.id : null);
+    setEditando(operativo);
+  }, []);
+
+  /**
+   * La nota «Comparte con X» (2026-10-19): abre el detalle del operativo con el que comparte. Si
+   * no está en la lista cargada, se pide por su id; es del mismo ámbito (RN-48), así que se ve.
+   */
+  const verOperativoPorId = useCallback(
+    async (operativoId: number) => {
+      const enLista = operativos.find((uno) => uno.id === operativoId);
+      try {
+        abrirCajon(enLista ?? (await OperativoService.obtener(operativoId)), true);
+      } catch (fallo) {
+        mensaje.errorDe(fallo, { titulo: "No se pudo abrir el operativo" });
+      }
+    },
+    [operativos, abrirCajon],
+  );
+
+  /** Por qué «+ Adicional» no aplica a esta fila, o `null` si aplica. */
+  const motivoSinAdicional = (operativo: Operativo): string | null => {
+    if (!operativo.formulario.admiteAdicionales)
+      return "Este formulario no admite operativos adicionales.";
+    if (operativo.esAdicional)
+      return "Es un operativo adicional: los adicionales no se encadenan.";
+    if (accesoDe(operativo) !== "PROPIO")
+      return "Solo el departamento que registró el operativo puede crear un adicional.";
+    if (!ofreceAdicionalFila(operativo)) return "El cuadro de esa fecha ya pasó.";
+    if (adicionalBloqueadoFila(operativo)) return "El cuadro fue cerrado por la Dirección.";
+    return null;
+  };
+
+  /**
+   * El casillero «+ Adicional»: vacío en una fila de consulta, salvo que el adicional siga
+   * disponible ahí (cuadro de hoy o vigente sin cerrar).
+   */
+  const casilleroAdicional = (operativo: Operativo) => {
+    const consulta = bloqueadoFila(operativo);
+    const disponible =
+      ofreceAdicionalFila(operativo) && !adicionalBloqueadoFila(operativo);
+    if (consulta && !disponible) return null;
+    return {
+      onClick: () => abrirAdicional(operativo),
+      motivo: motivoSinAdicional(operativo),
+    };
+  };
+
+  /** «Eliminar» del menú: apagado si la fila es de consulta o de otro departamento. */
+  const eliminarDe = (operativo: Operativo) => ({
+    onClick: () => setPorRetirar(operativo),
+    motivo: bloqueadoFila(operativo)
+      ? motivoBloqueoDe(operativo)
+      : motivoDeSoloLectura(accesoDe(operativo), operativo.creadoPorRol),
+  });
+
+  /** Una fila suelta (o una copia del 8). */
+  const accionesDeFila = (operativo: Operativo) => {
+    const esPropio = accesoDe(operativo) === "PROPIO";
+    const consulta = bloqueadoFila(operativo);
+    const principal: AccionPrincipal = consulta
+      ? {
+          tipo: "ver",
+          onClick: () => abrirCajon(operativo, true),
+          motivo: `${motivoBloqueoDe(operativo)}: se abre en solo lectura.`,
+        }
+      : esPropio
+        ? { tipo: "editar", onClick: () => abrirCajon(operativo, false) }
+        : {
+            // Quien APORTA no edita los generales: abre el mismo cajón en «solo personal».
+            tipo: "personal",
+            onClick: () => abrirCajon(operativo, false),
+            motivo:
+              motivoDeSoloLectura(accesoDe(operativo), operativo.creadoPorRol) ?? undefined,
+          };
     return (
-      <div className="flex flex-col items-start gap-1">
-        {esRegistrante && (
-          <button
-            type="button"
-            className="btn btn-ghost btn-xs"
-            onClick={() => {
-              setAgregandoAPatrulla(false);
-              setEditando(cabeza);
-            }}
-            disabled={bloqueado || procesando}
-            title={motivoBloqueo}
-          >
-            Editar
-          </button>
-        )}
-        {puedeAgregarPersonal && (
-          <button
-            type="button"
-            className="btn btn-primary btn-xs"
-            onClick={() => abrirAgregarPatrulla(cabeza)}
-            disabled={bloqueado}
-            title={motivoBloqueo}
-          >
-            Agregar Personal
-          </button>
-        )}
-      </div>
+      <AccionesOperativo
+        identificador={operativo.identificador}
+        principal={principal}
+        consulta={consulta}
+        adicional={casilleroAdicional(operativo)}
+        onVerDetalle={() => abrirCajon(operativo, true)}
+        eliminar={eliminarDe(operativo)}
+        procesando={procesando}
+      />
     );
   };
 
-  const accionDePersonaPatrulla = (operativo: Operativo) => {
-    const acceso = accesoDe(operativo);
-    const motivoAjeno = motivoDeSoloLectura(acceso, operativo.creadoPorRol);
-    const impedido = bloqueado || procesando || motivoAjeno !== null;
+  /**
+   * Una fila de PATRULLA (Form 5/6). La patrulla es UN operativo: su acción principal va una sola
+   * vez, en la cabeza —«Editar» para quien la registró, «Agregar Personal» para quien aporta—, y en
+   * cada fila el menú con el «Eliminar» de esa persona. 2026-09-18, rehecho el 2026-10-13.
+   */
+  const accionesDeFilaPatrulla = (
+    operativo: Operativo,
+    grupo: Operativo[],
+    esCabeza: boolean,
+  ) => {
+    const cabeza = grupo[0];
+    const esRegistrante = accesoDe(cabeza) === "PROPIO";
+    // «Agregar Personal» es el APORTE de Instrucción: espejo de `reglaCupoCompartido`.
+    const puedeAgregarPersonal = puedeAportarA(cabeza, user?.rolCodes ?? []);
+    const consulta = bloqueadoFila(cabeza);
+
+    let principal: AccionPrincipal | null = null;
+    if (esCabeza) {
+      principal =
+        consulta || (!esRegistrante && !puedeAgregarPersonal)
+          ? {
+              tipo: "ver",
+              onClick: () => abrirCajon(cabeza, true),
+              motivo: consulta
+                ? `${motivoBloqueoDe(cabeza)}: se abre en solo lectura.`
+                : undefined,
+            }
+          : esRegistrante
+            ? { tipo: "editar", onClick: () => abrirCajon(cabeza, false) }
+            : { tipo: "personal", onClick: () => abrirAgregarPatrulla(cabeza) };
+    }
+
     return (
-      <button
-        type="button"
-        className="btn btn-ghost btn-xs text-error"
-        onClick={() => setPorRetirar(operativo)}
-        disabled={impedido}
-        title={
-          motivoAjeno ??
-          (bloqueado
-            ? "La ventana de carga está cerrada o el cuadro fue cerrado."
-            : undefined)
+      <AccionesOperativo
+        identificador={operativo.identificador}
+        principal={principal}
+        consulta={consulta}
+        adicional={esCabeza ? casilleroAdicional(cabeza) : null}
+        onVerDetalle={() => abrirCajon(operativo, true)}
+        // Quien registró la patrulla y además aporta a ella: «Agregar personal» va al menú.
+        masAcciones={
+          esCabeza && !consulta && esRegistrante && puedeAgregarPersonal
+            ? [{ etiqueta: "Agregar personal", onClick: () => abrirAgregarPatrulla(cabeza) }]
+            : []
         }
-      >
-        <Iconos nombre="eliminar" />
-        Eliminar
-      </button>
+        eliminar={eliminarDe(operativo)}
+        procesando={procesando}
+      />
     );
   };
 
@@ -758,116 +1042,14 @@ const MisOperativosPage = () => {
    * Cierra la edición si estaba abierta: los dos paneles comparten los efectos de
    * catálogos y elegibles, y tenerlos a la vez haría que uno pidiera los datos del otro.
    */
-  const abrirAdicional = useCallback((origen: Operativo) => {
-    setEditando(null);
-    setPersonalAdicional([]);
-    setAvisoPersonal(null);
-    setCreandoAdicional(origen);
-  }, []);
-
-  /** Cierra el cajón del adicional y descarta lo capturado (aún no existía nada que guardar). */
-  const cerrarAdicional = useCallback(() => {
-    setCreandoAdicional(null);
-    setPersonalAdicional([]);
-  }, []);
-
-  /**
-   * Fija el horario propio de una persona del adicional (2026-09-08, RN-66). Obligatorio: el
-   * adicional no tiene horario propio y el servidor toma su ventana de las de su gente.
-   */
-  const cambiarHorarioAdicional = useCallback(
-    (funcionarioId: number, horaInicio: string, horaFin: string) => {
-      setPersonalAdicional((actuales) =>
-        actuales.map((persona) =>
-          persona.funcionarioId === funcionarioId
-            ? {
-                ...persona,
-                horaInicio: horaInicio || undefined,
-                horaFin: horaFin || undefined,
-              }
-            : persona,
-        ),
-      );
+  const { abrir: abrirCajonAdicional } = adicional;
+  const abrirAdicional = useCallback(
+    (origen: Operativo) => {
+      setEditando(null);
+      setAvisoPersonal(null);
+      abrirCajonAdicional(origen);
     },
-    [],
-  );
-
-  const guardarAdicional = useCallback(
-    async (
-      valores: ValoresOperativo,
-      ayudas: FormikHelpers<ValoresOperativo>,
-    ) => {
-      if (!creandoAdicional) return;
-
-      setProcesando(true);
-      setAviso(null);
-
-      try {
-        // La jornada y el formulario NO viajan: los hereda del operativo del que nace, y
-        // el servidor rechaza con 400 si se envían. Ver `CrearAdicional`.
-        const adicional = await OperativoService.crearAdicional(
-          creandoAdicional.id,
-          {
-            // RN-66: el adicional no manda su horario; el servidor lo deriva de las personas.
-            zonalesIds: valores.zonalesIds,
-            puntoEncuentroId:
-              valores.punto === OPCION_ADICIONALES || valores.punto === ""
-                ? undefined
-                : Number(valores.punto),
-            puntoLibre:
-              valores.punto === OPCION_ADICIONALES
-                ? valores.puntoLibre
-                : undefined,
-            tipoControlId:
-              valores.tipoControl === OPCION_ADICIONALES ||
-              valores.tipoControl === ""
-                ? undefined
-                : Number(valores.tipoControl),
-            tipoLibre:
-              valores.tipoControl === OPCION_ADICIONALES
-                ? valores.tipoLibre
-                : undefined,
-            institucionesIds: valores.institucionesIds,
-            // Cada persona con su horario, OBLIGATORIO (RN-66): el servidor toma la ventana
-            // del adicional de las de su gente.
-            personal: personalAdicional.map((persona) => ({
-              funcionarioId: persona.funcionarioId,
-              horaInicio: persona.horaInicio || undefined,
-              horaFin: persona.horaFin || undefined,
-            })),
-            observaciones: valores.observaciones || undefined,
-          },
-        );
-
-        // Se nombra el original: quien acaba de capturarlo con prisa necesita confirmar
-        // que colgó de donde quería, y el identificador nuevo no lo dice por sí solo.
-        setExito(
-          `Operativo adicional ${adicional.identificador} registrado sobre ${creandoAdicional.identificador}.` +
-            (ventana.puedeEscribir
-              ? ""
-              : " Se creó fuera de la ventana de carga y queda constancia en la auditoría.") +
-            // El transporte lo hereda el servidor, y solo si el conductor puede conducir
-            // a esa hora. Decirlo evita que alguien lo dé por hecho y el operativo salga
-            // sin vehículo: la ventana de la DAF también está cerrada a esa hora.
-            (adicional.estadoTransporte === "ASIGNADO"
-              ? " Heredó el conductor y la placa del operativo original."
-              : " NO heredó transporte: queda pendiente de la DAF."),
-        );
-        setCreandoAdicional(null);
-        setPersonalAdicional([]);
-        ayudas.resetForm();
-        await cargar();
-      } catch (fallo: unknown) {
-        const error = presentarError(fallo);
-        // El panel sigue abierto con lo capturado: un rechazo del servidor —una persona
-        // no elegible, el cuadro ya cerrado— se corrige y se reintenta sin volver a
-        // escribirlo todo, que es lo que más importa cuando se captura con prisa.
-        setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-      } finally {
-        setProcesando(false);
-      }
-    },
-    [creandoAdicional, personalAdicional, ventana.puedeEscribir, cargar],
+    [abrirCajonAdicional],
   );
 
   const agregarPersona = useCallback(
@@ -914,7 +1096,7 @@ const MisOperativosPage = () => {
           `Se guarda al instante · ${nombreDePersona(persona)} asignado · guardado.`,
         );
       } catch (fallo: unknown) {
-        setAvisoPersonal(presentarError(fallo).mensaje);
+        avisarRechazoPersonal(fallo);
       }
     },
     [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
@@ -959,10 +1141,45 @@ const MisOperativosPage = () => {
           `Se guarda al instante · ${nombreRetirado} retirado · guardado.`,
         );
       } catch (fallo: unknown) {
-        setAvisoPersonal(presentarError(fallo).mensaje);
+        avisarRechazoPersonal(fallo);
       }
     },
     [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
+  );
+
+  /**
+   * Fija el trámite de Inspección de una persona en el borrador del cajón (2026-10-07). Se aplica al
+   * «Guardar cambios», con el resto del personal.
+   */
+  const cambiarTramiteEnEdicion = useCallback(
+    (funcionarioId: number, codigoTramite: string | null) => {
+      setAvisoPersonal(null);
+      setEditando((actual) =>
+        actual
+          ? {
+              ...actual,
+              personal: actual.personal.map((persona) =>
+                persona.funcionarioId === funcionarioId
+                  ? {
+                      ...persona,
+                      tramiteInspeccion: codigoTramite
+                        ? {
+                            codigoTramite,
+                            nroSitra: null,
+                            predio: null,
+                            zonal: null,
+                            materia: null,
+                            tipoTramite: null,
+                          }
+                        : null,
+                    }
+                  : persona,
+              ),
+            }
+          : actual,
+      );
+    },
+    [],
   );
 
   /**
@@ -995,18 +1212,28 @@ const MisOperativosPage = () => {
       }
 
       try {
-        const actualizado = await OperativoService.actualizarTurnoPersonal(
-          editando.id,
-          funcionarioId,
-          { horaInicio, horaFin },
+        const actualizado = await conLiberacion((confirmarLiberacion) =>
+          OperativoService.actualizarTurnoPersonal(
+            editando.id,
+            funcionarioId,
+            { horaInicio, horaFin },
+            confirmarLiberacion,
+          ),
         );
+        if (actualizado === null) return;
         setEditando(actualizado);
         empalmarEnLaLista(actualizado);
       } catch (fallo: unknown) {
-        setAvisoPersonal(presentarError(fallo).mensaje);
+        avisarRechazoPersonal(fallo);
       }
     },
-    [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
+    [
+      editando,
+      agregandoAPatrulla,
+      esEdicionDiferida,
+      empalmarEnLaLista,
+      conLiberacion,
+    ],
   );
 
   /**
@@ -1027,8 +1254,10 @@ const MisOperativosPage = () => {
       personalOriginalRef.current = fresco.personal;
       setConflictoEdicion(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      void mensaje.errorDe(fallo, {
+        titulo: "No se pudo recargar el operativo",
+        reintentar: () => void recargarEdicion(),
+      });
     } finally {
       setProcesando(false);
     }
@@ -1052,7 +1281,7 @@ const MisOperativosPage = () => {
         await OperativoService.reemplazarPersonal(operativoId, funcionarioId);
         await cargar();
       } catch (fallo: unknown) {
-        setAvisoPersonal(presentarError(fallo).mensaje);
+        avisarRechazoPersonal(fallo);
       }
     },
     [cargar],
@@ -1069,7 +1298,7 @@ const MisOperativosPage = () => {
         await OperativoService.asignarPersonal(editando.id, { funcionarioId });
         await cargar();
       } catch (fallo: unknown) {
-        setAvisoPersonal(presentarError(fallo).mensaje);
+        avisarRechazoPersonal(fallo);
       }
     },
     [editando, cargar],
@@ -1092,8 +1321,14 @@ const MisOperativosPage = () => {
     edicionDiferida && editando != null
       ? hayCambiosDePersonal(editando.personal, personalOriginalRef.current)
       : false;
-  // El pie y el cierre miran los generales (`dirty`) Y el personal pendiente.
-  const hayCambiosPendientes = hayCambiosSinGuardar || personalSucio;
+  /**
+   * QUÉ MODO DEL CAJÓN. «editar» para el operativo propio (y los generales de la patrulla propia);
+   * «personal» para el aporte y el «Agregar Personal» de la patrulla, que guardan al instante.
+   */
+  const modoCajon: "editar" | "personal" =
+    editando != null && !agregandoAPatrulla && accesoDe(editando) === "PROPIO"
+      ? "editar"
+      : "personal";
 
   /** Los códigos de la patrulla en edición, cada uno con su persona y si lo puedo tocar. */
   const miembrosPatrulla = useMemo<MiembroPatrulla[]>(() => {
@@ -1115,34 +1350,24 @@ const MisOperativosPage = () => {
   const confirmarRetiro = useCallback(async () => {
     if (!porRetirar) return;
 
-    setProcesando(true);
     setAviso(null);
 
-    try {
-      const baja = await OperativoService.retirar(
-        porRetirar.id,
-        porRetirar.version,
-      );
-      // PV-10: las dos bajas no son la misma noticia. Si la fila se conservó, quien la
-      // retiró tiene que saberlo, y por qué.
-      setExito(
-        baja.eliminado
-          ? `Operativo ${baja.identificador} eliminado. Su número queda libre para el siguiente registro.`
-          : `Operativo ${baja.identificador} retirado del cuadro. No se elimina porque ya tiene ${baja.ordenesEmitidas === 1 ? "una orden emitida" : `${baja.ordenesEmitidas} órdenes emitidas`}: una orden ya comunicada no puede quedarse sin origen.`,
-      );
-      if (editando?.id === porRetirar.id) setEditando(null);
-      setPorRetirar(null);
-      await cargar();
-    } catch (fallo: unknown) {
-      const error = presentarError(fallo);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
-      setPorRetirar(null);
-    } finally {
-      setProcesando(false);
+    // Si el servidor lo rechaza, la promesa falla y el MISMO modal de la confirmación lo muestra.
+    const baja = await OperativoService.retirar(porRetirar.id, porRetirar.version);
+    // PV-10: las dos bajas no son la misma noticia. Si la fila se conservó, quien la
+    // retiró tiene que saberlo, y por qué.
+    // Eliminado: éxito. Retirado sin eliminar: INFORMACIÓN (no se hizo lo que se pidió, y por qué).
+    if (baja.eliminado) {
+      toast.exito(`Operativo ${baja.identificador} eliminado. Su número queda libre para el siguiente registro.`);
+    } else {
+      toast.info(`Operativo ${baja.identificador} retirado del cuadro. No se elimina porque ya tiene ${baja.ordenesEmitidas === 1 ? "una orden emitida" : `${baja.ordenesEmitidas} órdenes emitidas`}: una orden ya comunicada no puede quedarse sin origen.`);
     }
+    if (editando?.id === porRetirar.id) setEditando(null);
+    setPorRetirar(null);
+    // La recarga va aparte: el modal ya se cerró y un fallo al releer lo dice la propia página.
+    void cargar();
   }, [porRetirar, editando, cargar]);
 
-  const filtrando = hayFiltrosActivos(filtros);
 
   return (
     <section className="app-page-shell">
@@ -1153,53 +1378,136 @@ const MisOperativosPage = () => {
         <h1 className="page-heading-title">
           Mis operativos
         </h1>
-        <CamposCalculados
-          cuadro={cuadro}
-          cargando={cargandoCuadro}
-        />
+        {/*
+          UN SOLO DÍA: los chips del cuadro, como siempre. VARIOS DÍAS (2026-10-13): no hay un
+          cuadro que nombrar; el resumen dice cuántos operativos y cuántos cuadros abarca.
+        */}
+        {unDia ? (
+          <CamposCalculados
+            cuadro={cuadro}
+            cargando={cargandoCuadro}
+          />
+        ) : (
+          <div role="status">
+            <Insignia variante="suave">
+              {cargando
+                ? "Cargando…"
+                : resumenDelRango(rangoAplicado, operativos.length, cuadrosDelRango)}
+            </Insignia>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="form-control">
             <label
               className="label"
-              htmlFor="fechaCuadro"
+              htmlFor="fechaDesde"
             >
-              <span className="label-text text-xs font-semibold uppercase tracking-[0.12em]">
-                Fecha del cuadro
+              <span className="text-app-label text-xs uppercase tracking-[0.12em]">
+                Desde
               </span>
             </label>
             <input
-              id="fechaCuadro"
+              id="fechaDesde"
               type="date"
-              className="input input-bordered input-sm"
-              value={fecha}
-              onChange={(evento) => {
-                setFecha(evento.target.value);
-                setEditando(null);
-                setPagina(0);
-              }}
+              className={`input input-bordered input-sm ${
+                errorRango?.campo === "desde" ? "input-error" : ""
+              }`}
+              value={rango.desde}
+              aria-invalid={errorRango?.campo === "desde"}
+              aria-describedby={errorRango ? "errorRango" : undefined}
+              onChange={(evento) => cambiarRango({ ...rango, desde: evento.target.value })}
             />
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
+          <span
+            className="pb-2 text-app-muted"
+            aria-hidden="true"
+          >
+            →
+          </span>
+          <div className="form-control">
+            <label
+              className="label"
+              htmlFor="fechaHasta"
+            >
+              <span className="text-app-label text-xs uppercase tracking-[0.12em]">
+                Hasta
+              </span>
+            </label>
+            <input
+              id="fechaHasta"
+              type="date"
+              className={`input input-bordered input-sm ${
+                errorRango?.campo === "hasta" ? "input-error" : ""
+              }`}
+              value={rango.hasta}
+              aria-invalid={errorRango?.campo === "hasta"}
+              aria-describedby={errorRango ? "errorRango" : undefined}
+              onChange={(evento) => cambiarRango({ ...rango, hasta: evento.target.value })}
+            />
+          </div>
+
+          {/* Atajos anclados al cuadro vigente; el que coincide con el rango se resalta. */}
+          <div
+            className="flex flex-wrap gap-1 pb-1"
+            role="group"
+            aria-label="Atajos de fechas"
+          >
+            {ATAJOS_RANGO.map(({ clave, nombre }) => {
+              const activo = atajoDelRango === clave;
+              return (
+                <button
+                  key={clave}
+                  type="button"
+                  // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
+                  className={`btn btn-sm rounded-full ${activo ? "btn-primary" : "btn-outline"}`}
+                  aria-pressed={activo}
+                  onClick={() => cambiarRango(rangoDeAtajo(clave, vigente))}
+                >
+                  {nombre}
+                </button>
+              );
+            })}
+          </div>
+
+          <Boton
+            variante="enlace"
+            tamano="sm"
             onClick={limpiarFiltros}
-            disabled={!filtrando}
+            deshabilitado={!tabla.filtrando && rango.desde === vigente && rango.hasta === vigente}
           >
             Limpiar filtros
-          </button>
+          </Boton>
         </div>
+
+        {errorRango && (
+          <p
+            id="errorRango"
+            className="text-sm text-error"
+            role="alert"
+          >
+            {errorRango.mensaje}
+          </p>
+        )}
       </header>
 
       {/* RN-56 y RN-58. Se avisa antes de intentar editar, no al guardar. */}
-      {!cargandoCuadro && !ventana.cargando && bloqueado && (
-        <div className="alert alert-info">
-          <span>
-            {cuadro && !cuadro.admiteEscritura
-              ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no editarlo ni retirar operativos.`
-              : `${ventana.mensaje} Puede consultar el listado; para editar o retirar, espere a que su ventana vuelva a abrirse.`}
-          </span>
-        </div>
+      {/* El mismo aviso que muestra la vista previa de «Editar ventana de carga» (2026-10-07). */}
+      {/*
+        Con un rango (2026-10-13), el aviso de la ventana sale solo si el rango incluye el cuadro
+        vigente: es el único que la ventana gobierna. Un solo día cerrado por la Dirección lo
+        sigue diciendo.
+      */}
+      {!cargandoCuadro &&
+        !ventana.cargando &&
+        (muestraAvisoVentana
+          ? bloqueado
+          : unDia && cuadro !== null && !cuadro.admiteEscritura) && (
+        <AvisoVentanaCerrada>
+          {cuadro && !cuadro.admiteEscritura
+            ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no editarlo ni retirar operativos.`
+            : `${ventana.mensaje} Puede consultar el listado; para editar o retirar, espere a que su ventana vuelva a abrirse.`}
+        </AvisoVentanaCerrada>
       )}
 
       {/*
@@ -1207,263 +1515,139 @@ const MisOperativosPage = () => {
         dejan de poderse a la misma hora. El adicional no —regla 11—, y por eso el texto
         habla de registrar y editar, que es lo que sí caduca.
       */}
-      {!cargandoCuadro && !ventana.cargando && !bloqueado && (
+      {!cargandoCuadro && !ventana.cargando && muestraAvisoVentana && !bloqueado && (
         <AvisoVentana cuentaAtras={ventana.cuentaAtras} />
       )}
 
       {totalServidor > operativos.length && (
-        <div className="alert alert-warning">
-          <span>
-            La jornada tiene {totalServidor} operativos y esta pantalla muestra
-            los primeros {operativos.length}. Informe al administrador: el
-            listado necesita paginarse contra el servidor.
-          </span>
-        </div>
+        <AvisoEnLinea variante="advertencia">
+          {unDia ? "La jornada" : "El rango"} tiene {totalServidor} operativos y esta pantalla muestra
+          los primeros {operativos.length}. Informe al administrador: el
+          listado necesita paginarse contra el servidor.
+        </AvisoEnLinea>
       )}
 
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudieron cargar los operativos"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargar()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       {/*
-        Fase E · EL ADICIONAL VIVE EN EL MISMO CAJÓN QUE LA EDICIÓN. Antes era una tarjeta en línea
-        que empujaba la tabla; ahora es un `DrawerLateral` con velo, foco atrapado y pie fijo, igual
-        que «Editar». El título lo nombra («Nuevo operativo adicional») y el subtítulo dice de cuál
-        nace. Cancelar/Registrar viven en el pie del cajón (form externo por `idForm`).
+        EL ADICIONAL, EN SU CAJÓN ÚNICO (2026-10-08): `DrawerOperativo` en modo «adicional», el de Órdenes
+        de servicio. Pone la cabecera, el estado del pie, «Registrar adicional» y la confirmación
+        de descarte; se monta solo mientras hay adicional, así cada apertura nace limpia. Los
+        errores del servidor quedan dentro del cajón (`errorAdicional`), sin cerrarlo.
       */}
-      <DrawerEdicionOperativo
-        abierto={creandoAdicional !== null}
-        titulo="Nuevo operativo adicional"
-        subtitulo={
-          creandoAdicional
-            ? `Sobre ${creandoAdicional.identificador} · ${creandoAdicional.formulario.nombre}`
-            : undefined
-        }
-        onCerrar={cerrarAdicional}
-        pie={
-          creandoAdicional ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={cerrarAdicional}
-                disabled={procesando}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                form="form-adicional-operativo"
-                className="btn btn-primary btn-sm"
-                disabled={bloqueadoParaAdicional || procesando}
-              >
-                {procesando ? (
-                  <>
-                    <span
-                      className="loading loading-spinner loading-sm"
-                      aria-hidden="true"
-                    />
-                    Registrando…
-                  </>
-                ) : (
-                  "Registrar adicional"
-                )}
-              </button>
-            </div>
-          ) : null
-        }
-      >
-        {creandoAdicional && (
-          <PanelAdicionalOperativo
-            sinMarco
-            enCajon
-            idForm="form-adicional-operativo"
-            ocultarAcciones
-            bandejaSinTope
-            origen={creandoAdicional}
-            catalogos={catalogos.catalogos}
-            puntos={catalogos.puntos}
-            cargandoPuntos={catalogos.cargandoPuntos}
-            onZonalesElegidas={(zonalesIds) => {
-              void catalogos.cargarPuntosDeZonales(zonalesIds);
-            }}
-            candidatos={candidatos}
-            cargandoPersonal={cargandoPersonal}
-            personalAgregado={personalAdicional}
-            // Sin llamada al servidor: el adicional todavía no existe. Entran con él.
-            onAgregarPersona={(persona) =>
-              setPersonalAdicional((actuales) =>
-                actuales.some(
-                  (agregada) => agregada.funcionarioId === persona.id,
-                )
-                  ? actuales
-                  : [
-                      ...actuales,
-                      {
-                        funcionarioId: persona.id,
-                        nombre: nombreDePersona(persona),
-                        // RN-34: el teléfono lo resuelve el servidor al asignar. Aquí
-                        // todavía no se conoce, y **no se inventa**. Igual que en P-01.
-                        telefono: null,
-                        // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la
-                        // primera persona; la primera queda vacía y hay que llenarla.
-                        ...turnoDePrimera(actuales),
-                      },
-                    ],
-              )
-            }
-            onRetirarPersona={(funcionarioId) =>
-              setPersonalAdicional((actuales) =>
-                actuales.filter(
-                  (agregada) => agregada.funcionarioId !== funcionarioId,
-                ),
-              )
-            }
-            onCambiarHorarioPersona={cambiarHorarioAdicional}
-            avisoPersonal={avisoPersonal}
-            bloqueado={bloqueadoParaAdicional}
-            ventanaCerrada={!ventana.puedeEscribir}
-            guardando={procesando}
-            onGuardar={guardarAdicional}
-            onCancelar={cerrarAdicional}
-          />
-        )}
-      </DrawerEdicionOperativo>
+      {adicional.origen && (
+        <DrawerOperativo
+          modo="adicional"
+          key={adicional.origen.id}
+          {...adicional.cajon}
+          origen={adicional.origen}
+          catalogos={catalogos.catalogos}
+          puntos={catalogos.puntos}
+          cargandoPuntos={catalogos.cargandoPuntos}
+          onZonalesElegidas={(zonalesIds) => {
+            void catalogos.cargarPuntosDeZonales(zonalesIds);
+          }}
+          candidatos={candidatos}
+          cargandoPersonal={cargandoPersonal}
+          avisoPersonal={avisoPersonal}
+          idPersonaRechazada={idPersonaRechazada}
+          bloqueado={adicionalBloqueadoFila(adicional.origen)}
+          ventanaCerrada={!ventana.puedeEscribir}
+        />
+      )}
 
-      <DrawerEdicionOperativo
-        abierto={editando !== null}
-        titulo={
-          editando
-            ? `${
-                agregandoAPatrulla || accesoDe(editando) !== "PROPIO"
-                  ? "Personal de"
-                  : "Editar"
-              } ${
-                // Fase E: una patrulla (Form 5/6) se nombra por su GRUPO, no por un identificador
-                // suelto: editar sus generales los aplica a todo el lote. El resto, «operativo <id>».
-                editando.grupoRegistro && editando.formulario.esPatrulla
-                  ? `patrulla ${editando.grupoRegistro}`
-                  : `operativo ${editando.identificador}`
-              }`
-            : ""
-        }
-        subtitulo={
-          editando
-            ? `${editando.formulario.nombre} · ${editando.horaInicio} a ${editando.horaFin}`
-            : undefined
-        }
-        onCerrar={cerrarEdicion}
-        pie={
-          editando ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
+      {/*
+        EDITAR, EN EL CAJÓN ÚNICO (2026-10-08): `DrawerOperativo`, el mismo del adicional y de
+        Registro de operativo. «editar» para el operativo propio —personal DIFERIDO, «Guardar
+        cambios»—; «personal» para el aporte y el «Agregar Personal» de la patrulla, que guardan cada
+        persona al instante. Con la ventana o el cuadro cerrados, «editar» se abre en SOLO LECTURA:
+        se consulta, no se guarda. Se monta solo mientras hay operativo: cada apertura nace limpia y
+        al cerrarse el foco vuelve al botón de la fila.
+      */}
+      {editando && (
+        <DrawerOperativo
+          key={`${editando.id}-${modoCajon}`}
+          {...(modoCajon === "personal"
+            ? {
+                modo: "personal" as const,
+                titulo: `Personal de ${
+                  editando.grupoRegistro && editando.formulario.esPatrulla
+                    ? `patrulla ${editando.grupoRegistro}`
+                    : `operativo ${editando.identificador}`
+                }`,
+              }
+            : {
+                modo: "editar" as const,
+                // Una patrulla (Form 5/6) se nombra por su GRUPO: editar sus generales los aplica a
+                // todo el lote.
+                titulo:
+                  editando.grupoRegistro && editando.formulario.esPatrulla
+                    ? `Editar patrulla ${editando.grupoRegistro}`
+                    : undefined,
+                soloLectura: bloqueadoFila(editando) || consultaId === editando.id,
+                personalPendiente: personalSucio,
+                horarioCambiado:
+                  edicionDiferida &&
+                  cambioDeHorario(editando.personal, personalOriginalRef.current),
+                mensajeDescarte: edicionDiferida
+                  ? undefined
+                  : "Se perderán los cambios en punto de encuentro, zonales, instituciones, tipo de control y las observaciones nuevas. El personal ya quedó guardado.",
+              })}
+          onCerrar={descartarEdicion}
+          errorServidor={errorEdicion}
+          avisoContexto={
+            <>
               {/*
-                Fase D: indicador «Cambios sin guardar / Sin cambios» (Formik `dirty`). `role="status"`
-                —no interrumpe— y en palabras (regla 6). Solo donde hay «Guardar cambios» (edición
-                propia): en el aporte/patrulla el personal se guarda solo y no hay generales que guardar.
+                VENTANA CERRADA: se abre para CONSULTAR. El aviso dice por qué no hay «Guardar
+                cambios» (RN-56/RN-58), donde se está mirando.
               */}
-              {!(agregandoAPatrulla || accesoDe(editando) !== "PROPIO") && (
-                <span
-                  role="status"
-                  className={`mr-auto text-xs ${
-                    hayCambiosPendientes
-                      ? "text-warning"
-                      : "text-base-content/70"
-                  }`}
-                >
-                  {hayCambiosPendientes
-                    ? "Cambios sin guardar"
-                    : "Sin cambios pendientes"}
-                </span>
+              {bloqueadoFila(editando) && modoCajon === "editar" && (
+                <AvisoVentanaCerrada>
+                  {cuadroCerradoFila(editando)
+                    ? `El cuadro del ${fechaCorta(editando.cuadroFecha)} ya está cerrado: puede consultar el operativo, pero no guardar cambios.`
+                    : cuadro && !cuadro.admiteEscritura
+                    ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no guardar cambios.`
+                    : `${ventana.mensaje} Puede consultar el operativo; los cambios no pueden guardarse hasta que su ventana vuelva a abrirse.`}
+                </AvisoVentanaCerrada>
               )}
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={cerrarEdicion}
-                disabled={procesando}
-              >
-                Cancelar
-              </button>
-              {!(agregandoAPatrulla || accesoDe(editando) !== "PROPIO") && (
-                <button
-                  type="submit"
-                  form="form-edicion-operativo"
-                  className="btn btn-primary btn-sm"
-                  disabled={bloqueado || procesando}
+              {/*
+                CONFLICTO 409 (bloqueo optimista): otro guardó el operativo entre que se abrió el cajón
+                y se pulsó «Guardar». El mensaje va tal cual (regla 7) y «Recargar datos» trae la
+                versión al día SIN cerrar el cajón.
+              */}
+              {conflictoEdicion && (
+                <AvisoEnLinea
+                  variante="error"
+                  accion={
+                    <Boton
+                      variante="secundario"
+                      tamano="sm"
+                      icono="actualizar"
+                      deshabilitado={procesando}
+                      onClick={() => void recargarEdicion()}
+                    >
+                      Recargar datos
+                    </Boton>
+                  }
                 >
-                  {procesando ? (
-                    <>
-                      <span
-                        className="loading loading-spinner loading-sm"
-                        aria-hidden="true"
-                      />
-                      Guardando…
-                    </>
-                  ) : (
-                    "Guardar cambios"
-                  )}
-                </button>
+                  {conflictoEdicion}
+                </AvisoEnLinea>
               )}
-            </div>
-          ) : null
-        }
-      >
-        {editando && (
-          <div className="flex flex-col gap-4">
-            {/*
-              Fase D · VENTANA CERRADA CON EL CAJÓN ABIERTO. El mismo bloqueo que apaga «Guardar
-              cambios» (RN-56/RN-58) se dice también aquí dentro, donde se está editando: sin esto, el
-              botón apagado abajo no explicaría por qué. El personal sí se puede seguir tocando (se
-              guarda al instante y su propia validación decide); lo que no se puede es guardar generales.
-            */}
-            {bloqueado &&
-              !(agregandoAPatrulla || accesoDe(editando) !== "PROPIO") && (
-                <div className="alert alert-info">
-                  <span>
-                    {cuadro && !cuadro.admiteEscritura
-                      ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no guardar cambios en sus datos.`
-                      : `${ventana.mensaje} Los cambios de datos del operativo no pueden guardarse hasta que su ventana vuelva a abrirse.`}
-                  </span>
-                </div>
-              )}
-
-            {/*
-              Fase D · CONFLICTO 409 (bloqueo optimista). Otro guardó el operativo entre que se abrió
-              el cajón y se pulsó «Guardar»: el servidor lo rechaza para no pisar ese cambio. El mensaje
-              va tal cual (regla 7) y «Recargar datos» trae la versión al día SIN cerrar el cajón. Lo
-              capturado en los generales se conserva hasta recargar (conservaCaptura).
-            */}
-            {conflictoEdicion && (
-              <div
-                className="alert alert-error"
-                role="alert"
-              >
-                <span>{conflictoEdicion}</span>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={procesando}
-                  onClick={() => void recargarEdicion()}
-                >
-                  <Iconos nombre="actualizar" />
-                  Recargar datos
-                </button>
-              </div>
-            )}
-
-            <PanelEdicionOperativo
-              sinMarco
-              enCajon
-              idForm="form-edicion-operativo"
-              ocultarAcciones
-              bandejaSinTope
-              onCambiosSinGuardar={setHayCambiosSinGuardar}
-              refFormik={refFormikEdicion}
-              operativo={editando}
+            </>
+          }
+          operativo={editando}
           catalogos={catalogos.catalogos}
           puntos={catalogos.puntos}
           cargandoPuntos={catalogos.cargandoPuntos}
@@ -1484,6 +1668,11 @@ const MisOperativosPage = () => {
           onCambiarHorarioPersona={(funcionarioId, horaInicio, horaFin) =>
             void cambiarHorarioPersona(funcionarioId, horaInicio, horaFin)
           }
+          // TRÁMITE DE INSPECCIÓN (2026-10-07): solo en la edición del operativo PROPIO (diferida),
+          // donde se ajusta en el borrador y se aplica al «Guardar cambios». En el aporte no.
+          onCambiarTramitePersona={
+            edicionDiferida ? cambiarTramiteEnEdicion : undefined
+          }
           // En el aporte, solo son retirables las personas que este departamento asignó (las de
           // Instrucción); las del dueño del formulario llegan en lectura. El servidor lo reafirma.
           puedeEditarPersona={(persona) =>
@@ -1491,8 +1680,9 @@ const MisOperativosPage = () => {
             (user?.rolCodes ?? []).includes(persona.asignadoPorRol)
           }
           avisoPersonal={avisoPersonal}
+          idPersonaRechazada={idPersonaRechazada}
           confirmacionPersonal={confirmacionPersonal}
-          bloqueado={bloqueado}
+          bloqueado={bloqueadoFila(editando) || consultaId === editando.id}
           // DIFERIDO (2026-10-01): en la edición propia el personal se aplica al «Guardar cambios»,
           // no al instante; se apaga el rótulo «Se guarda al instante» de la lista. En el aporte
           // (no diferido) sigue siendo inmediato.
@@ -1515,223 +1705,64 @@ const MisOperativosPage = () => {
           }
           guardando={procesando}
           onGuardar={guardarEdicion}
-          onCancelar={cerrarEdicion}
-            />
-          </div>
-        )}
-      </DrawerEdicionOperativo>
+        />
+      )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Operativos registrados
-          </h2>
+      <PanelOperativos
+        onVerOperativo={verOperativoPorId}
+        titulo="Operativos registrados"
+        cabecera={
           <span className="badge badge-ghost badge-sm">
             {cargando
               ? "Cargando…"
-              : `${coincidentes.length} de ${operativos.length} registros`}
+              : tabla.filtrando
+                ? `${tabla.coincidentes.length} de ${operativos.length} registros`
+                : `${operativos.length} ${operativos.length === 1 ? "registro" : "registros"}`}
           </span>
-        </div>
+        }
+        tabla={tabla}
+        columnas={COLUMNAS_LISTADO}
+        // Con varios días (2026-10-13), una fila de cabecera por fecha en lugar de la columna.
+        agruparPorFecha={!unDia}
+        mensajeVacio={
+          cargando ? (
+            "Cargando operativos…"
+          ) : tabla.filtrando ? (
+            // Caso 4 del plan: el filtro no encontró nada, y se ofrece la salida.
+            <span className="flex flex-col items-center gap-2">
+              Ningún operativo coincide con el filtro.
+              <Boton variante="enlace" tamano="sm" onClick={limpiarFiltros}>
+                Limpiar filtros
+              </Boton>
+            </span>
+          ) : (
+            // Caso 5: no hay nada que filtrar, hay que registrar. Con varios días, el rango.
+            unDia
+              ? "No hay operativos registrados en esta fecha. Regístrelos desde «Registro de operativo»."
+              : "No hay operativos en ese rango."
+          )
+        }
+        acciones={accionesDeFila}
+        accionesFilaPatrulla={accionesDeFilaPatrulla}
+        pie={
+          !unDia && (
+            <p className="px-2 text-right text-xs text-app-muted">
+              Ordenado por fecha (más reciente primero)
+            </p>
+          )
+        }
+        porRetirar={porRetirar}
+        onConfirmarRetiro={confirmarRetiro}
+        onCancelarRetiro={() => setPorRetirar(null)}
+      />
 
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <TablaOperativos
-            operativos={pagina0.filas}
-            columnas={COLUMNAS_LISTADO}
-            filtros={filtros}
-            onFiltroChange={cambiarFiltro}
-            // La patrulla (Form 5/6) usa acciones fusionadas; el resto, la de abajo por fila.
-            accionesPatrulla={accionesDePatrulla}
-            accionPersona={accionDePersonaPatrulla}
-            mensajeVacio={
-              cargando ? (
-                "Cargando operativos…"
-              ) : filtrando ? (
-                // Caso 4 del plan: el filtro no encontró nada, y se ofrece la salida.
-                <span className="flex flex-col items-center gap-2">
-                  Ningún operativo coincide con el filtro.
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs"
-                    onClick={limpiarFiltros}
-                  >
-                    Limpiar filtros
-                  </button>
-                </span>
-              ) : (
-                // Caso 5: no hay nada que filtrar, hay que registrar.
-                "No hay operativos registrados en esta fecha. Regístrelos desde «Registro de operativo»."
-              )
-            }
-            acciones={(operativo) => {
-              /*
-                ═══════════════════════════════════════════════════════════════════
-                TRES BOTONES Y DOS VARAS DISTINTAS. 2026-08-25.
-
-                `bloqueado` es horario —la ventana cerró, el cuadro se cerró— y afecta a
-                todo el mundo. El acceso es de permiso, y solo afecta a quien aporta.
-
-                Quien APORTA no edita ni retira: el botón principal cambia de nombre y
-                abre el mismo panel en modo «solo personal». **No se le apaga el botón**,
-                porque sí tiene algo que hacer ahí; lo que se le apagan son los otros dos,
-                con su motivo escrito (regla 6).
-                ═══════════════════════════════════════════════════════════════════
-              */
-              const acceso = accesoDe(operativo);
-              const esPropio = acceso === "PROPIO";
-              const motivoAjeno = motivoDeSoloLectura(
-                acceso,
-                operativo.creadoPorRol,
-              );
-
-              return (
-              <div className="flex gap-1">
-                {/*
-                  LA ACCIÓN DE APORTE SE DESTACA, LA DE EDICIÓN NO. 2026-08-31.
-
-                  Los tres botones de esta fila eran `btn-ghost btn-xs` y se leían como
-                  una sola masa gris. Para el departamento que APORTA —el DMIT en los
-                  formularios 4 y 6— «Agregar Personal» es lo único que puede hacer aquí,
-                  así que pasa a `btn-primary`; para el dueño, «Editar» convive con
-                  «Adicional» y «Eliminar» y destacarlo no ayudaría a elegir.
-
-                  Las dos clases están en el inventario de FASE5 §2.2. No se introduce
-                  ninguna nueva (regla 1).
-                */}
-                <button
-                  type="button"
-                  className={
-                    esPropio ? "btn btn-ghost btn-xs" : "btn btn-primary btn-xs"
-                  }
-                  onClick={() => setEditando(operativo)}
-                  disabled={bloqueado || procesando}
-                  title={
-                    bloqueado
-                      ? "La ventana de carga está cerrada o el cuadro fue cerrado."
-                      : (motivoAjeno ?? undefined)
-                  }
-                >
-                  {esPropio ? "Editar" : "Agregar Personal"}
-                </button>
-
-                {/*
-                  ADICIONAL · 2026-08-20.
-
-                  SE OFRECE AUNQUE LA VENTANA ESTÉ CERRADA, y esa es la diferencia con los
-                  otros dos botones. Es lo único que se salta la ventana, porque un
-                  adicional se dispone el día de la ejecución. El cuadro cerrado sí lo
-                  bloquea: reabrirlo es potestad de la Dirección.
-
-                  SOBRE UN ADICIONAL NO SE OFRECE: no se encadenan. El botón desaparece en
-                  lugar de aparecer apagado, porque «apagado» insinúa que en otras
-                  circunstancias se podría, y aquí nunca.
-
-                  NI EN LOS FORMULARIOS QUE NO LOS ADMITEN, desde el 2026-08-24. RN-61: un
-                  formulario admite adicionales si tiene un prefijo marcado para ellos —el
-                  **2 · PMO** con `OCAPMO`, y desde el 2026-09-08 el **8 · INSPECCIONES** con
-                  `IGA`/`ITA`—. Se lee de `admiteAdicionales`, no de un código quemado.
-                */}
-                {esPropio &&
-                  !operativo.esAdicional &&
-                  operativo.formulario.admiteAdicionales && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs"
-                    onClick={() => abrirAdicional(operativo)}
-                    disabled={bloqueadoParaAdicional || procesando}
-                    title={
-                      bloqueadoParaAdicional
-                        ? "El cuadro fue cerrado por la Dirección."
-                        : "Registrar un operativo adicional sobre éste, en su misma jornada."
-                    }
-                  >
-                    Adicional
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs text-error"
-                  onClick={() => setPorRetirar(operativo)}
-                  disabled={bloqueado || procesando || !esPropio}
-                  title={
-                    motivoAjeno ??
-                    (bloqueado
-                      ? "La ventana de carga está cerrada o el cuadro fue cerrado."
-                      : undefined)
-                  }
-                >
-                  {/*
-                    EL ICONO ACOMPAÑA, NO SUSTITUYE (regla 13). El rótulo se queda: un
-                    botón que solo fuera un dibujo obligaría a adivinar, y en la fila de
-                    al lado «Editar» y «Adicional» son palabras.
-
-                    SIN `aria-label` y sin color propio: FontAwesome ya pone
-                    `aria-hidden`, y el rojo lo pone `text-error` del botón, que el icono
-                    hereda por `currentColor`.
-                  */}
-                  <Iconos nombre="eliminar" />
-                  Eliminar
-                </button>
-              </div>
-              );
-            }}
-          />
-
-          {coincidentes.length > 0 && (
-            <Paginacion
-              page={pagina0.pagina}
-              pageSize={tamanio}
-              total={pagina0.total}
-              onPage={setPagina}
-              onPageSize={setTamanio}
-              etiqueta="operativos"
-            />
-          )}
-        </div>
-      </div>
-
-      <p className="text-xs text-base-content/70">
+      <p className="text-xs text-app-muted">
         La Matriz Consolidada del Día es exclusiva de la Dirección. Esta pantalla
         muestra únicamente los operativos de sus formularios.
       </p>
 
-      {/* Caso 2 del plan: la confirmación nombra el operativo, no pregunta en abstracto. */}
-      <ModalConfirmacion
-        abierto={porRetirar !== null}
-        titulo="¿Eliminar este operativo?"
-        mensaje={porRetirar ? descripcionDelRetiro(porRetirar) : ""}
-        textoSi="Sí, eliminar"
-        textoNo="Cancelar"
-        procesando={procesando}
-        onConfirmar={() => void confirmarRetiro()}
-        onCancelar={() => setPorRetirar(null)}
-      />
-
-      {/*
-        Descartar la edición con cambios sin guardar. En la edición DIFERIDA (operativo propio) el
-        personal tampoco está guardado y también se pierde; en la patrulla el personal se gestiona
-        al instante con el roster, así que ahí sí quedó guardado.
-      */}
-      <ModalConfirmacion
-        abierto={confirmandoDescarte}
-        titulo="Descartar cambios"
-        mensaje={
-          edicionDiferida
-            ? "¿Descartar los cambios? Se perderán los cambios en el personal asignado y en los datos del operativo (punto de encuentro, zonales, instituciones, tipo de control y observaciones nuevas). Nada se ha guardado todavía."
-            : "¿Descartar los cambios de datos del operativo? Se perderán los cambios en punto de encuentro, zonales, instituciones, tipo de control y las observaciones nuevas. El personal ya quedó guardado."
-        }
-        textoSi="Descartar"
-        textoNo="Seguir editando"
-        onConfirmar={descartarEdicion}
-        onCancelar={() => setConfirmandoDescarte(false)}
-      />
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
-        />
-      )}
+      {/* Transporte requerido (2026-10-07): liberar el transporte al cambiar el tipo. */}
+      {modalLiberacion}
     </section>
   );
 };

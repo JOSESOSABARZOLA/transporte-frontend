@@ -1,0 +1,15 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SelectorPersonal · lista compacta (P-02) > P-01: el botón «Ver reparto de carga» abre el drawer del reparto y lo anuncia (aria-expanded) 1`] = `
+{
+  "ancho": "lg",
+  "botonesPie": [
+    "Cerrar",
+    "Listo",
+  ],
+  "estadoPie": "1 agregados al formulario · sin registrar",
+  "secciones": [],
+  "subtitulo": "Personal del formulario",
+  "titulo": "Reparto de carga",
+}
+`;

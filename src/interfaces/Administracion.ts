@@ -46,7 +46,17 @@ export interface ActualizarParametro {
   valor: string;
 }
 
-export type TipoVentana = "SEMANAL" | "DIARIO" | "INTERVALO";
+/**
+ * Desde el 2026-10-07 se eligen DIARIO, LABORABLE y SIN_RESTRICCION. SEMANAL e INTERVALO siguen en
+ * el tipo porque el servidor aún puede devolverlos de una ventana antigua (la migración los pasó a
+ * DIARIO), pero ya no se ofrecen.
+ */
+export type TipoVentana =
+  | "DIARIO"
+  | "LABORABLE"
+  | "SIN_RESTRICCION"
+  | "SEMANAL"
+  | "INTERVALO";
 
 /**
  * Ventana de carga de un rol. Respuesta de `GET /administracion/ventanas`.
@@ -54,7 +64,8 @@ export type TipoVentana = "SEMANAL" | "DIARIO" | "INTERVALO";
  * Hay **exactamente una por rol** —`uq_ventana_rol`— y por eso el contrato no tiene
  * `POST` ni `DELETE`: crear una séptima no significa nada, y borrar una **abriría** la
  * carga de ese rol las veinticuatro horas, porque el evaluador trata la ausencia de
- * ventana como «sin restricción». Para eso está `activo: false`.
+ * ventana como «sin restricción». Para eso está el tipo `SIN_RESTRICCION` (y `activo`, que se
+ * deriva de él desde el 2026-10-07).
  */
 export interface VentanaCarga {
   rol: RolDepartamental;
@@ -64,8 +75,10 @@ export interface VentanaCarga {
   diaCierre: number | null;
   horaCierre: string | null;
   zonaHoraria: string;
-  /** Lo que leerá el funcionario cuando su ventana esté cerrada. */
+  /** Lo que leerá el funcionario cuando su ventana esté cerrada. Admite {cierre} y {apertura}. */
   mensajeCierre: string;
+  /** El mensaje con los marcadores ya reemplazados (2026-10-07). */
+  mensajeResuelto?: string;
   activo: boolean;
 }
 
@@ -86,9 +99,7 @@ export interface ActualizarVentana {
   activo?: boolean;
 }
 
-/** Respuesta de la modificación: qué quedó guardado y qué conviene revisar. */
+/** Respuesta de la modificación: la ventana tal como quedó guardada. */
 export interface VentanaActualizada {
   ventana: VentanaCarga;
-  /** Redactadas por el servidor. No impiden nada: avisan. */
-  advertencias: string[];
 }

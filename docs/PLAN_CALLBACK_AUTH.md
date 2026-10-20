@@ -169,7 +169,7 @@ plazo razonable. Entonces deja de ser una preferencia de diseño y pasa a ser la
 path:  localhost:3003        →   localhost:5180        ← valor final, 19-AGO
 ```
 
-> Se propuso primero `172.20.136.73:5176` y luego `localhost:5176`. El segundo dio **409**: lo tenía
+> Se propuso primero `<IP_EQUIPO_DESARROLLO>:5176` y luego `localhost:5176`. El segundo dio **409**: lo tenía
 > Admin Core. El primero funcionaba, pero **no es contexto seguro** y rompía `crypto.randomUUID`.
 > De ahí el 5180.
 
@@ -179,7 +179,7 @@ Sin `/auth/callback`: lo añade el portal. El esquema es opcional.
 
 | Archivo | Valor | Por qué |
 |---|---|---|
-| `transporte-backend/.env` | `CORS_ORIGINS=http://localhost:5180,http://172.20.136.73:5180` | Otro origen es otro sitio para el navegador, y con credenciales descarta la respuesta |
+| `transporte-backend/.env` | `CORS_ORIGINS=http://localhost:5180,http://<IP_EQUIPO_DESARROLLO>:5180` | Otro origen es otro sitio para el navegador, y con credenciales descarta la respuesta |
 | `.env.example` y `docker-compose.yml` | Igual | Para que el despliegue no repita el fallo |
 | `transporte-frontend/.env.dev` | `VITE_API_BASE_URL=http://localhost:3003` | Solo para `npm run dev`; ver la nota |
 

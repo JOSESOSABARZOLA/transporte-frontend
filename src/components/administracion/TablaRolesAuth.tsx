@@ -18,6 +18,9 @@
 
 import type { FC } from "react";
 
+import AccionesFila from "../common/AccionesFila.tsx";
+import Paginacion from "../common/Paginacion.tsx";
+import { usePaginaLocal } from "../../hooks/usePaginaLocal.ts";
 import type { RolAuth } from "../../interfaces/RolAuth.ts";
 import type { RolDepartamental } from "../../config/env.ts";
 
@@ -33,6 +36,8 @@ type TablaRolesAuthProps = {
   procesando: boolean;
   onEditar: (rol: RolAuth) => void;
   onDesactivar: (rol: RolAuth) => void;
+  /** Id de Auth recién guardado: su fila se resalta unos segundos, junto al aviso breve. */
+  resaltadoId?: number | null;
 };
 
 const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
@@ -42,82 +47,97 @@ const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
   onEditar,
   onDesactivar,
   nombreDe,
-}) => (
-  <div className="overflow-x-auto">
-    <table className="table table-sm table-zebra">
-      <thead>
-        <tr className="text-xs uppercase tracking-wider text-base-content/70">
-          <th scope="col">Id en Auth</th>
-          <th scope="col">Nombre en Auth</th>
-          <th scope="col">Rol del cuadro</th>
-          <th scope="col">Estado</th>
-          <th scope="col">Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        {roles.length === 0 ? (
-          <tr>
-            <td
-              colSpan={5}
-              className="px-3 py-6 text-center text-sm text-base-content/70"
-            >
-              {cargando
-                ? "Cargando la correspondencia…"
-                : "No hay ninguna correspondencia registrada. Sin ella, nadie puede entrar desde Auth central."}
-            </td>
-          </tr>
-        ) : (
-          roles.map((rol) => (
-            <tr
-              key={rol.idAuth}
-              className={rol.activo ? "hover:bg-primary/5" : "opacity-60"}
-            >
-              <td className="px-3 py-2 align-top font-mono text-sm">
-                {rol.idAuth}
-              </td>
-              <td className="px-3 py-2 align-top">{rol.nombreAuth}</td>
-              <td className="px-3 py-2 align-top font-medium">
-                {nombreDe(rol.rol)}
-              </td>
-
-              <td className="px-3 py-2 align-top">
-                <span
-                  className={`badge badge-sm ${
-                    rol.activo ? "badge-success" : "badge-ghost"
-                  }`}
-                >
-                  {rol.activo ? "Vigente" : "Retirada"}
-                </span>
-              </td>
-
-              <td className="px-3 py-2 align-top">
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs"
-                    onClick={() => onEditar(rol)}
-                    disabled={procesando}
-                  >
-                    Editar
-                  </button>
-                  {rol.activo && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs"
-                      onClick={() => onDesactivar(rol)}
-                      disabled={procesando}
-                    >
-                      Retirar
-                    </button>
-                  )}
-                </div>
-              </td>
+  resaltadoId = null,
+}) => {
+  const pagina = usePaginaLocal(roles, resaltadoId, (rol) => rol.idAuth);
+  return (
+    <div className="flex flex-col">
+      <div className="overflow-x-auto">
+        <table className="table table-sm table-zebra">
+          <thead>
+            <tr className="text-xs uppercase tracking-wider text-app-label">
+              <th scope="col">Id en Auth</th>
+              <th scope="col">Nombre en Auth</th>
+              <th scope="col">Rol del cuadro</th>
+              <th scope="col">Estado</th>
+              <th scope="col" className="text-right">
+                Acciones
+              </th>
             </tr>
-          ))
-        )}
-      </tbody>
-    </table>
-  </div>
-);
+          </thead>
+          <tbody>
+            {roles.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={5}
+                  className="px-3 py-6 text-center text-sm text-app-muted"
+                >
+                  {cargando
+                    ? "Cargando la correspondencia…"
+                    : "No hay ninguna correspondencia registrada. Sin ella, nadie puede entrar desde Auth central."}
+                </td>
+              </tr>
+            ) : (
+              pagina.filas.map((rol) => (
+                <tr
+                  key={rol.idAuth}
+                  data-resaltado={rol.idAuth === resaltadoId || undefined}
+                  className={
+                    rol.idAuth === resaltadoId
+                      ? "bg-success/10"
+                      : rol.activo
+                        ? "hover:bg-primary/5"
+                        : "text-app-muted"
+                  }
+                >
+                  <td className="px-3 py-2 align-top font-mono text-sm">
+                    {rol.idAuth}
+                  </td>
+                  <td className="px-3 py-2 align-top">{rol.nombreAuth}</td>
+                  <td className="px-3 py-2 align-top font-medium">
+                    {nombreDe(rol.rol)}
+                  </td>
+
+                  <td className="px-3 py-2 align-top">
+                    <span
+                      className={`badge badge-sm ${
+                        rol.activo ? "badge-success" : "badge-ghost"
+                      }`}
+                    >
+                      {rol.activo ? "Vigente" : "Retirada"}
+                    </span>
+                  </td>
+
+                  <td className="px-3 py-2 align-top">
+                    <AccionesFila
+                      nombre={`el rol ${rol.idAuth}`}
+                      procesando={procesando}
+                      editar={{ onClick: () => onEditar(rol) }}
+                      estado={
+                        rol.activo
+                          ? {
+                              tipo: "retirar",
+                              onClick: () => onDesactivar(rol),
+                            }
+                          : null
+                      }
+                    />
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+      <Paginacion
+        page={pagina.pagina}
+        pageSize={pagina.tamano}
+        total={pagina.total}
+        onPage={pagina.irA}
+        etiqueta="correspondencias"
+      />
+    </div>
+  );
+};
 
 export default TablaRolesAuth;

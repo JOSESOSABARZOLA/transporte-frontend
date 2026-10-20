@@ -63,25 +63,31 @@
  * pide primero, y con él ya fijado se hereda el equipo.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * EL PANEL VA ARRIBA Y NO EN UN MODAL, igual que el de edición: el formulario ocupa cuatro
- * columnas a 1440 px (FASE5 §4.1) y dentro de un modal habría que estrecharlo a una.
+ * VIVE EN UN CAJÓN LATERAL, NO EN LA PÁGINA (2026-10-08). Hasta entonces Órdenes de servicio lo
+ * insertaba encima de la tabla y la empujaba; Mis operativos ya lo llevaba en el cajón desde el
+ * 2026-09-30. Ahora las dos pantallas usan `DrawerOperativo` (modo «adicional»), que pone la cabecera, el
+ * pie fijo y la confirmación de descarte; este componente es solo el CUERPO, por secciones.
  */
 
 import { useCallback, useEffect, useRef, type FC } from "react";
 import type { FormikHelpers } from "formik";
 
-import FormularioOperativo from "./FormularioOperativo.tsx";
+import Boton from "../common/Boton.tsx";
+import FormOperativo, {
+  type EstadoEnvio,
+  type ExtrasDelEnvio,
+} from "./FormOperativo.tsx";
 import {
   comoValoresDeFormulario,
   type ValoresOperativo,
 } from "../../utils/valoresOperativo.util.ts";
-import { colorDeTextoSobre } from "../../utils/banner.util.ts";
 import type { CatalogosFormulario } from "../../interfaces/Formulario.ts";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
 import type { PersonaAgregada } from "./SelectorPersonal.tsx";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
-type PanelAdicionalOperativoProps = {
+export type PanelAdicionalOperativoProps = {
   /** El operativo del que nace. Aporta la jornada, el formulario y los valores de partida. */
   origen: Operativo;
   catalogos: CatalogosFormulario | null;
@@ -104,7 +110,17 @@ type PanelAdicionalOperativoProps = {
     horaInicio: string,
     horaFin: string,
   ) => void;
+  /**
+   * TRÁMITE DE INSPECCIÓN (2026-10-07). Si llega, cada inspector del adicional ofrece su combo con
+   * los trámites de la fecha de la jornada (la del original). Entra con el adicional al registrar.
+   */
+  onCambiarTramitePersona?: (
+    funcionarioId: number,
+    codigoTramite: string | null,
+  ) => void;
   avisoPersonal: string | null;
+  /** A quién se refiere `avisoPersonal`, si el servidor lo nombró (R2): el motivo va bajo su horario. */
+  idPersonaRechazada?: number | null;
 
   /**
    * RN-58, **no** RN-56. Aquí solo bloquea el cuadro cerrado: la ventana de carga no
@@ -117,20 +133,12 @@ type PanelAdicionalOperativoProps = {
   onGuardar: (
     valores: ValoresOperativo,
     ayudas: FormikHelpers<ValoresOperativo>,
+    extras?: ExtrasDelEnvio,
   ) => void | Promise<void>;
-  onCancelar: () => void;
-  /**
-   * DENTRO DEL CAJÓN (2026-09-30, Fase E). El adicional pasó de tarjeta en línea a cajón lateral, el
-   * mismo que la edición. `sinMarco` quita la tarjeta y la cabecera propias —las pone el
-   * `DrawerLateral`—; `idForm`/`ocultarAcciones` mueven el pie de acción al pie fijo del cajón;
-   * `enCajon` refluye a una columna y `bandejaSinTope` aplana las bandejas de personal. Por omisión
-   * (uso anterior en línea) nada cambia.
-   */
-  sinMarco?: boolean;
-  enCajon?: boolean;
-  idForm?: string;
-  ocultarAcciones?: boolean;
-  bandejaSinTope?: boolean;
+  /** `id` del `<form>`: el botón «Registrar adicional» del pie del cajón lo envía con `form=`. */
+  idForm: string;
+  /** Qué falta y si hay cambios, para el estado del pie del cajón. */
+  onEstadoEnvio: (estado: EstadoEnvio) => void;
 };
 
 /** Quién del equipo del padre no pudo heredarse, y por qué lo dice el servidor. */
@@ -148,17 +156,15 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
   onAgregarPersona,
   onRetirarPersona,
   onCambiarHorarioPersona,
+  onCambiarTramitePersona,
   avisoPersonal,
+  idPersonaRechazada = null,
   bloqueado,
   ventanaCerrada,
   guardando,
   onGuardar,
-  onCancelar,
-  sinMarco = false,
-  enCajon = false,
   idForm,
-  ocultarAcciones = false,
-  bandejaSinTope = false,
+  onEstadoEnvio,
 }) => {
   const yaAgregados = new Set(
     personalAgregado.map((persona) => persona.funcionarioId),
@@ -245,22 +251,30 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
     heredarPersonal();
   }, [cargandoPersonal, candidatos.length, heredarPersonal]);
 
-  const cuerpo = (
-    <div
-      className={
-        sinMarco
-          ? "flex flex-col gap-4"
-          : "app-data-panel-body flex flex-col gap-4 px-4 pb-4 pt-3 md:px-6"
-      }
-    >
-      <p className="text-xs text-base-content/70">
-        Se registra en la misma jornada y en el mismo formulario que{" "}
-        {origen.identificador}, y con su propia numeración: el identificador lo
-        pone el servidor. Los valores llegan copiados del operativo original y
-        puede cambiarlos todos. El personal se elige aquí y entra con el
-        adicional: si alguien es rechazado no se crea nada y lo capturado se
-        conserva.
-      </p>
+  return (
+    <div className="flex flex-col gap-4">
+      {/*
+        a) CONTEXTO, COMPACTO (2026-10-08). Era un párrafo de cinco líneas antes de cualquier
+        campo; ahora una línea con lo esencial y «¿Cómo funciona?», que despliega el detalle. Un
+        `<details>` da el teclado y el anuncio de «expandido» sin código propio.
+      */}
+      <div className="flex flex-col gap-1 text-sm text-app-muted">
+        <p>
+          Se registra en la misma jornada y formulario que{" "}
+          {origen.identificador}, con su propia numeración.
+        </p>
+        <details>
+          <summary className="link link-primary w-fit text-sm">
+            ¿Cómo funciona?
+          </summary>
+          <p className="mt-1 text-xs text-app-muted">
+            El identificador lo pone el servidor. Los valores llegan copiados del
+            operativo original y puede cambiarlos todos. El personal se elige aquí
+            y entra con el adicional: si alguien es rechazado no se crea nada y lo
+            capturado se conserva.
+          </p>
+        </details>
+      </div>
 
       {/*
         EL TRANSPORTE SE HEREDA SOLO, EN EL SERVIDOR · 2026-08-21.
@@ -271,98 +285,15 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         horario**, y si no, el adicional nace pendiente y lo dice al terminar.
 
         Se anuncia antes de capturar porque cambia lo que hay que hacer después: con
-        transporte heredado el adicional está listo; sin él, hay que esperar a la DAF.
+        transporte heredado el adicional está listo; sin él, hay que esperar a la DAF. Desde el
+        2026-10-08 va como aviso SUAVE (hoy `AvisoEnLinea` info), no como barra azul sólida.
       */}
       {origen.estadoTransporte === "ASIGNADO" && (
-        <div className="alert alert-info">
-          <span className="text-sm">
+        <AvisoEnLinea variante="info">
             {origen.identificador} ya tiene conductor y placa asignados por la
-            DAF. <strong>Se heredarán</strong> si ese conductor puede conducir en
-            el horario del adicional; si no, el adicional quedará pendiente de la
-            DAF y se lo diremos al guardar.
-          </span>
-        </div>
-      )}
-
-      {/*
-        EL EQUIPO DEL ORIGINAL · 2026-08-21, adaptado a RN-66 (2026-09-08).
-
-        Se hereda **solo**, en cuanto llega la lista de elegibles. Lo que este bloque hace es
-        decir de dónde salió la gente que aparece abajo y qué pasó con quien no pudo venir:
-        sin esto, alguien que quitó a una persona vería reaparecer un equipo del que no
-        recuerda el origen. Cada heredado entra SIN horario —hay que fijárselo abajo, porque
-        el adicional es otra salida a otra hora—.
-
-        El botón queda como REINTENTO, no como el camino normal: sirve tras haber quitado a
-        alguien por error.
-      */}
-      {origen.personal.length > 0 && !bloqueado && (
-        <div className="flex flex-col gap-2 rounded-md border border-base-300 bg-base-200/40 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-base-content/70">
-              {origen.identificador} lleva{" "}
-              <strong>
-                {origen.personal.length}{" "}
-                {origen.personal.length === 1 ? "persona" : "personas"}
-              </strong>
-              : {origen.personal.map((persona) => persona.nombre).join(", ")}.
-              {cargandoPersonal ? (
-                <> Cargando elegibles…</>
-              ) : porHeredar.length === 0 ? (
-                <> Heredadas.</>
-              ) : (
-                <> Faltan {porHeredar.length} por heredar.</>
-              )}
-            </span>
-            <button
-              type="button"
-              className="btn btn-outline btn-xs"
-              onClick={heredarPersonal}
-              disabled={
-                guardando || cargandoPersonal || porHeredar.length === 0
-              }
-              title={
-                porHeredar.length === 0
-                  ? "Ya están todas agregadas."
-                  : "Vuelve a heredar a quien falte."
-              }
-            >
-              Volver a heredar
-            </button>
-          </div>
-
-          <span className="text-xs text-base-content/70">
-            Se hereda a quien sigue elegible (área y disponibilidad). A cada persona
-            se le fija su horario abajo, y el cruce lo valida el servidor al
-            registrar. Puede quitar a quien no vaya y sumar a quien haga falta en el
-            selector de abajo.
-          </span>
-
-          {/*
-            A QUIEN NO SE PUDO HEREDAR SE LE NOMBRA, con el motivo del servidor tal cual
-            (regla 7). Dejarlo caer en silencio produciría un adicional con menos gente de
-            la que se creía haber puesto, y nadie lo notaría hasta el operativo.
-          */}
-          {noHeredados.length > 0 && (
-            <div
-              className="alert alert-warning"
-              role="alert"
-            >
-              <div className="flex flex-col gap-1 text-xs">
-                <span>
-                  {noHeredados.length === 1
-                    ? "Una persona del operativo original no se pudo heredar:"
-                    : `${noHeredados.length} personas del operativo original no se pudieron heredar:`}
-                </span>
-                {noHeredados.map((persona) => (
-                  <span key={persona.nombre}>
-                    <strong>{persona.nombre}</strong> · {persona.motivo}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+            DAF. <strong>Se heredarán</strong> si ese conductor puede cubrir el
+            horario del adicional; si no, quedará pendiente de la DAF.
+          </AvisoEnLinea>
       )}
 
       {/*
@@ -374,19 +305,106 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         de la jornada.
       */}
       {ventanaCerrada && !bloqueado && (
-        <div
-          className="alert alert-warning"
-          role="alert"
-        >
-          <span className="text-sm">
+        <AvisoEnLinea variante="advertencia" rol="alert">
             Su ventana de carga está cerrada. Un adicional puede registrarse de
             todos modos, porque se dispone el día de la ejecución, y queda
             constancia en la auditoría de que se creó fuera de ventana.
+          </AvisoEnLinea>
+      )}
+
+      {/*
+        EL EQUIPO DEL ORIGINAL · 2026-08-21, adaptado a RN-66 (2026-09-08).
+
+        Se hereda **solo**, en cuanto llega la lista de elegibles. Lo que este bloque hace es
+        decir de dónde salió la gente que aparece abajo y qué pasó con quien no pudo venir:
+        sin esto, alguien que quitó a una persona vería reaparecer un equipo del que no
+        recuerda el origen. Cada heredado entra SIN horario —hay que fijárselo abajo, porque
+        el adicional es otra salida a otra hora—. Desde el 2026-10-08 las personas van como
+        distintivos, no como una frase.
+
+        El botón queda como REINTENTO, no como el camino normal: sirve tras haber quitado a
+        alguien por error.
+      */}
+      {origen.personal.length > 0 && !bloqueado && (
+        <div className="flex flex-col gap-2 rounded-box border border-base-300 bg-base-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm text-app-label">
+              Heredadas de {origen.identificador} ({origen.personal.length})
+              {cargandoPersonal ? (
+                <span className="font-normal text-app-muted">
+                  {" "}
+                  · cargando elegibles…
+                </span>
+              ) : porHeredar.length > 0 ? (
+                <span className="font-normal text-app-muted">
+                  {" "}
+                  · faltan {porHeredar.length} por heredar
+                </span>
+              ) : null}
+            </span>
+            <Boton
+              variante="secundario"
+              tamano="sm"
+              icono="actualizar"
+              onClick={heredarPersonal}
+              deshabilitado={guardando || cargandoPersonal}
+              motivoDeshabilitado={porHeredar.length === 0 ? "Ya están todas agregadas." : null}
+              title="Vuelve a heredar a quien falte."
+            >
+              Volver a heredar
+            </Boton>
+          </div>
+
+          <ul
+            className="flex flex-wrap gap-1"
+            aria-label={`Personal de ${origen.identificador}`}
+          >
+            {origen.personal.map((persona) => (
+              <li
+                key={persona.funcionarioId}
+                className="badge badge-ghost badge-sm min-w-0 max-w-full"
+                title={persona.nombre}
+              >
+                <span className="min-w-0 truncate">{persona.nombre}</span>
+              </li>
+            ))}
+          </ul>
+
+          <span className="text-xs text-app-muted">
+            Se hereda a quien sigue elegible (área y disponibilidad). A cada persona
+            se le fija su horario abajo, y el cruce lo valida el servidor al
+            registrar.
           </span>
+
+          {/*
+            A QUIEN NO SE PUDO HEREDAR SE LE NOMBRA, con el motivo del servidor tal cual
+            (regla 7). Dejarlo caer en silencio produciría un adicional con menos gente de
+            la que se creía haber puesto, y nadie lo notaría hasta el operativo.
+          */}
+          {noHeredados.length > 0 && (
+            <AvisoEnLinea
+              variante="advertencia"
+              rol="alert"
+              titulo={
+                noHeredados.length === 1
+                  ? "Una persona del operativo original no se pudo heredar:"
+                  : `${noHeredados.length} personas del operativo original no se pudieron heredar:`
+              }
+            >
+              <span className="flex flex-col gap-1" data-testid="no-heredados">
+                {noHeredados.map((persona) => (
+                  <span key={persona.nombre}>
+                    <strong>{persona.nombre}</strong> · {persona.motivo}
+                  </span>
+                ))}
+              </span>
+            </AvisoEnLinea>
+          )}
         </div>
       )}
 
-      <FormularioOperativo
+      <FormOperativo
+        modo="adicional"
         formularioCodigo={origen.formulario.codigo}
         catalogos={catalogos}
         puntos={puntos}
@@ -398,9 +416,12 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         onAgregarPersona={onAgregarPersona}
         onRetirarPersona={onRetirarPersona}
         onCambiarHorarioPersona={onCambiarHorarioPersona}
+        fechaTramites={onCambiarTramitePersona ? origen.cuadroFecha : null}
+        onCambiarTramitePersona={onCambiarTramitePersona}
         avisoPersonal={avisoPersonal}
+        idPersonaRechazada={idPersonaRechazada}
         /*
-          Del padre, menos dos cosas:
+          Del padre, menos dos cosas (y el transporte, que propone el formulario):
 
           · el HORARIO, que nace en blanco. Es lo único que por definición difiere, y
             copiarlo garantizaría que el equipo heredado chocara consigo mismo (RN-28).
@@ -411,53 +432,22 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
           horaInicio: "",
           horaFin: "",
           observaciones: [],
+          // El transporte que propone el formulario (2026-10-06); sin él, el del padre. Editable.
+          tipoTransporte:
+            catalogos?.tipoTransportePorDefecto ??
+            origen.tipoTransporte ??
+            "COMPLETO",
         }}
-        textoAccion="Registrar adicional"
-        onCancelar={onCancelar}
         bloqueado={bloqueado}
         guardando={guardando}
         onGuardar={onGuardar}
-        enCajon={enCajon}
+        // El pie de acción vive en el pie fijo del cajón (`idForm`).
         idForm={idForm}
-        ocultarAcciones={ocultarAcciones}
-        bandejaSinTope={bandejaSinTope}
+        onEstadoEnvio={onEstadoEnvio}
         // El personal del adicional NO se guarda al instante: entra con él al registrar. Así la
         // lista compacta del cajón no promete «Se guarda al instante» (a diferencia de la edición).
         personalInmediato={false}
       />
-    </div>
-  );
-
-  // Dentro del cajón: sin tarjeta ni cabecera propias (las pone `DrawerLateral`).
-  if (sinMarco) return cuerpo;
-
-  return (
-    <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-      <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-          Operativo adicional de {origen.identificador}
-        </h2>
-        {/*
-          EL COLOR DEL BANNER LO ENTREGA EL SERVIDOR, Y EL DEL TEXTO SE CALCULA.
-          Regla 3 de CLAUDE.md, cumplida desde el 2026-08-26. Ver la nota gemela en
-          `PanelEdicionOperativo`: con `text-white` fijo el rótulo del formulario 8 era
-          blanco sobre blanco.
-        */}
-        <span
-          className="badge badge-sm min-w-0 max-w-full"
-          title={`${origen.formulario.numero}. ${origen.formulario.nombre}`}
-          style={{
-            backgroundColor: origen.formulario.colorFondo,
-            color: colorDeTextoSobre(origen.formulario.colorFondo),
-          }}
-        >
-          {/* `min-w-0` + `truncate`: ver la nota gemela en `PanelEdicionOperativo`. */}
-          <span className="min-w-0 truncate">
-            {origen.formulario.numero}. {origen.formulario.nombre}
-          </span>
-        </span>
-      </div>
-      {cuerpo}
     </div>
   );
 };

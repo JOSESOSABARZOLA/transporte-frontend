@@ -172,3 +172,210 @@
   --app-shell-sidebar-subitem-indent: 0.96rem;
   --app-shell-sidebar-chevron-size: 0.76rem;
 }
+
+/*
+  ═══════════════════════════════════════════════════════════════════════════════
+  TOKENS DE TEXTO. Añadidos el 2026-10-08 (estandarización de tipografía y contraste).
+
+  Cuatro roles, y solo cuatro. La guía de uso está en `docs/estilos.md`; las utilidades
+  `text-app-strong`, `text-app-label`, `text-app-muted` y `text-app-disabled` se declaran
+  en `styles/ui/tipografia.css`. No se escriben `text-base-content/NN` ni `opacity-NN`
+  sobre texto: el lint lo marca como error.
+
+  Se derivan de `--color-base-content`, así que siguen al tema sin repetir colores (regla 2:
+  los colores de daisyUI no se tocan). El selector incluye los dos `data-theme` para que
+  la mezcla se recalcule donde cambie el tema, no solo en la raíz.
+
+  CONTRASTE (WCAG 2.x, texto #26365f / #edf4ff mezclado con el fondo; calculado con la
+  fórmula de luminancia relativa):
+
+    token      mezcla   claro #ffffff   claro #f1f3f6   oscuro #0d1630   oscuro #121f40
+    strong     100 %    11,83 : 1       10,64 : 1       16,16 : 1        14,65 : 1
+    label      100 %    11,83 : 1       10,64 : 1       16,16 : 1        14,65 : 1
+    muted       78 %     6,05 : 1        5,66 : 1       10,11 : 1         9,35 : 1   ✓ AA
+    disabled    50 %     2,80 : 1        2,71 : 1        4,83 : 1         4,65 : 1   solo deshabilitado
+
+  `disabled` es el ÚNICO por debajo de 4,5:1 en claro, y WCAG exime a los controles
+  inactivos (1.4.3). Por eso no se usa para texto que haya que leer.
+  ═══════════════════════════════════════════════════════════════════════════════
+*/
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --app-text-strong: var(--color-base-content);
+  --app-text-label: var(--color-base-content);
+  --app-text-muted: color-mix(in srgb, var(--color-base-content) 78%, transparent);
+  --app-text-disabled: color-mix(in srgb, var(--color-base-content) 50%, transparent);
+}
+
+/*
+  TOKENS DE ACCIÓN EN TABLAS. Añadidos el 2026-10-08 (contraste del cuerpo de tablas).
+
+  El color PURO del tema no llega a 4,5:1 sobre la fila rayada: `primary` #1b77bb da 4,29 sobre
+  #f1f3f6 y 3,40 sobre #121f40; `error` en oscuro, 3,92; `success` en claro, 1,84. No se tocan
+  los colores de daisyUI (regla 2): se DERIVAN aquí, mezclados con otro color del mismo tema.
+  Solo los usa `ui/tipografia.plugin.js` (acciones de fila); no son utilidades.
+
+    token      claro                         #ffffff  #f1f3f6   oscuro                 #0d1630  #121f40
+    accion     primary 60 % + secondary      6,76     6,08      primary 60 % + blanco  7,42     6,73
+    peligro    error                         5,62     5,06      error 70 % + blanco    6,27     5,69
+    exito      success 30 % + success-cont.  6,52     5,87      success                9,72     8,81
+*/
+:root,
+[data-theme="light"] {
+  --app-text-accion: color-mix(in srgb, var(--color-primary) 60%, var(--color-secondary));
+  --app-text-peligro: var(--color-error);
+  --app-text-exito: color-mix(in srgb, var(--color-success) 30%, var(--color-success-content));
+}
+
+[data-theme="dark"] {
+  --app-text-accion: color-mix(in srgb, var(--color-primary) 60%, white);
+  --app-text-peligro: color-mix(in srgb, var(--color-error) 70%, white);
+  --app-text-exito: var(--color-success);
+}
+
+/*
+  INTERRUPTOR E INSIGNIA SUAVE. Añadidos el 2026-10-13 (ajustes de «Formularios del cuadro»).
+
+  El `toggle` de daisyUI apagado es un contorno casi invisible: no se sabía si había un control.
+  El interruptor apagado va RELLENO de gris (#C9D0DE en claro, el valor que fijó el negocio) con
+  la perilla blanca; encendido, el azul primario. En oscuro el gris claro deslumbraría sobre el
+  fondo, así que baja a #4A5778, que sigue distinguiéndose del panel (#0d1630 / #121f40).
+
+  La insignia suave (etiquetas de comportamiento) es azul claro con texto azul oscuro; en oscuro
+  se invierte: fondo azul profundo y texto azul claro. Mezclas del primario del tema (regla 2).
+
+    token                 claro                              oscuro
+    interruptor-apagado   #C9D0DE                            #4A5778
+    insignia-suave-bg     primary 12 % + base-100            primary 28 % + base-100
+    insignia-suave-fg     primary 35 % + base-content (7,4:1) primary 35 % + blanco (8,1:1)
+*/
+:root,
+[data-theme="light"] {
+  --app-interruptor-apagado: #c9d0de;
+  --app-insignia-suave-bg: color-mix(in srgb, var(--color-primary) 12%, var(--color-base-100));
+  --app-insignia-suave-fg: color-mix(in srgb, var(--color-primary) 35%, var(--color-base-content));
+}
+
+[data-theme="dark"] {
+  --app-interruptor-apagado: #4a5778;
+  --app-insignia-suave-bg: color-mix(in srgb, var(--color-primary) 28%, var(--color-base-100));
+  --app-insignia-suave-fg: color-mix(in srgb, var(--color-primary) 35%, white);
+}
+
+/*
+  BARRAS DEL CAJÓN ESTÁNDAR. Añadidos el 2026-10-15 (plan «drawer-estandar», revisión 2).
+
+  La cabecera y el pie de `DrawerLateral` son AZUL CORPORATIVO, iguales en claro y en oscuro (E4):
+  el cuerpo sigue al tema, las barras no. El azul es el `secondary` del tema (#20347d, E1). Los
+  textos son claros con contraste AA sobre ese azul (WCAG 2.x, fórmula de luminancia relativa):
+
+    token                      valor     sobre #20347d   uso
+    cajon-texto                #ffffff   11,4 : 1        título, botones, check
+    cajon-texto-suave          #c9d2ec    7,5 : 1        subtítulo, «Sin cambios», «N campos…»
+    cajon-estado-cambios       #fcd34d    7,9 : 1        «Cambios sin guardar»
+    cajon-estado-error         #fca5a5    6,0 : 1        «Falta: …»
+    cajon-estado-listo         #86efac    8,1 : 1        «Listo para guardar»
+    cajon-deshabilitado-*      #3a4a94 / #5b6bb5 / #a9b4da   «Guardar» apagado SIN opacidad
+                                                             (fondo / borde / texto; exento, 1.4.3)
+*/
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --app-cajon-barra: var(--color-secondary);
+  --app-cajon-texto: #ffffff;
+  --app-cajon-texto-suave: #c9d2ec;
+  --app-cajon-estado-cambios: #fcd34d;
+  --app-cajon-estado-error: #fca5a5;
+  --app-cajon-estado-listo: #86efac;
+  --app-cajon-deshabilitado-bg: #3a4a94;
+  --app-cajon-deshabilitado-borde: #5b6bb5;
+  --app-cajon-deshabilitado-texto: #a9b4da;
+}
+
+/*
+  MENSAJES ESTÁNDAR. Añadidos el 2026-10-16 (plan «mensajes-estandar», M1).
+
+  Las cuatro familias de `MensajeModal`, los avisos breves (toasts) y `AvisoEnLinea`: un FONDO
+  suave (el círculo del icono, la caja en línea) y un COLOR de la variante (icono, borde
+  izquierdo del aviso breve). En claro son los valores que fijó el negocio; en oscuro el fondo es
+  el color al 22 % sobre `base-100` y el color se aclara para seguir leyéndose sobre él.
+  El TEXTO de los mensajes nunca va en estos colores: va en `text-app-strong` / `text-app-muted`.
+
+    token                     claro      oscuro                               uso
+    msg-advertencia-bg / -fg  #fff1e6 / #e8702a   #e8702a 22 % + base-100 / #fdba8c   advertencia y peligro
+    msg-error-bg / -fg        #fdecec / #b42318   #b42318 30 % + base-100 / #fca5a5   error
+    msg-exito-bg / -fg        #ecf8f1 / #0f7b4a   #0f7b4a 30 % + base-100 / #86efac   éxito
+    msg-info-bg / -fg         #eef3ff / #2458d6   #2458d6 30 % + base-100 / #a5b8ff   información
+
+  CONTRASTE (WCAG 2.x). El color es de iconos y bordes (1.4.11 pide 3:1): sobre su fondo, en
+  claro, error 6,0, éxito 5,0, info 5,6 y advertencia 2,9 (el naranja del negocio queda justo por
+  debajo; el icono nunca va solo: lleva título y texto, regla 6). En oscuro, todos por encima de 7:1.
+
+  BOTÓN DE PELIGRO RELLENO (M2): #c2200f, y #9b1a0c al pasar. Texto blanco: 5,9 : 1 y 8,4 : 1.
+  Igual en claro y en oscuro.
+*/
+:root,
+[data-theme="light"] {
+  --app-msg-advertencia-bg: #fff1e6;
+  --app-msg-advertencia-fg: #e8702a;
+  --app-msg-error-bg: #fdecec;
+  --app-msg-error-fg: #b42318;
+  --app-msg-exito-bg: #ecf8f1;
+  --app-msg-exito-fg: #0f7b4a;
+  --app-msg-info-bg: #eef3ff;
+  --app-msg-info-fg: #2458d6;
+}
+
+[data-theme="dark"] {
+  --app-msg-advertencia-bg: color-mix(in srgb, #e8702a 22%, var(--color-base-100));
+  --app-msg-advertencia-fg: #fdba8c;
+  --app-msg-error-bg: color-mix(in srgb, #b42318 30%, var(--color-base-100));
+  --app-msg-error-fg: #fca5a5;
+  --app-msg-exito-bg: color-mix(in srgb, #0f7b4a 30%, var(--color-base-100));
+  --app-msg-exito-fg: #86efac;
+  --app-msg-info-bg: color-mix(in srgb, #2458d6 30%, var(--color-base-100));
+  --app-msg-info-fg: #a5b8ff;
+}
+
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --app-peligro-relleno: #c2200f;
+  --app-peligro-relleno-hover: #9b1a0c;
+}
+
+/*
+  TOOLTIP Y NOTAS DEL OPERATIVO (2026-10-19, plan «acciones-icono-notas»).
+  · Tooltip: fondo azul noche #15204a con texto blanco (15 : 1). Igual en los dos temas.
+  · Nota normal (ámbar) y nota «Comparte con» (azul): fondo, borde y filete izquierdo. En oscuro,
+    el fondo se mezcla con la base para no deslumbrar; el texto lo pone `text-app-*`.
+*/
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --app-tooltip-bg: #15204a;
+  --app-tooltip-fg: #ffffff;
+}
+
+:root,
+[data-theme="light"] {
+  --app-nota-bg: #fffbea;
+  --app-nota-borde: #f3e3a3;
+  --app-nota-filete: #e5b93a;
+  --app-nota-compartida-bg: #eef3ff;
+  --app-nota-compartida-borde: #c7d6fb;
+  --app-nota-compartida-filete: #2458d6;
+  /* Destello de la fila a la que lleva «Comparte con X» (2026-10-19, plan «notas-jornada-matriz»). */
+  --app-fila-destello: #fde68a;
+}
+
+[data-theme="dark"] {
+  --app-nota-bg: color-mix(in srgb, #e5b93a 16%, var(--color-base-100));
+  --app-nota-borde: color-mix(in srgb, #e5b93a 40%, var(--color-base-100));
+  --app-nota-filete: #e5b93a;
+  --app-nota-compartida-bg: color-mix(in srgb, #2458d6 22%, var(--color-base-100));
+  --app-nota-compartida-borde: color-mix(in srgb, #2458d6 45%, var(--color-base-100));
+  --app-nota-compartida-filete: #7f9cf5;
+  --app-fila-destello: color-mix(in srgb, #e5b93a 45%, var(--color-base-100));
+}

@@ -23,7 +23,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import ModalMantenimiento from "./ModalMantenimiento.tsx";
+import DrawerMantenimiento from "./DrawerMantenimiento.tsx";
 import { esquemaMantenimiento } from "../../config/validationSchemas.ts";
 import type { VehiculoDeLaFlota } from "../../interfaces/Transporte.ts";
 
@@ -95,7 +95,7 @@ describe("RN-DAF-05 · el esquema de una parada de taller", () => {
   });
 });
 
-describe("RN-DAF-05 · el modal de captura", () => {
+describe("RN-DAF-05 · el cajón de captura", () => {
   const propiedades = {
     abierto: true,
     vehiculo: VEHICULO,
@@ -106,9 +106,10 @@ describe("RN-DAF-05 · el modal de captura", () => {
   };
 
   it("nombra la placa y explica la consecuencia de registrar la parada", () => {
-    render(<ModalMantenimiento {...propiedades} />);
+    render(<DrawerMantenimiento {...propiedades} />);
 
-    expect(screen.getByText(/Mantenimiento de PMA7056/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Registrar parada" })).toBeInTheDocument();
+    expect(screen.getByText("PMA7056")).toBeInTheDocument();
     expect(screen.getByText(/no se podrá asignar/i)).toBeInTheDocument();
   });
 
@@ -116,7 +117,7 @@ describe("RN-DAF-05 · el modal de captura", () => {
     const onGuardar = vi.fn();
 
     render(
-      <ModalMantenimiento
+      <DrawerMantenimiento
         {...propiedades}
         onGuardar={onGuardar}
       />,
@@ -137,7 +138,7 @@ describe("RN-DAF-05 · el modal de captura", () => {
   /** Regla 7: el rechazo del servidor se muestra tal cual, sin reescribirlo. */
   it("muestra el mensaje del servidor íntegro", () => {
     render(
-      <ModalMantenimiento
+      <DrawerMantenimiento
         {...propiedades}
         aviso="El vehículo de placa PMA7056 ya tiene un mantenimiento registrado del 2026-09-09 al 2026-09-14."
       />,
@@ -150,13 +151,13 @@ describe("RN-DAF-05 · el modal de captura", () => {
 
   it("mientras guarda, no se puede cancelar ni volver a enviar", () => {
     render(
-      <ModalMantenimiento
+      <DrawerMantenimiento
         {...propiedades}
         guardando
       />,
     );
 
-    expect(screen.getByRole("button", { name: /Cancelar/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Guardando/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Cancelar/ })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: /Guardando/ })).toHaveAttribute("aria-disabled", "true");
   });
 });

@@ -34,8 +34,8 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-/** El valor codificado en `env.ts` como último respaldo. */
-const PORTAL_POR_DEFECTO = "http://172.20.136.127:10006/login";
+/** Un portal de ejemplo: en el repositorio no se escriben direcciones reales. */
+const PORTAL = "https://auth.example/login";
 
 /**
  * Vuelve a evaluar `config/env.ts` con las variables que se le den.
@@ -59,59 +59,64 @@ afterEach(() => {
   vi.resetModules();
 });
 
+/**
+ * DESDE EL 2026-10-16 EL PORTAL NO TIENE DIRECCIÓN POR OMISIÓN (no se versionan IP). Lo que
+ * impide un paquete sin portal es `vite build`, que se detiene; aquí se fija el contrato del
+ * navegador: sin portal no se finge uno, y `hayPortal()` lo dice para no navegar a una URL rota.
+ */
 describe("una variable declarada y vacía no es un valor", () => {
-  it("sin declarar, el portal toma el respaldo del fuente", async () => {
-    const env = await cargarEnv({});
+  it("sin declarar, no hay portal y `hayPortal` lo dice", async () => {
+    vi.resetModules();
+    const modulo = await import("./env.ts");
 
-    expect(env.portalAuthUrl).toBe(PORTAL_POR_DEFECTO);
+    expect(modulo.env.portalAuthUrl).toBe("");
+    expect(modulo.hayPortal()).toBe(false);
   });
 
   /**
-   * ES LA QUE DISCRIMINA, y la única que cae al restaurar el `??`. Con el defecto
-   * puesto, todas las demás de este archivo siguen pasando.
+   * ES LA QUE DISCRIMINA: con `??` en lugar de `oPorDefecto`, el espacio en blanco pasaría
+   * por un portal y `hayPortal` mentiría.
    */
-  it("declarada y VACÍA, el portal también toma el respaldo", async () => {
-    const env = await cargarEnv({ VITE_AUTH_PORTAL_URL: "" });
+  it("declarada VACÍA o en blanco, tampoco hay portal", async () => {
+    for (const vacia of ["", "   "]) {
+      const env = await cargarEnv({ VITE_AUTH_PORTAL_URL: vacia });
+      expect(env.portalAuthUrl).toBe("");
+    }
+  });
 
-    expect(env.portalAuthUrl).toBe(PORTAL_POR_DEFECTO);
-    expect(env.portalAuthUrl).not.toBe("");
+  it("con portal, `hayPortal` es verdadero", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_AUTH_PORTAL_URL", PORTAL);
+    const modulo = await import("./env.ts");
+
+    expect(modulo.hayPortal()).toBe(true);
   });
 
   it("y el cierre de sesión hereda del portal cuando solo él está vacío", async () => {
     const env = await cargarEnv({
       VITE_AUTH_LOGOUT_URL: "",
-      VITE_AUTH_PORTAL_URL: "http://10.0.0.9:10006/login",
+      VITE_AUTH_PORTAL_URL: PORTAL,
     });
 
-    expect(env.logoutAuthUrl).toBe("http://10.0.0.9:10006/login");
+    expect(env.logoutAuthUrl).toBe(PORTAL);
   });
 
-  it("con las dos vacías, ninguna queda en blanco", async () => {
+  it("con las dos vacías, ninguna queda con basura; el módulo toma su código", async () => {
     const env = await cargarEnv({
       VITE_AUTH_PORTAL_URL: "",
       VITE_AUTH_LOGOUT_URL: "",
       VITE_AUTH_MODULE_CODE: "",
     });
 
-    expect(env.portalAuthUrl).toBe(PORTAL_POR_DEFECTO);
-    expect(env.logoutAuthUrl).toBe(PORTAL_POR_DEFECTO);
+    expect(env.portalAuthUrl).toBe("");
+    expect(env.logoutAuthUrl).toBe("");
     expect(env.moduleCode).toBe("TRANSPORTE");
   });
 
-  it("con valor propio manda el valor: es para el día que Auth se mueva", async () => {
-    const env = await cargarEnv({
-      VITE_AUTH_PORTAL_URL: "http://10.0.0.9:10006/login",
-    });
+  it("con valor propio manda el valor", async () => {
+    const env = await cargarEnv({ VITE_AUTH_PORTAL_URL: PORTAL });
 
-    expect(env.portalAuthUrl).toBe("http://10.0.0.9:10006/login");
-  });
-
-  it("el portal siempre es una URL absoluta, no una ruta suelta", async () => {
-    // `window.location.replace()` con una ruta relativa navegaría dentro de la propia
-    // aplicación: parecería que el botón de ingreso no hace nada.
-    const env = await cargarEnv({ VITE_AUTH_PORTAL_URL: "" });
-
-    expect(() => new URL(env.portalAuthUrl)).not.toThrow();
+    expect(env.portalAuthUrl).toBe(PORTAL);
   });
 });
 
@@ -138,5 +143,16 @@ describe("apiBaseUrl no se coalesce, y es deliberado", () => {
     const env = await cargarEnv({});
 
     expect(env.apiBaseUrl).toBe("http://localhost:3003");
+  });
+
+  /**
+   * El build del Gateway (`npm run build` en el servidor) puede no declararla: un paquete de
+   * producción nunca debe mandar las peticiones al equipo del usuario.
+   */
+  it("en un build de producción sin declarar, pide al propio origen", async () => {
+    vi.stubEnv("DEV", false);
+    const env = await cargarEnv({});
+
+    expect(env.apiBaseUrl).toBe("");
   });
 });

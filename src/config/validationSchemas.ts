@@ -10,6 +10,8 @@
 
 import * as Yup from "yup";
 
+import { esCorreoValido, esTelefonoValido } from "../utils/personal.util.ts";
+
 /**
  * RN-07 · Los horarios se registran únicamente en horas completas y medias horas.
  * Fuente: docs/FASE2-documentacion-funcional.md §8.1
@@ -60,7 +62,7 @@ export const esquemaOperativo = Yup.object().shape({
 
   // VAL-02 y VAL-03. El HORARIO DEL OPERATIVO SALIÓ DEL ESQUEMA el 2026-09-08 (RN-66): en el
   // registro el operativo ya no tiene horario propio —lo lleva cada persona— y en el modo
-  // clásico (adicional) el horario único lo valida `FormularioOperativo.validate`, que sabe
+  // clásico (adicional) el horario único lo valida `FormOperativo.validate`, que sabe
   // en qué modo está. Dejarlo obligatorio aquí bloquearía el registro, donde el campo no existe.
   horaInicio: Yup.string(),
   horaFin: Yup.string(),
@@ -157,32 +159,41 @@ export const esquemaFuncionario = Yup.object({
     .max(90, "Los nombres no superan los 90 caracteres.")
     .required("Indique los nombres del funcionario."),
 
-  telefono: Yup.string().max(20, "El teléfono no supera los 20 caracteres."),
-
   /*
-    SOLO LA LONGITUD, NO EL FORMATO, y es deliberado. Quien decide si un correo es válido
-    es `esCorreoValido` en el servidor, y su mensaje se muestra tal cual (regla 7). Poner
-    aquí una segunda expresión daría dos definiciones de «correo válido» que acabarían
-    discrepando, y la que rechazara primero sería la del navegador — la que nadie recuerda
-    que existe. Es el mismo criterio con el que el teléfono tampoco valida su formato aquí.
+    FORMATO DEL TELÉFONO Y DEL CORREO PERSONAL EN EL NAVEGADOR DESDE EL 2026-10-08, a pedido del
+    rediseño de P-07. Hasta entonces aquí solo se medía la longitud para no tener dos definiciones
+    de «válido»; ahora las dos expresiones son ESPEJO EXACTO de las del servidor
+    (`esTelefonoValido`, `esCorreoValido` de `utils/personal.util.ts` ↔ `reglas-personal.ts`) y el
+    servidor sigue siendo quien decide. Vacíos no se validan: son opcionales.
   */
+  telefono: Yup.string()
+    .max(20, "El teléfono no supera los 20 caracteres.")
+    .test(
+      "celular-09",
+      "El teléfono debe ser un celular de diez dígitos que empiece por 09, por ejemplo 0985144231.",
+      (telefono) => !telefono || esTelefonoValido(telefono),
+    ),
+
   correoInstitucional: Yup.string().max(
     160,
     "El correo institucional no supera los 160 caracteres.",
   ),
-  correoPersonal: Yup.string().max(
-    160,
-    "El correo personal no supera los 160 caracteres.",
-  ),
+  correoPersonal: Yup.string()
+    .max(160, "El correo personal no supera los 160 caracteres.")
+    .test(
+      "correo-valido",
+      "Escriba un correo válido, por ejemplo nombre@correo.com.",
+      (correo) => !correo || esCorreoValido(correo),
+    ),
 
   cargo: Yup.string().max(90, "El cargo no supera los 90 caracteres."),
 
   area: Yup.string().required("Indique el área del funcionario."),
 
   /*
-    ZONAL OPCIONAL EN LA FICHA (2026-09-21). Se ofrece al personal DMIP (OPERATIVOS/GENERAL/TECNICO);
-    para INSTRUCCION el campo ni se pinta (su zonal la fija la matriz de cobertura). Nunca se exige:
-    es un dato optativo. El valor es el id como texto (valor del `<select>`).
+    ZONAL OPCIONAL EN LA FICHA (2026-09-21). Se ofrece a TODAS las áreas desde el 2026-10-08,
+    Instrucción incluida (antes solo la fijaba la matriz de cobertura). Nunca se exige: es un dato
+    optativo. El valor es el id como texto (valor del `<select>`).
   */
   zonalId: Yup.string(),
 
@@ -238,13 +249,12 @@ export const esquemaAusencia = Yup.object({
  * Alta de un punto de encuentro. Pantalla P-08 (M-28).
  *
  * ═══════════════════════════════════════════════════════════════════════════════
- * EL NOMBRE ÚNICO DENTRO DE LA ZONAL **NO** SE COMPRUEBA AQUÍ.
+ * EL NOMBRE ÚNICO DENTRO DE LA ZONAL **NO** SE COMPRUEBA EN ESTE ESQUEMA.
  *
- * `uq_punto_nombre_zonal` es un índice compuesto y el servidor lo verifica antes de
- * escribir. Comprobarlo en el navegador exigiría tener todos los puntos de esa zonal
- * —incluidos los de otros formularios, que esta pantalla no recibe— y aun así dos
- * administradores trabajando a la vez lo esquivarían. Llega como rechazo del servidor con
- * el nombre del punto que ya existe, y se muestra tal cual. Es el caso 3 del plan.
+ * Lo garantiza el servidor (409 `CATALOGO_DUPLICADO`, sin tildes ni mayúsculas), porque dos
+ * administradores a la vez esquivarían cualquier control del navegador. Desde el 2026-10-12 el
+ * cajón de P-08 AVISA en vivo contra lo que ya tiene cargado (`buscarDuplicado`, en
+ * `utils/catalogos.util.ts`), pero eso es comodidad, no la garantía. Es el caso 3 del plan.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 export const esquemaPunto = Yup.object({
@@ -289,102 +299,6 @@ export const esquemaInstitucion = Yup.object({
     .min(3, "La denominación es demasiado corta.")
     .max(200, "La denominación no puede superar los 200 caracteres.")
     .required("Indique la denominación completa de la institución."),
-});
-
-/**
- * Alta y edición de un formulario. Pantalla de administración de formularios (2026-09-29).
- *
- * Valida en el borde lo que la pantalla puede: número (1..99), código, nombre, que se haya
- * elegido un color de la paleta (`colorFondo`), el rol dueño, el prefijo y al menos un área.
- * El resto (paleta exacta, unicidad) lo revalida el servidor y su mensaje se muestra tal cual.
- */
-export const esquemaFormulario = Yup.object({
-  numero: Yup.number()
-    .typeError("El número del formulario es un entero.")
-    .integer("El número del formulario es un entero.")
-    .min(1, "El número del formulario va del 1 al 99.")
-    .max(99, "El número del formulario va del 1 al 99.")
-    .required("Indique el número del formulario."),
-
-  codigo: Yup.string()
-    .trim()
-    .max(40, "El código no puede superar los 40 caracteres.")
-    .required("Indique el código del formulario."),
-
-  nombre: Yup.string()
-    .trim()
-    .max(160, "El nombre no puede superar los 160 caracteres.")
-    .required("Indique el nombre del formulario."),
-
-  colorFondo: Yup.string().required("Elija un color de la paleta."),
-
-  rolDueno: Yup.string().required("Elija el departamento dueño del formulario."),
-
-  prefijo: Yup.string()
-    .trim()
-    .max(12, "El prefijo no puede superar los 12 caracteres.")
-    .required("Indique el prefijo del identificador."),
-
-  areas: Yup.array()
-    .of(Yup.string())
-    .min(1, "El formulario debe admitir al menos un área."),
-});
-
-/**
- * Alta y edición de un conductor. Pantalla P-12 (2026-08-20).
- *
- * ESPEJO DEL CONTRATO DEL SERVIDOR, no una invención de la pantalla: `CrearConductorDto`
- * exige cédula y nombre, y acota teléfono a 20, licencia a 10 y nombre a 160. Validar aquí
- * evita el viaje, no sustituye la comprobación: el servidor sigue rechazando lo que no
- * cumple, y su mensaje se muestra tal cual (regla 7).
- *
- * LA CÉDULA SON DIEZ DÍGITOS, igual que en `esquemaFuncionario`. La columna admite trece
- * caracteres —`@db.VarChar(13)`, para pasaportes— pero ninguna fuente define ese caso y
- * aceptar cualquier cosa haría que la unicidad de cédula dejara de significar algo.
- */
-export const esquemaConductor = Yup.object({
-  cedula: Yup.string()
-    .matches(
-      PATRON_CEDULA,
-      `La cédula son ${LONGITUD_CEDULA} dígitos, sin guiones ni espacios.`,
-    )
-    .required("Indique la cédula del conductor."),
-
-  nombreCompleto: Yup.string()
-    .max(160, "El nombre no supera los 160 caracteres.")
-    .required("Indique el nombre completo del conductor."),
-
-  telefono: Yup.string().max(20, "El teléfono no supera los 20 caracteres."),
-
-  licenciaTipo: Yup.string().max(
-    10,
-    "El tipo de licencia no supera los 10 caracteres.",
-  ),
-
-  // Vacío es válido: un conductor puede no tener vehículo habitual asignado todavía.
-  // Lo que no puede es QUITÁRSELO después, porque el contrato del servidor no admite
-  // nulo en este campo. La pantalla lo advierte donde toca.
-  vehiculoHabitualId: Yup.string(),
-});
-
-/**
- * Alta y edición de un vehículo. Pantalla P-12 (2026-08-20).
- *
- * LA PLACA NO SE VALIDA CONTRA UN PATRÓN, y es deliberado: `vehi_placa` es `VarChar(10)`
- * y **ninguna fuente define su formato**. La flota de la AMC incluye motocicletas y
- * vehículos con placa institucional, y ninguna transcripción dice cómo se escriben.
- * Inventar aquí un patrón `AAA-0000` rechazaría placas legítimas el primer día. Se acota
- * el largo, que es lo único que la base afirma.
- */
-export const esquemaVehiculo = Yup.object({
-  placa: Yup.string()
-    .max(10, "La placa no supera los 10 caracteres.")
-    .required("Indique la placa del vehículo."),
-
-  descripcion: Yup.string().max(
-    160,
-    "La descripción no supera los 160 caracteres.",
-  ),
 });
 
 /**
@@ -446,4 +360,60 @@ export const esquemaCapacidad = Yup.object({
     300,
     "La observación no supera los 300 caracteres.",
   ),
+});
+
+// ─────────────────────────── Ventana de carga (2026-10-07) ───────────────────────────
+
+const PATRON_HORA_VENTANA = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const MENSAJE_HORA_VENTANA = "La hora se escribe en formato HH:MM, por ejemplo 16:30.";
+
+/** `HH:MM` → minutos del día. */
+const minutosVentana = (hora: string): number => {
+  const [horas, minutos] = hora.split(":").map(Number);
+  return horas * 60 + minutos;
+};
+
+/**
+ * «Editar ventana de carga». Las horas viajan como texto `HH:MM` (el `input type="time"` entrega
+ * ese formato) y una apertura vacía significa «desde el inicio del día». Con «Sin restricción» no
+ * se exige nada: no se usan horas ni mensaje. Los textos son los mismos que devuelve el servidor,
+ * que sigue siendo la autoridad.
+ */
+export const esquemaVentana = Yup.object().shape({
+  tipo: Yup.string().required(),
+  horaApertura: Yup.string()
+    .default("")
+    .test("formato", MENSAJE_HORA_VENTANA, (valor) => !valor || PATRON_HORA_VENTANA.test(valor)),
+  horaCierre: Yup.string()
+    .default("")
+    .when("tipo", {
+      is: (tipo: string) => tipo !== "SIN_RESTRICCION",
+      then: (campo) =>
+        campo
+          .required("Indique la hora de cierre.")
+          .matches(PATRON_HORA_VENTANA, MENSAJE_HORA_VENTANA)
+          .test(
+            "posterior",
+            "La hora de cierre debe ser posterior a la de apertura.",
+            function posterior(cierre) {
+              const apertura = this.parent.horaApertura as string;
+              if (!cierre || !apertura) return true;
+              if (!PATRON_HORA_VENTANA.test(cierre) || !PATRON_HORA_VENTANA.test(apertura)) {
+                return true;
+              }
+              return minutosVentana(cierre) > minutosVentana(apertura);
+            },
+          ),
+    }),
+  mensajeCierre: Yup.string()
+    .default("")
+    .when("tipo", {
+      is: (tipo: string) => tipo !== "SIN_RESTRICCION",
+      then: (campo) =>
+        campo
+          .trim()
+          .required("Indique el mensaje que verá el funcionario cuando la ventana esté cerrada.")
+          .min(10, "El mensaje de cierre debe explicarle al funcionario cuándo vuelve a abrirse.")
+          .max(400, "El mensaje de cierre no puede superar los 400 caracteres."),
+    }),
 });

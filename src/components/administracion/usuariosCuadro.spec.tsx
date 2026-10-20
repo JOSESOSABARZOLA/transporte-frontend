@@ -151,6 +151,7 @@ describe("Cuentas del cuadro", () => {
           procesando={false}
           onEditar={vi.fn()}
           onDesactivar={vi.fn()}
+          onActivar={vi.fn()}
         />,
       );
 
@@ -166,6 +167,7 @@ describe("Cuentas del cuadro", () => {
           procesando={false}
           onEditar={vi.fn()}
           onDesactivar={vi.fn()}
+          onActivar={vi.fn()}
         />,
       );
 
@@ -181,12 +183,57 @@ describe("Cuentas del cuadro", () => {
           procesando={false}
           onEditar={vi.fn()}
           onDesactivar={vi.fn()}
+          onActivar={vi.fn()}
         />,
       );
 
       expect(screen.queryByText("Sin usuario: no puede entrar")).toBeNull();
       expect(screen.queryByText("Sin ficha: no recibe órdenes")).toBeNull();
       expect(screen.getByText("dssalazar")).toBeInTheDocument();
+    });
+  });
+
+  describe("las acciones de la fila (estándar de botones)", () => {
+    it("la cuenta activa muestra [✎ Editar] [⊘ Desactivar]; la desactivada, [✎ Editar] [↺ Activar]", async () => {
+      const activar = vi.fn();
+      render(
+        <TablaUsuarios
+          nombreDe={(rol) => rol}
+          usuarios={[COMPLETA, { ...SIN_ENLACES, id: 99, nombre: "CUENTA APAGADA", activo: false }]}
+          cargando={false}
+          procesando={false}
+          onEditar={vi.fn()}
+          onDesactivar={vi.fn()}
+          onActivar={activar}
+        />,
+      );
+
+      const desactivar = screen.getByRole("button", { name: `Desactivar ${COMPLETA.nombre}` });
+      expect(desactivar.className).toContain("btn-error");
+      expect(desactivar.className).toContain("btn-sm");
+      const boton = screen.getByRole("button", { name: "Activar CUENTA APAGADA" });
+      expect(boton.className).toContain("btn-success");
+      expect(screen.queryByRole("button", { name: "Desactivar CUENTA APAGADA" })).toBeNull();
+      await userEvent.click(boton);
+      expect(activar).toHaveBeenCalledWith(expect.objectContaining({ id: 99 }));
+      expect(screen.getByRole("columnheader", { name: "Acciones" })).toHaveClass("text-right");
+    });
+
+    it("«Activar» en la página envía { activo: true } sin confirmación y avisa", async () => {
+      const apagada = { ...COMPLETA, id: 7, activo: false };
+      vi.mocked(UsuariosCuadroService.listar).mockResolvedValue([apagada]);
+      vi.mocked(UsuariosCuadroService.actualizar).mockResolvedValue({ ...apagada, activo: true });
+
+      render(<AdminUsuariosPage />);
+      await userEvent.click(
+        await screen.findByRole("button", { name: `Activar ${COMPLETA.nombre}` }),
+      );
+
+      expect(UsuariosCuadroService.actualizar).toHaveBeenCalledWith(7, { activo: true });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(
+        await screen.findByText(`La cuenta de ${COMPLETA.nombre} vuelve a estar activa`),
+      ).toBeInTheDocument();
     });
   });
 
@@ -207,9 +254,10 @@ describe("Cuentas del cuadro", () => {
       expect(
         screen.getByText(/no tiene ningún rol de Transporte en Auth central/),
       ).toBeInTheDocument();
+      // El aviso no bloquea: «Guardar cambios» solo espera a que haya algún cambio.
       expect(
         screen.getByRole("button", { name: "Guardar cambios" }),
-      ).toBeEnabled();
+      ).toHaveAttribute("title", "Sin cambios");
     });
 
     it("muestra el rechazo del servidor tal cual", () => {
@@ -247,6 +295,8 @@ describe("Cuentas del cuadro", () => {
         await screen.findByLabelText("Cédula de la ficha de personal"),
       ).toHaveValue("");
 
+      // Un cambio cualquiera (sin cambios, «Guardar cambios» queda apagado).
+      await userEvent.type(screen.getByLabelText(/Nombre completo/), " B");
       await userEvent.click(
         screen.getByRole("button", { name: "Guardar cambios" }),
       );
@@ -277,6 +327,7 @@ describe("Cuentas del cuadro", () => {
           procesando={false}
           onEditar={vi.fn()}
           onDesactivar={vi.fn()}
+          onActivar={vi.fn()}
         />,
       );
 
@@ -352,12 +403,15 @@ describe("Cuentas del cuadro", () => {
         screen.getByLabelText("DMIP · Unidad de Operativos"),
       );
 
-      expect(
-        screen.getByRole("button", { name: "Guardar cambios" }),
-      ).toBeDisabled();
+      // Se ve apagado; pulsarlo no envía, nombra lo que falta y explica el porqué (tras intentar).
+      const guardar = screen.getByRole("button", { name: "Guardar cambios" });
+      expect(guardar).toHaveAttribute("aria-disabled", "true");
+      expect(screen.queryByText(/entraría y no podría hacer nada/)).toBeNull();
+      await userEvent.click(guardar);
       expect(
         screen.getByText(/entraría y no podría hacer nada/),
       ).toBeInTheDocument();
+      expect(screen.getByText("Falta: al menos un rol")).toBeInTheDocument();
       expect(alGuardar).not.toHaveBeenCalled();
     });
   });
@@ -437,7 +491,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
     render(<AdminUsuariosPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Nueva cuenta" }),
+      await screen.findByRole("button", { name: "+ Nueva cuenta" }),
     );
   };
 
@@ -459,7 +513,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
     await userEvent.click(
       await screen.findByRole("button", { name: /PEREZ LOPEZ JUAN CARLOS/ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
     expect(screen.getByDisplayValue("jcperez")).toBeInTheDocument();
     expect(screen.getByDisplayValue("jcperez@quito.gob.ec")).toBeInTheDocument();
@@ -491,7 +545,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
 
     render(<AdminUsuariosPage />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Nueva cuenta" }),
+      await screen.findByRole("button", { name: "+ Nueva cuenta" }),
     );
 
     expect(
@@ -506,7 +560,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
     );
 
     // El formulario se abre en blanco: el alta no depende de Auth.
-    expect(screen.getByLabelText("Correo institucional")).toHaveValue("");
+    expect(screen.getByLabelText(/Correo institucional/)).toHaveValue("");
   });
 
   /**
@@ -522,7 +576,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
       await userEvent.click(
         await screen.findByRole("button", { name: /PEREZ LOPEZ JUAN CARLOS/ }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+      await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
       expect(
         screen.getByLabelText("Cédula de la ficha de personal"),
@@ -548,7 +602,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
       await userEvent.click(
         await screen.findByRole("button", { name: /PEREZ LOPEZ JUAN CARLOS/ }),
       );
-      await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+      await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
       expect(
         screen.getByLabelText("Cédula de la ficha de personal"),

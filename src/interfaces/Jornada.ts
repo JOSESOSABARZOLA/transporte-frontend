@@ -25,7 +25,7 @@
 import type { Alerta } from "./Alerta";
 import type { AreaPersonal } from "./Formulario";
 import type { EstadoCuadro } from "./CuadroDiario";
-import type { EstadoTransporte } from "./Operativo";
+import type { EstadoTransporte, NotaOperativo } from "./Operativo";
 
 /**
  * Qué puede hacer en esta sección quien la consulta.
@@ -74,6 +74,13 @@ export interface FilaJornada {
   /** Notas del operativo (bitácora, 2026-09-09): los textos, EN ORDEN. Cada una es una nota
    * independiente y se pinta por separado; vacío si no hay ninguna. */
   observaciones: string[];
+  /**
+   * Las notas como tarjetas (2026-10-19, plan «notas-jornada-matriz»): las escritas (`NOTA`) y la
+   * de compartir unidad (`COMPARTIDA`), de la más reciente a la más antigua. En la Jornada, una
+   * COMPARTIDA hacia un formulario que el rol no ve llega sin identificador ni
+   * `operativoRelacionadoId` (RN-48). Un servidor anterior no la manda.
+   */
+  notas?: NotaOperativo[];
   estadoTransporte: EstadoTransporte;
   esNocturno: boolean;
   /**

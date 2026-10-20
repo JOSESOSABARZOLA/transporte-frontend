@@ -51,6 +51,13 @@ export type PropositoDirectorio = {
   detalle: (fila: FilaDirectorio) => string;
   /** El motivo por el que NO se puede crear, o nulo si se puede. */
   impedimento: (fila: FilaDirectorio) => string | null;
+  /**
+   * Rediseño del paso 1 (2026-10-08), SOLO para la ficha: quien ya lo tiene VIGENTE se oculta por
+   * omisión (con la casilla «Mostrar quienes ya tienen …»), y la lista se filtra por chips de
+   * dependencia. La cuenta (P-11) conserva su comportamiento: los dos en `false`.
+   */
+  ocultaQuienesLoTienen: boolean;
+  porDependencia: boolean;
 };
 
 /** P-07. Lo que falta es la ficha de personal: sin ella no se puede convocar a nadie. */
@@ -70,6 +77,8 @@ export const PARA_FICHA: PropositoDirectorio = {
     fila.cedula
       ? null
       : "Sin cédula en Auth no se puede crear la ficha: es la llave con la que se enlazan.",
+  ocultaQuienesLoTienen: true,
+  porDependencia: true,
 };
 
 /**
@@ -95,4 +104,6 @@ export const PARA_CUENTA: PropositoDirectorio = {
     fila.usuario
       ? null
       : "Sin usuario de Auth no se puede crear la cuenta: es la llave con la que se entra.",
+  ocultaQuienesLoTienen: false,
+  porDependencia: false,
 };

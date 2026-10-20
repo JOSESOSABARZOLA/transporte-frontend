@@ -42,6 +42,7 @@ import {
 
 // La comparación sin tildes es la misma que usan los filtros de P-02 y de P-07: quien
 // busca «instruccion» espera encontrar «Instrucción». Se importa en lugar de repetirla.
+import Boton from "../common/Boton.tsx";
 import { normalizar } from "../../utils/texto.util.ts";
 
 /** Lo mínimo que necesita una opción para ser elegible. */
@@ -296,6 +297,7 @@ const SelectorTokens = <T extends OpcionToken>({
             aria-label={`Quitar ${valorLibre}`}
             disabled={deshabilitado}
             onClick={() => onValorLibre("")}
+            // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
             className="btn btn-ghost btn-sm"
           >
             ×
@@ -319,6 +321,7 @@ const SelectorTokens = <T extends OpcionToken>({
             aria-label={`Quitar ${etiquetaLarga(opcion)}`}
             disabled={deshabilitado}
             onClick={() => quitar(opcion.id)}
+            // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
             className="btn btn-ghost btn-sm"
           >
             ×
@@ -326,22 +329,14 @@ const SelectorTokens = <T extends OpcionToken>({
         </span>
       ))}
       {resumido && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setExpandido(true)}
-        >
+        <Boton variante="enlace" tamano="sm" onClick={() => setExpandido(true)}>
           +{ocultas}
-        </button>
+        </Boton>
       )}
       {expandido && elegidas.length > TOPE_VISIBLE && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setExpandido(false)}
-        >
+        <Boton variante="enlace" tamano="sm" onClick={() => setExpandido(false)}>
           Resumir
-        </button>
+        </Boton>
       )}
     </>
   );
@@ -397,7 +392,7 @@ const SelectorTokens = <T extends OpcionToken>({
       }
     >
       {disponibles.length === 0 && !mostrarCrearLibre && (
-        <li className="p-2 text-center text-sm italic text-base-content/70">
+        <li className="p-2 text-center text-sm italic text-app-muted">
           {opciones.length === seleccionadas.length
             ? "No queda ninguna por elegir."
             : "Ninguna coincide con la búsqueda."}
@@ -458,7 +453,7 @@ const SelectorTokens = <T extends OpcionToken>({
         className="label"
         htmlFor={id}
       >
-        <span className="label-text font-medium">
+        <span className="label-text">
           {etiqueta}
           {obligatorio && <span className="text-error ml-1">*</span>}
         </span>

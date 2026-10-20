@@ -153,7 +153,7 @@ describe("Roles de Auth central", () => {
         />,
       );
 
-      expect(screen.queryByRole("button", { name: "Retirar" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^Retirar/ })).toBeNull();
     });
   });
 
@@ -184,7 +184,7 @@ describe("Roles de Auth central", () => {
         />,
       );
 
-      expect(screen.getByLabelText("Identificador en Auth")).toBeInTheDocument();
+      expect(screen.getByLabelText(/^Identificador en Auth/)).toBeInTheDocument();
     });
 
     it("muestra el rechazo del servidor tal cual", () => {
@@ -253,12 +253,19 @@ describe("Roles de Auth central", () => {
 
       render(<AdminRolesAuthPage />);
 
-      await userEvent.click(await screen.findByRole("button", { name: "Retirar" }));
+      await userEvent.click(await screen.findByRole("button", { name: /^Retirar/ }));
       await userEvent.click(await screen.findByRole("button", { name: /Sí|Confirmar|Aceptar/ }));
 
+      // El aviso breve parte la frase: la primera oración es el título y el resto va debajo. El
+      // texto sigue siendo el del servidor, entero (regla 7).
       await waitFor(() =>
-        expect(screen.getByText(delServidor)).toBeInTheDocument(),
+        expect(screen.getByText("La correspondencia quedó desactivada")).toBeInTheDocument(),
       );
+      expect(
+        screen.getByText(
+          "Era la única de DIRECTOR: a partir de ahora nadie podrá entrar con ese rol desde Auth central.",
+        ),
+      ).toBeInTheDocument();
     });
   });
 });

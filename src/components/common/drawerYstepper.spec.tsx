@@ -100,3 +100,28 @@ describe("Stepper · el paso hecho se marca", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
   });
 });
+
+describe("Stepper · el paso no alcanzado dice por qué (estándar de botones)", () => {
+  it("queda apagado con `aria-disabled` y su motivo en el `title`, y no navega", async () => {
+    const usuario = userEvent.setup();
+    const onIr = vi.fn();
+    render(
+      <Stepper
+        pasos={[
+          { numero: 1, titulo: "Preparar" },
+          { numero: 2, titulo: "Asignar" },
+        ]}
+        actual={1}
+        completados={[]}
+        alcanzables={[1]}
+        onIr={onIr}
+      />,
+    );
+
+    const asignar = screen.getByRole("button", { name: /Asignar/ });
+    expect(asignar).toHaveAttribute("aria-disabled", "true");
+    expect(asignar).toHaveAttribute("title", "Complete los pasos anteriores para llegar aquí.");
+    await usuario.click(asignar);
+    expect(onIr).not.toHaveBeenCalled();
+  });
+});

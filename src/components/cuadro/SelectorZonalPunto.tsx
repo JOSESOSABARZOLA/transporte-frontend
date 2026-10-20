@@ -66,9 +66,11 @@ import {
   OPCION_ADICIONALES,
   OPCION_PUNTO_NUEVO,
 } from "../../utils/valoresOperativo.util.ts";
+import Boton from "../common/Boton.tsx";
 import SelectorTokens from "../forms/SelectorTokens.tsx";
 import SelectorTipoControl from "./SelectorTipoControl.tsx";
 import { PieDeError } from "./PieDeError.tsx";
+import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 // Etiqueta del token y de la lista de zonales. Fuera del componente: son dependencias del filtro
 // memoizado de `SelectorTokens` (regla 2 de CLAUDE.md), y recrearlas cada render lo invalidaría.
@@ -245,7 +247,7 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
         className="label"
         htmlFor="punto"
       >
-        <span className="label-text font-medium">
+        <span className="label-text">
           Punto de encuentro<span className="text-error ml-1">*</span>
         </span>
       </label>
@@ -318,20 +320,15 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
         del que habla. Aquí queda alineado con él en los cuatro tamaños, y sin introducir
         ninguna clase de posicionamiento nueva.
 
-        `alert-warning` y no `alert-error`: no es un fallo de quien captura, es una
+        `advertencia` y no `error`: no es un fallo de quien captura, es una
         configuración que falta. El color no carga solo con el significado —el texto dice
         qué pasa y a quién acudir—, como exige la regla 6 de CLAUDE.md.
       */}
       {sinPuntos && !puntoNuevoNombre && (
-        <div
-          className="alert alert-warning mt-2"
-          role="status"
-        >
-          <span>
+        <AvisoEnLinea variante="advertencia" className="mt-2">
             Esta zonal no tiene puntos de encuentro en este formulario. El
             administrador puede cargarlos en Catálogos del cuadro.
-          </span>
-        </div>
+          </AvisoEnLinea>
       )}
 
       {/*
@@ -343,14 +340,14 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
       {permiteAgregarPunto && !sinZonal && (
         <div className="mt-2">
           {!agregando ? (
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs"
-              disabled={deshabilitado}
+            <Boton
+              variante="acento"
+              tamano="sm"
+              deshabilitado={deshabilitado}
               onClick={abrirAgregar}
             >
               + Agregar punto de encuentro
-            </button>
+            </Boton>
           ) : (
             <div className="flex flex-col gap-2 rounded-md border border-base-300 p-2">
               <input
@@ -385,10 +382,10 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
                 </select>
               )}
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={
+                <Boton
+                  variante="primario"
+                  tamano="sm"
+                  deshabilitado={
                     deshabilitado ||
                     nombrePunto.trim().length < 3 ||
                     zonalDestino === null
@@ -396,14 +393,10 @@ const SelectorZonalPunto: FC<SelectorZonalPuntoProps> = ({
                   onClick={guardarPunto}
                 >
                   Agregar
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setAgregando(false)}
-                >
+                </Boton>
+                <Boton variante="secundario" tamano="sm" onClick={() => setAgregando(false)}>
                   Cancelar
-                </button>
+                </Boton>
               </div>
             </div>
           )}

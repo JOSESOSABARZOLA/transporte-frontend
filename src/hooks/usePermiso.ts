@@ -38,3 +38,9 @@ export const usePermiso = (...requeridos: string[]): boolean => {
   const { user } = useUser();
   return user ? tienePermiso(user.permisos, requeridos) : false;
 };
+
+/** Hook: ¿el usuario actual tiene alguno de estos roles? Sin roles exigidos, sí (ver `tieneRol`). */
+export const useTieneRol = (requeridos: readonly string[] | undefined): boolean => {
+  const { user } = useUser();
+  return user ? tieneRol(user.rolCodes, requeridos) : false;
+};

@@ -61,7 +61,7 @@ describe("el semáforo de la ventana", () => {
       <AvisoVentana cuentaAtras={cuenta("HOLGADA", "02:20", 140)} />,
     );
 
-    expect(container.firstChild).toHaveClass("alert-success");
+    expect(container.firstChild).toHaveAttribute("data-variante", "exito");
   });
 
   it("entre media hora y una hora, amarillo", () => {
@@ -69,7 +69,7 @@ describe("el semáforo de la ventana", () => {
       <AvisoVentana cuentaAtras={cuenta("PROXIMA", "00:55", 55)} />,
     );
 
-    expect(container.firstChild).toHaveClass("alert-warning");
+    expect(container.firstChild).toHaveAttribute("data-variante", "advertencia");
   });
 
   it("a media hora o menos, rojo", () => {
@@ -77,7 +77,7 @@ describe("el semáforo de la ventana", () => {
       <AvisoVentana cuentaAtras={cuenta("INMINENTE", "00:28", 28)} />,
     );
 
-    expect(container.firstChild).toHaveClass("alert-error");
+    expect(container.firstChild).toHaveAttribute("data-variante", "error");
   });
 
   it("los tres son distintos: el semáforo no repite color", () => {

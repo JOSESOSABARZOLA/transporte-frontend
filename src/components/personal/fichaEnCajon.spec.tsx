@@ -38,7 +38,7 @@ const fila = (over?: Partial<FilaDirectorio>): FilaDirectorio => ({
 const montar = (
   onGuardar: (
     v: unknown,
-    o: { crearOtro: boolean },
+    o: { crearOtro: boolean; origen: "AUTH" | "MANUAL" },
   ) => Promise<ResultadoGuardado>,
   filas: FilaDirectorio[] = [fila()],
 ) =>
@@ -61,14 +61,60 @@ const montar = (
 /** Avanza del paso 1 al paso 2 en modo auth eligiendo a la persona. */
 const irAlPaso2 = async () => {
   await userEvent.click(screen.getByRole("button", { name: /PEREZ LOPEZ JUAN/ }));
-  await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+  await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 };
 
 /** Completa lo obligatorio del paso 2: área y tipo de contrato (no tienen valor por defecto). */
 const completarObligatorios = async () => {
-  await userEvent.selectOptions(screen.getByRole("combobox"), "OPERATIVOS");
+  await userEvent.selectOptions(screen.getByLabelText(/^Área/), "OPERATIVOS");
   await userEvent.click(screen.getByRole("button", { name: "Nombramiento" }));
 };
+
+/*
+  ZONAL EN LA FICHA DE INSTRUCCIÓN (2026-10-08). El administrador del DMIT no podía ingresarla:
+  el campo solo se pintaba para las áreas de la DMIP. Ahora se ofrece a todas, y sigue opcional.
+*/
+describe("La ficha en el cajón · zonal para Instrucción", () => {
+  const ZONALES = [
+    { id: 3, codigo: "NORTE", nombre: "Eugenio Espejo" },
+    { id: 7, codigo: "VALLE", nombre: "Los Chillos" },
+  ] as Zonal[];
+
+  it("el DMIT ve «Zonal (opcional)» al elegir Instrucción y la zonal viaja al guardar", async () => {
+    const onGuardar = vi.fn().mockResolvedValue({ ok: true, nombre: "PEREZ LOPEZ JUAN" });
+    render(
+      <DrawerFlujoAlta
+        abierto
+        proposito={PARA_FICHA}
+        filas={[fila()]}
+        disponible
+        motivo={null}
+        cargando={false}
+        onActualizar={vi.fn()}
+        onCerrar={vi.fn()}
+        areasQueGestiona={["INSTRUCCION"] as AreaPersonal[]}
+        zonales={ZONALES}
+        onGuardar={onGuardar}
+      />,
+    );
+    await irAlPaso2();
+
+    // Visible desde que se abre la ficha, sin haber elegido el área todavía.
+    expect(screen.getByLabelText(/^Área/)).toHaveValue("");
+    expect(screen.getByLabelText(/Zonal \(opcional\)/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(/^Área/), "INSTRUCCION");
+    await userEvent.selectOptions(screen.getByLabelText(/Zonal \(opcional\)/), "7");
+    await userEvent.click(screen.getByRole("button", { name: "Nombramiento" }));
+    await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
+
+    await waitFor(() => expect(onGuardar).toHaveBeenCalled());
+    expect(onGuardar).toHaveBeenCalledWith(
+      expect.objectContaining({ area: "INSTRUCCION", zonalId: "7" }),
+      expect.objectContaining({ crearOtro: false }),
+    );
+  });
+});
 
 describe("La ficha en el cajón (paso 2)", () => {
   it("el tipo de contrato es segmentado y NO trae valor por defecto", async () => {
@@ -84,7 +130,7 @@ describe("La ficha en el cajón (paso 2)", () => {
     );
   });
 
-  it("«Guardar ficha» envía con crearOtro:false los datos completados", async () => {
+  it("«Guardar ficha» envía con crearOtro:false y origen AUTH los datos completados", async () => {
     const onGuardar = vi
       .fn()
       .mockResolvedValue({ ok: true, nombre: "PEREZ LOPEZ JUAN" });
@@ -103,11 +149,12 @@ describe("La ficha en el cajón (paso 2)", () => {
         area: "OPERATIVOS",
         tipoContrato: "NOMBRAMIENTO",
       }),
-      { crearOtro: false },
+      // Con origen AUTH el servidor toma el correo institucional de Auth central (2026-10-08).
+      { crearOtro: false, origen: "AUTH" },
     );
   });
 
-  it("«Guardar y crear otro» envía con crearOtro:true, avisa dentro y vuelve al paso 1", async () => {
+  it("«Agregar otro después» envía con crearOtro:true y vuelve al paso 1 sin selección (D4)", async () => {
     const onGuardar = vi
       .fn()
       .mockResolvedValue({ ok: true, nombre: "PEREZ LOPEZ JUAN" });
@@ -115,35 +162,33 @@ describe("La ficha en el cajón (paso 2)", () => {
     await irAlPaso2();
     await completarObligatorios();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Guardar y crear otro" }),
-    );
+    await userEvent.click(screen.getByLabelText("Agregar otro después"));
+    await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
 
     await waitFor(() =>
       expect(onGuardar).toHaveBeenCalledWith(
         expect.anything(),
-        { crearOtro: true },
+        { crearOtro: true, origen: "AUTH" },
       ),
     );
-    // Aviso dentro del cajón (no ModalExito) y de vuelta en el paso 1.
+    // El aviso lo da la página (abajo a la derecha); el cajón SIGUE ABIERTO y vuelve al paso 1
+    // sin selección, listo para el siguiente.
     expect(
-      await screen.findByText("Ficha de PEREZ LOPEZ JUAN creada."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Continuar" }),
-    ).toBeInTheDocument();
+      await screen.findByRole("button", { name: "Continuar →" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("«← Atrás» conserva lo escrito: al volver y continuar, el área sigue elegida", async () => {
     montar(vi.fn().mockResolvedValue({ ok: true, nombre: "X" }));
     await irAlPaso2();
-    await userEvent.selectOptions(screen.getByRole("combobox"), "OPERATIVOS");
+    await userEvent.selectOptions(screen.getByLabelText(/^Área/), "OPERATIVOS");
 
     await userEvent.click(screen.getByRole("button", { name: "← Atrás" }));
     // De vuelta en el paso 1: la misma persona sigue elegible; continuar otra vez.
-    await userEvent.click(screen.getByRole("button", { name: "Continuar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
-    // Con área DMIP hay dos `combobox` (área y zonal); el área es el primero y conserva su valor.
+    // Hay dos `combobox` (área y zonal, siempre visible); el área es el primero y conserva su valor.
     expect(screen.getAllByRole("combobox")[0]).toHaveValue("OPERATIVOS");
   });
 
@@ -189,7 +234,7 @@ const VALORES_EDICION = {
 const montarEdicion = (
   onGuardar: (
     v: unknown,
-    o: { crearOtro: boolean },
+    o: { crearOtro: boolean; origen: "AUTH" | "MANUAL" },
   ) => Promise<ResultadoGuardado>,
 ) =>
   render(
@@ -223,9 +268,9 @@ describe("La ficha en el cajón · EDICIÓN (req. F)", () => {
     expect(
       screen.getByRole("button", { name: "Guardar cambios" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Continuar" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Continuar →" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Guardar y crear otro" }),
+      screen.queryByLabelText("Agregar otro después"),
     ).toBeNull();
   });
 
@@ -235,6 +280,8 @@ describe("La ficha en el cajón · EDICIÓN (req. F)", () => {
       .mockResolvedValue({ ok: true, nombre: "PEREZ JUAN" });
     montarEdicion(onGuardar);
 
+    // Sin cambios «Guardar cambios» queda apagado («Sin cambios»): se cambia algo primero.
+    await userEvent.type(screen.getByLabelText(/Correo personal/), "juan.perez@gmail.com");
     await userEvent.click(
       screen.getByRole("button", { name: "Guardar cambios" }),
     );
@@ -242,7 +289,7 @@ describe("La ficha en el cajón · EDICIÓN (req. F)", () => {
     await waitFor(() => expect(onGuardar).toHaveBeenCalled());
     expect(onGuardar).toHaveBeenCalledWith(
       expect.objectContaining({ apellidos: "PEREZ", nombres: "JUAN" }),
-      { crearOtro: false },
+      expect.objectContaining({ crearOtro: false }),
     );
   });
 
@@ -270,7 +317,80 @@ describe("La ficha en el cajón · EDICIÓN (req. F)", () => {
         correoInstitucional: "jperez@amc.gob.ec",
         correoPersonal: "juan.perez@gmail.com",
       }),
-      { crearOtro: false },
+      expect.objectContaining({ crearOtro: false }),
     );
+  });
+});
+
+describe("La ficha en el cajón · errores y resumen del pie (2026-10-08)", () => {
+  it("los errores aparecen SOLO tras intentar guardar, y el pie pasa de ámbar a «Falta: …»", async () => {
+    const onGuardar = vi.fn();
+    montar(onGuardar);
+    await irAlPaso2();
+
+    // Antes de intentar: sin mensajes de error, y el pie cuenta los obligatorios que faltan.
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("2 campos por completar")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
+
+    expect(await screen.findByText("Falta: Contrato, Área")).toBeInTheDocument();
+    expect(onGuardar).not.toHaveBeenCalled();
+
+    await completarObligatorios();
+    expect(await screen.findByText("Listo para guardar")).toBeInTheDocument();
+  });
+
+  it("si Auth no tiene a la persona (422), el aviso ofrece «Registro manual»", async () => {
+    const onGuardar = vi.fn().mockResolvedValue({
+      ok: false,
+      aviso: "Auth central no tiene una cuenta activa con esa cédula.",
+      ofrecerManual: true,
+    });
+    montar(onGuardar);
+    await irAlPaso2();
+    await completarObligatorios();
+    await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
+
+    expect(
+      await screen.findByText("Auth central no tiene una cuenta activa con esa cédula."),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Registro manual" }));
+    expect(screen.getByText("Registro sin Auth central.")).toBeInTheDocument();
+  });
+
+  it("en el modo de Auth el correo institucional es de solo lectura, con su nota", async () => {
+    montar(vi.fn());
+    await irAlPaso2();
+    expect(screen.getByLabelText("Correo institucional")).toHaveAttribute("readonly");
+    expect(
+      screen.getByText("Viene de Auth central; se corrige allá."),
+    ).toBeInTheDocument();
+  });
+
+  it("cerrar con una persona elegida pide «¿Descartar los cambios?»", async () => {
+    const onCerrar = vi.fn();
+    render(
+      <DrawerFlujoAlta
+        abierto
+        proposito={PARA_FICHA}
+        filas={[fila()]}
+        disponible
+        motivo={null}
+        cargando={false}
+        onActualizar={vi.fn()}
+        onCerrar={onCerrar}
+        areasQueGestiona={["OPERATIVOS"] as AreaPersonal[]}
+        zonales={[] as Zonal[]}
+        onGuardar={vi.fn()}
+      />,
+    );
+    await irAlPaso2();
+    await userEvent.keyboard("{Escape}");
+
+    expect(await screen.findByText("¿Descartar cambios?")).toBeInTheDocument();
+    expect(onCerrar).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Descartar" }));
+    expect(onCerrar).toHaveBeenCalled();
   });
 });

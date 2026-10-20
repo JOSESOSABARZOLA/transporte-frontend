@@ -26,37 +26,93 @@
  *
  * LA FECHA DE LA CABECERA ES SOLO PARA MIRAR. Decide qué placas se muestran como paradas
  * *ese* día; no acota lo que se puede registrar, que son fechas futuras casi siempre.
+ *
+ * CAJONES ESTÁNDAR (2026-10-15). «Ver paradas» y la captura de una parada eran modales; ahora son
+ * `DrawerLateral` `lg`, y UNO A LA VEZ (D7): «Registrar parada» REEMPLAZA al cajón de paradas y,
+ * al cerrarse —guarde o no—, vuelve a él. Tras guardar: aviso breve y la fila del vehículo
+ * resaltada (antes, `ModalExito`).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import MarcoModal from "../components/common/MarcoModal.tsx";
-import ModalConfirmacion from "../components/common/ModalConfirmacion.tsx";
-import ModalExito from "../components/common/ModalExito.tsx";
-import ModalMantenimiento, {
+import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import Boton from "../components/common/Boton.tsx";
+import DrawerLateral from "../components/common/DrawerLateral.tsx";
+import Paginacion from "../components/common/Paginacion.tsx";
+import MensajeModal from "../components/common/MensajeModal.tsx";
+import DrawerMantenimiento, {
   type ValoresMantenimiento,
-} from "../components/flota/ModalMantenimiento.tsx";
+} from "../components/flota/DrawerMantenimiento.tsx";
+import SemanaMantenimiento from "../components/flota/SemanaMantenimiento.tsx";
+import { useFechaDaf } from "../context/FechaDafContext.tsx";
+import { usePaginaLocal } from "../hooks/usePaginaLocal.ts";
 import type {
+  EstadoMantenimiento,
   MantenimientoVehiculo,
   VehiculoDeLaFlota,
 } from "../interfaces/Transporte.ts";
+import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
+import { PlanificacionService } from "../services/planificacion.service.ts";
 import { TransporteService } from "../services/transporte.service.ts";
-import { claseDeAviso, presentarError } from "../utils/errorApi.util.ts";
+import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { normalizar } from "../utils/texto.util.ts";
+import { ANTETITULO_DAF } from "../utils/daf.util.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
 
-/** Hoy, en `AAAA-MM-DD`. La flota se consulta contra un día concreto. */
-const hoy = (): string => new Date().toISOString().slice(0, 10);
+/** Cuánto dura resaltada la fila del vehículo tras guardar. */
+const MS_RESALTADO = 4000;
+
+/** El estado de la cita en palabras (regla 6). */
+const NOMBRE_ESTADO: Record<EstadoMantenimiento, string> = {
+  PROGRAMADO: "Programado",
+  EN_TALLER: "En taller",
+  LISTO: "Listo",
+};
+
+/**
+ * Transiciones admitidas (Fase 5): PROGRAMADO → EN_TALLER o LISTO; EN_TALLER → LISTO o vuelve a
+ * PROGRAMADO; LISTO es final. El servidor las vuelve a validar.
+ */
+const TRANSICIONES: Record<EstadoMantenimiento, { a: EstadoMantenimiento; texto: string }[]> = {
+  PROGRAMADO: [
+    { a: "EN_TALLER", texto: "Marcar en taller" },
+    { a: "LISTO", texto: "Marcar listo" },
+  ],
+  EN_TALLER: [
+    { a: "LISTO", texto: "Marcar listo" },
+    { a: "PROGRAMADO", texto: "Volver a programado" },
+  ],
+  LISTO: [],
+};
 
 const MantenimientoFlotaPage = () => {
-  const [fecha, setFecha] = useState(() => hoy());
+  // La fecha de trabajo compartida de la DAF (2026-10-06): antes, «hoy» en UTC por pantalla.
+  const { fecha, setFecha } = useFechaDaf();
+  /** «Programar mantenimiento» abre el modal SIN vehículo elegido: se elige dentro. */
+  const [programando, setProgramando] = useState(false);
+  /** «Programar» desde una fila de la flota (2026-10-06): la placa llega elegida en el modal. */
+  const [vehiculoAProgramar, setVehiculoAProgramar] = useState<number | undefined>();
+  /** Sube tras cada escritura para que la vista semanal se vuelva a pedir. */
+  const [version, setVersion] = useState(0);
 
   const [vehiculos, setVehiculos] = useState<VehiculoDeLaFlota[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [aviso, setAviso] = useState<{ texto: string; clase: string } | null>(
-    null,
-  );
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
 
   const [busqueda, setBusqueda] = useState("");
+  const [zonales, setZonales] = useState<{ id: number; nombre: string }[]>([]);
+
+  useEffect(() => {
+    let vigente = true;
+    CatalogoCuadroService.listarZonales()
+      .then((lista) => {
+        if (vigente) setZonales(lista.map((z) => ({ id: z.id, nombre: z.nombre })));
+      })
+      .catch(() => undefined);
+    return () => {
+      vigente = false;
+    };
+  }, []);
 
   const [elegido, setElegido] = useState<VehiculoDeLaFlota | null>(null);
   const [paradas, setParadas] = useState<MantenimientoVehiculo[]>([]);
@@ -68,7 +124,15 @@ const MantenimientoFlotaPage = () => {
   const [porRetirar, setPorRetirar] = useState<MantenimientoVehiculo | null>(
     null,
   );
-  const [exito, setExito] = useState<string | null>(null);
+  /** El aviso breve tras guardar o eliminar, y la fila del vehículo resaltada. */
+  const [resaltado, setResaltado] = useState<number | null>(null);
+
+  // El resaltado se apaga solo.
+  useEffect(() => {
+    if (resaltado === null) return undefined;
+    const espera = window.setTimeout(() => setResaltado(null), MS_RESALTADO);
+    return () => window.clearTimeout(espera);
+  }, [resaltado]);
 
   const cargarFlota = useCallback(async () => {
     setCargando(true);
@@ -78,9 +142,8 @@ const MantenimientoFlotaPage = () => {
       setVehiculos(filas);
       setAviso(null);
     } catch (fallo: unknown) {
-      const error = presentarError(fallo);
       setVehiculos([]);
-      setAviso({ texto: error.mensaje, clase: claseDeAviso(error.trato) });
+      setAviso(avisoDeFallo(fallo));
     } finally {
       setCargando(false);
     }
@@ -123,15 +186,22 @@ const MantenimientoFlotaPage = () => {
     );
   }, [vehiculos, busqueda]);
 
+  // 10 por página (D5); el vehículo elegido no cambia de página.
+  const paginaFlota = usePaginaLocal(coincidentes, resaltado, (vehiculo) => vehiculo.id);
+
   const registrar = useCallback(
     async (valores: ValoresMantenimiento) => {
-      if (!elegido) return;
+      const vehiculo =
+        (programando
+          ? vehiculos.find((v) => String(v.id) === valores.vehiculoId)
+          : elegido) ?? null;
+      if (!vehiculo) return;
 
       setGuardando(true);
       setAvisoModal(null);
 
       try {
-        await TransporteService.registrarMantenimiento(elegido.id, {
+        await TransporteService.registrarMantenimiento(vehiculo.id, {
           desde: valores.desde,
           hasta: valores.hasta,
           // Los opcionales se omiten en blanco: enviar cadena vacía guardaría un taller
@@ -139,16 +209,44 @@ const MantenimientoFlotaPage = () => {
           taller: valores.taller.trim() || undefined,
           hora: valores.hora.trim() || undefined,
           motivo: valores.motivo.trim() || undefined,
+          zonalTallerId:
+            valores.zonalTallerId === "" ? undefined : Number(valores.zonalTallerId),
         });
 
         setRegistrando(false);
-        setExito(
-          `${elegido.placa} queda parada del ${valores.desde} al ${valores.hasta}. No se podrá asignar en esas fechas.`,
+        setProgramando(false);
+        toast.exito(
+          `${vehiculo.placa} queda parada del ${valores.desde} al ${valores.hasta}. No se podrá asignar en esas fechas.`,
+        );
+        setResaltado(vehiculo.id);
+        if (elegido?.id === vehiculo.id) await cargarParadas(vehiculo.id);
+        await cargarFlota();
+        setVersion((v) => v + 1);
+      } catch (fallo: unknown) {
+        setAvisoModal(presentarError(fallo).mensaje);
+      } finally {
+        setGuardando(false);
+      }
+    },
+    [elegido, programando, vehiculos, cargarParadas, cargarFlota],
+  );
+
+  /** Cambia el estado de la cita (Programado / En taller / Listo) y relee las paradas. */
+  const cambiarEstado = useCallback(
+    async (parada: MantenimientoVehiculo, estado: EstadoMantenimiento) => {
+      if (!elegido) return;
+      setGuardando(true);
+      try {
+        await PlanificacionService.cambiarEstadoMantenimiento(
+          elegido.id,
+          parada.id,
+          estado,
         );
         await cargarParadas(elegido.id);
         await cargarFlota();
+        setVersion((v) => v + 1);
       } catch (fallo: unknown) {
-        setAvisoModal(presentarError(fallo).mensaje);
+        void mensaje.errorDe(fallo, { titulo: "No se pudo cambiar el estado de la parada" });
       } finally {
         setGuardando(false);
       }
@@ -159,43 +257,38 @@ const MantenimientoFlotaPage = () => {
   const retirar = useCallback(async () => {
     if (!elegido || !porRetirar) return;
 
-    setGuardando(true);
-
-    try {
-      await TransporteService.retirarMantenimiento(elegido.id, porRetirar.id);
-      setPorRetirar(null);
-      setExito(`La parada de ${elegido.placa} se retiró.`);
-      await cargarParadas(elegido.id);
-      await cargarFlota();
-    } catch (fallo: unknown) {
-      setPorRetirar(null);
-      setAviso({ texto: presentarError(fallo).mensaje, clase: "alert-error" });
-    } finally {
-      setGuardando(false);
-    }
+    // Si el servidor lo rechaza, lanza: el error queda en el modal de la confirmación.
+    await TransporteService.retirarMantenimiento(elegido.id, porRetirar.id);
+    setPorRetirar(null);
+    toast.exito(`La parada de ${elegido.placa} se eliminó.`);
+    await cargarParadas(elegido.id);
+    await cargarFlota();
+    setVersion((v) => v + 1);
   }, [elegido, porRetirar, cargarParadas, cargarFlota]);
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-2">
-        <p className="page-heading-kicker font-semibold uppercase">
-          DAF
-        </p>
-        <h1 className="page-heading-title">
-          Mantenimiento de vehículos
-        </h1>
-        <p className="text-sm text-base-content/70">
-          Un vehículo con mantenimiento registrado no se puede asignar en esas
-          fechas. La asignación de transporte lo muestra inhabilitado, con el
-          motivo.
-        </p>
-        <div className="flex flex-wrap items-end gap-3">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="flex flex-col gap-1">
+          <p className="page-heading-kicker font-semibold uppercase">
+            {ANTETITULO_DAF}
+          </p>
+          <h1 className="page-heading-title">
+            Mantenimiento de vehículos
+          </h1>
+          <p className="page-heading-subtitle text-sm">
+            Un vehículo con mantenimiento registrado no se puede asignar en esas
+            fechas. La asignación de transporte lo muestra inhabilitado, con el
+            motivo.
+          </p>
+        </div>
+        <div className="app-page-header-actions flex flex-wrap items-end gap-3">
           <div className="form-control">
             <label
               className="label"
               htmlFor="fechaFlota"
             >
-              <span className="label-text text-xs font-semibold uppercase tracking-[0.12em]">
+              <span className="text-app-label text-xs uppercase tracking-[0.12em]">
                 Estado de la flota el día
               </span>
             </label>
@@ -210,16 +303,37 @@ const MantenimientoFlotaPage = () => {
               }}
             />
           </div>
+          {/* La acción principal (2026-10-06): antes había que buscar la placa y «Ver paradas». */}
+          <Boton
+            variante="primario"
+            tamano="md"
+            icono="mantenimiento"
+            motivoDeshabilitado={vehiculos.length === 0 ? "No hay vehículos en la flota" : null}
+            onClick={() => {
+              setAvisoModal(null);
+              setVehiculoAProgramar(undefined);
+              setProgramando(true);
+            }}
+          >
+            Programar mantenimiento
+          </Boton>
         </div>
       </header>
 
+      <SemanaMantenimiento key={fecha} desdeInicial={fecha} version={version} />
+
       {aviso && (
-        <div
-          className={`alert ${aviso.clase}`}
-          role="alert"
+        <AvisoEnLinea
+          variante={aviso.variante}
+          titulo="No se pudo cargar la flota"
+          accion={
+            <Boton tamano="sm" onClick={() => void cargarFlota()}>
+              Reintentar
+            </Boton>
+          }
         >
-          <span>{aviso.texto}</span>
-        </div>
+          {aviso.texto}
+        </AvisoEnLinea>
       )}
 
       <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
@@ -251,7 +365,9 @@ const MantenimientoFlotaPage = () => {
                   <th scope="col">Placa</th>
                   <th scope="col">Descripción</th>
                   <th scope="col">Estado ese día</th>
-                  <th scope="col">Acción</th>
+                  <th scope="col" className="text-right">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -259,7 +375,7 @@ const MantenimientoFlotaPage = () => {
                   <tr>
                     <td
                       colSpan={4}
-                      className="px-3 py-6 text-center text-sm text-base-content/70"
+                      className="px-3 py-6 text-center text-sm text-app-muted"
                     >
                       {cargando
                         ? "Cargando la flota…"
@@ -269,14 +385,18 @@ const MantenimientoFlotaPage = () => {
                     </td>
                   </tr>
                 ) : (
-                  coincidentes.map((vehiculo) => (
+                  paginaFlota.filas.map((vehiculo) => (
                     <tr
                       key={vehiculo.id}
                       className={
-                        vehiculo.id === elegido?.id ? "bg-primary/5" : undefined
+                        vehiculo.id === resaltado
+                          ? "bg-success/10"
+                          : vehiculo.id === elegido?.id
+                            ? "bg-primary/5"
+                            : undefined
                       }
                     >
-                      <td className="px-2 py-1 align-top font-mono text-xs font-semibold">
+                      <td className="px-2 py-1 align-top font-mono font-semibold">
                         {vehiculo.placa}
                       </td>
                       <td className="px-2 py-1 align-top">
@@ -293,13 +413,24 @@ const MantenimientoFlotaPage = () => {
                         )}
                       </td>
                       <td className="px-2 py-1 align-top">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => elegir(vehiculo)}
-                        >
-                          Ver paradas
-                        </button>
+                        <div className="flex flex-nowrap justify-end gap-1.5">
+                          <Boton
+                            variante="acento"
+                            tamano="sm"
+                            icono="mantenimiento"
+                            aria-label={`Programar mantenimiento de ${vehiculo.placa}`}
+                            onClick={() => {
+                              setAvisoModal(null);
+                              setVehiculoAProgramar(vehiculo.id);
+                              setProgramando(true);
+                            }}
+                          >
+                            Programar
+                          </Boton>
+                          <Boton tamano="sm" onClick={() => elegir(vehiculo)}>
+                            Ver paradas
+                          </Boton>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -307,30 +438,39 @@ const MantenimientoFlotaPage = () => {
               </tbody>
             </table>
           </div>
+          <Paginacion
+            page={paginaFlota.pagina}
+            pageSize={paginaFlota.tamano}
+            total={paginaFlota.total}
+            onPage={paginaFlota.irA}
+            etiqueta="vehículos"
+          />
         </div>
       </div>
 
       {elegido && (
-        <MarcoModal
-          abierto
-          etiqueta={`Paradas de ${elegido.placa}`}
-          ancho="2xl"
+        <DrawerLateral
+          abierto={!registrando}
+          ancho="lg"
+          modo="lectura"
           titulo={`Paradas de ${elegido.placa}`}
-          antetitulo="Mantenimiento"
-          onCerrar={guardando ? undefined : () => setElegido(null)}
+          subtitulo={elegido.descripcion || "Paradas de taller registradas"}
+          guardando={guardando}
+          onCerrar={() => setElegido(null)}
         >
           <div className="flex flex-col gap-3">
             <div className="flex justify-end">
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
+              <Boton
+                variante="acento"
+                tamano="md"
+                icono="agregar"
                 onClick={() => {
                   setAvisoModal(null);
                   setRegistrando(true);
                 }}
               >
                 Registrar parada
-              </button>
+              </Boton>
             </div>
 
             <div className="overflow-x-auto">
@@ -342,15 +482,18 @@ const MantenimientoFlotaPage = () => {
                     <th scope="col">Taller</th>
                     <th scope="col">Hora</th>
                     <th scope="col">Motivo</th>
-                    <th scope="col">Acción</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col" className="text-right">
+                      Acciones
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {paradas.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={6}
-                        className="px-3 py-6 text-center text-sm text-base-content/70"
+                        colSpan={7}
+                        className="px-3 py-6 text-center text-sm text-app-muted"
                       >
                         {cargandoParadas
                           ? "Cargando…"
@@ -372,14 +515,34 @@ const MantenimientoFlotaPage = () => {
                           {parada.motivo || "—"}
                         </td>
                         <td className="px-2 py-1 align-top">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
-                            onClick={() => setPorRetirar(parada)}
-                            disabled={guardando}
-                          >
-                            Retirar
-                          </button>
+                          <span className="badge badge-ghost badge-sm whitespace-nowrap">
+                            {NOMBRE_ESTADO[parada.estado ?? "PROGRAMADO"]}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 align-top">
+                          <div className="flex flex-nowrap justify-end gap-1.5">
+                            {TRANSICIONES[parada.estado ?? "PROGRAMADO"].map((t) => (
+                              <Boton
+                                key={t.a}
+                                tamano="sm"
+                                onClick={() => void cambiarEstado(parada, t.a)}
+                                deshabilitado={guardando}
+                              >
+                                {t.texto}
+                              </Boton>
+                            ))}
+                            {/* Borra la fila (`t_disponibilidad` no tiene baja lógica): Eliminar. */}
+                            <Boton
+                              variante="peligroTexto"
+                              tamano="sm"
+                              icono="eliminar"
+                              onClick={() => setPorRetirar(parada)}
+                              deshabilitado={guardando}
+                              aria-label={`Eliminar la parada del ${parada.desde} al ${parada.hasta}`}
+                            >
+                              Eliminar
+                            </Boton>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -388,42 +551,40 @@ const MantenimientoFlotaPage = () => {
               </table>
             </div>
           </div>
-        </MarcoModal>
+        </DrawerLateral>
       )}
 
-      <ModalMantenimiento
-        abierto={registrando}
-        vehiculo={elegido}
+      <DrawerMantenimiento
+        abierto={registrando || programando}
+        vehiculo={programando ? null : elegido}
+        vehiculos={programando ? vehiculos : undefined}
+        desdeInicial={programando ? fecha : ""}
+        vehiculoInicialId={programando ? vehiculoAProgramar : undefined}
         guardando={guardando}
         aviso={avisoModal}
+        zonales={zonales}
         onGuardar={(valores) => void registrar(valores)}
         onCancelar={() => {
           setRegistrando(false);
+          setProgramando(false);
           setAvisoModal(null);
         }}
       />
 
-      <ModalConfirmacion
+      <MensajeModal
         abierto={porRetirar !== null}
-        titulo="¿Retirar la parada?"
+        variante="peligro"
+        titulo="¿Eliminar la parada?"
         mensaje={
           porRetirar
             ? `La parada del ${porRetirar.desde} al ${porRetirar.hasta} se eliminará y el vehículo volverá a ofrecerse en esas fechas.`
             : ""
         }
-        textoSi="Sí, retirar"
-        procesando={guardando}
-        onConfirmar={() => void retirar()}
-        onCancelar={() => setPorRetirar(null)}
+        textoPrincipal="Sí, eliminar"
+        tituloError="No se pudo eliminar la parada"
+        onPrincipal={retirar}
+        onSecundario={() => setPorRetirar(null)}
       />
-
-      {exito && (
-        <ModalExito
-          abierto
-          mensaje={exito}
-          onClose={() => setExito(null)}
-        />
-      )}
     </section>
   );
 };

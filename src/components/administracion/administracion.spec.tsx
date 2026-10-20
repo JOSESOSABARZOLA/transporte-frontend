@@ -111,6 +111,38 @@ describe("caso 2 · fuera de rango se rechaza indicando el rango", () => {
   });
 });
 
+/** Versión consolidada de la DAF (2026-10-06): los mínimos por día de la semana. */
+describe("parámetros de la DAF por día de la semana", () => {
+  const minimos = (clave = "DAF_MIN_CONDUCTORES_DIA"): ParametroPolitica => ({
+    ...horaLimite(),
+    clave,
+    valor: "SIN_CONFIGURAR",
+    descripcion: "Mínimo de conductores por día.",
+  });
+
+  it("la ayuda dice «7 números L,M,X,J,V,S,D o SIN_CONFIGURAR»", () => {
+    expect(descripcionDeRango(minimos())).toBe("7 números L,M,X,J,V,S,D o SIN_CONFIGURAR");
+    expect(descripcionDeRango(minimos("DAF_MIN_CONDUCTORES_NOCHE"))).toBe(
+      "7 números L,M,X,J,V,S,D o SIN_CONFIGURAR",
+    );
+  });
+
+  it("admite siete números o SIN_CONFIGURAR, y rechaza otra cosa", () => {
+    expect(motivoDeRechazo(minimos(), "SIN_CONFIGURAR")).toBeNull();
+    expect(motivoDeRechazo(minimos(), "6,6,6,6,6,4,3")).toBeNull();
+    expect(motivoDeRechazo(minimos(), "6,6,6")).toBe(
+      "DAF_MIN_CONDUCTORES_DIA admite 7 números L,M,X,J,V,S,D o SIN_CONFIGURAR.",
+    );
+  });
+
+  it("DAF_PERMITE_NOCHE_A_DIA: SIN_CONFIGURAR, SI o NO", () => {
+    const nocheADia = minimos("DAF_PERMITE_NOCHE_A_DIA");
+    expect(descripcionDeRango(nocheADia)).toBe("SIN_CONFIGURAR · SI · NO");
+    expect(motivoDeRechazo(nocheADia, "SI")).toBeNull();
+    expect(motivoDeRechazo(nocheADia, "QUIZA")).toContain("SIN_CONFIGURAR, SI, NO");
+  });
+});
+
 describe("caso 3 · dentro de rango se acepta", () => {
   it("8 horas es admisible: es el mínimo, y los extremos entran", () => {
     expect(motivoDeRechazo(jornada(), "8")).toBeNull();
@@ -192,7 +224,7 @@ describe("la edición en línea", () => {
 
     const boton = screen.getByRole("button", { name: "Guardar" });
 
-    expect(boton).toBeDisabled();
+    expect(boton).toHaveAttribute("aria-disabled", "true");
     expect(boton).toHaveAttribute(
       "title",
       "JORNADA_MAXIMA_HORAS no puede ser mayor que 16 horas.",
@@ -221,7 +253,7 @@ describe("la edición en línea", () => {
     expect(guardar).toHaveBeenCalledWith("JORNADA_MAXIMA_HORAS", "8");
   });
 
-  it("sin cambios no hay nada que guardar ni que descartar", () => {
+  it("sin cambios: «Guardar» secundario apagado («Sin cambios») y sin «Descartar»; con cambios, primario, «Descartar» y la fila resaltada", async () => {
     render(
       <TablaParametros
         parametros={[jornada()]}
@@ -232,8 +264,23 @@ describe("la edición en línea", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Guardar" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Descartar" })).toBeDisabled();
+    const guardar = screen.getByRole("button", { name: "Guardar" });
+    expect(guardar).toHaveAttribute("aria-disabled", "true");
+    expect(guardar).toHaveAttribute("title", "Sin cambios");
+    expect(guardar.className).toContain("app-accion-secundaria");
+    expect(screen.queryByRole("button", { name: "Descartar" })).toBeNull();
+
+    const campo = screen.getByLabelText("Valor de JORNADA_MAXIMA_HORAS");
+    await userEvent.clear(campo);
+    await userEvent.type(campo, "8");
+    expect(guardar).not.toHaveAttribute("aria-disabled");
+    expect(guardar.className).toContain("btn-primary");
+    expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
+    expect(campo.closest("tr")).toHaveAttribute("data-cambiado", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: "Descartar" }));
+    expect(campo).toHaveValue(jornada().valor);
+    expect(screen.queryByRole("button", { name: "Descartar" })).toBeNull();
   });
 
   it("el rechazo del servidor se muestra junto al campo, sin perder lo escrito", async () => {
@@ -321,7 +368,9 @@ describe("las ventanas · «sin restricción» no es «sin datos»", () => {
     ).toBe("De lunes 08:00 a viernes 17:00");
   });
 
-  it("el estado lleva color y palabra, y la inactiva se atenúa además", () => {
+  // 2026-10-07: «Vigente» / «Inactiva» como distintivo, y la inactiva YA NO se atenúa (el
+  // distintivo lo dice; la opacidad le restaba contraste al texto).
+  it("el estado lleva color y palabra, y la inactiva no se atenúa", () => {
     render(
       <TablaVentanas
         nombreDe={(rol) => rol}
@@ -337,9 +386,10 @@ describe("las ventanas · «sin restricción» no es «sin datos»", () => {
 
     const filas = screen.getAllByRole("row");
 
-    expect(within(filas[1]).getByText("Vigente")).toBeInTheDocument();
-    expect(within(filas[2]).getByText("Sin restricción")).toBeInTheDocument();
-    expect(filas[2].className).toContain("opacity-60");
+    expect(within(filas[1]).getByText("Vigente")).toHaveClass("badge-success");
+    expect(within(filas[2]).getByText("Inactiva")).toHaveClass("badge-ghost");
+    // Sin opacidad sobre el texto (docs/estilos.md): la fila inactiva usa text-app-muted.
+    expect(filas[2].className).not.toMatch(/(?:^| )opacity-(?!0(?: |$)|100(?: |$))[0-9]/);
   });
 
   it("no hay botón de agregar ni de eliminar: hay una ventana por rol", () => {
@@ -355,6 +405,39 @@ describe("las ventanas · «sin restricción» no es «sin datos»", () => {
 
     expect(screen.queryByRole("button", { name: /Agregar/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Eliminar/ })).toBeNull();
-    expect(screen.getByRole("button", { name: "Editar" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Editar/ }).length).toBeGreaterThan(0);
+  });
+});
+
+/** 2026-10-07: la columna Mensaje muestra el texto resuelto y avisa de una hora fija. */
+describe("las ventanas · la columna Mensaje", () => {
+  it("muestra el mensaje con {cierre} ya reemplazado", () => {
+    render(
+      <TablaVentanas
+        nombreDe={(rol) => rol}
+        ventanas={[ventana({ mensajeCierre: "Cerró a las {cierre}. Vuelve mañana." })]}
+        cargando={false}
+        procesando={false}
+        onEditar={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Cerró a las 15H00. Vuelve mañana.")).toBeInTheDocument();
+    expect(screen.queryByText(/no coincide con la hora de cierre/)).toBeNull();
+  });
+
+  it("ya no marca un mensaje con una hora fija distinta del cierre (2026-10-08)", () => {
+    render(
+      <TablaVentanas
+        nombreDe={(rol) => rol}
+        ventanas={[ventana({ mensajeCierre: "Cerró a las 18H25. Vuelve mañana." })]}
+        cargando={false}
+        procesando={false}
+        onEditar={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Cerró a las 18H25. Vuelve mañana.")).toBeInTheDocument();
+    expect(screen.queryByText(/no coincide con la hora de cierre/)).toBeNull();
   });
 });

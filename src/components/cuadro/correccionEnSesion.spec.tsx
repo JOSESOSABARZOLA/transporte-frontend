@@ -20,7 +20,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * SE SUSTITUYEN DOS HIJOS POR DOBLES, Y CONVIENE DECIR POR QUÉ NO ES HACER TRAMPA.
- * `FormularioOperativo` y `PanelEdicionOperativo` tienen su propia cobertura y conducirlos
+ * `FormOperativo` y `PanelEdicionOperativo` tienen su propia cobertura y conducirlos
  * de verdad —seis campos, selectores dependientes de catálogo y Yup— haría que estas
  * pruebas fallaran por motivos ajenos a lo que fijan. Lo que se prueba aquí es **la
  * pantalla**: qué acciones ofrece la tabla de la sesión, cuándo las apaga y qué hace con
@@ -43,7 +43,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,6 +54,7 @@ import CuadroRegistroPage from "../../pages/CuadroRegistroPage.tsx";
 import { OperativoService } from "../../services/operativo.service.ts";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 import type { ValoresOperativo } from "../../utils/valoresOperativo.util.ts";
+import { fechaDeJornadaPorDefecto } from "../../utils/jornada.util.ts";
 
 /** Lo que el formulario de captura entregaría tras rellenarlo. */
 const VALORES: ValoresOperativo = {
@@ -94,7 +95,7 @@ const PERSONA = {
 
 const AYUDAS = { resetForm: vi.fn() };
 
-vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
+vi.mock("../../components/cuadro/FormOperativo.tsx", () => ({
   default: ({
     valoresIniciales,
     observacionesExistentes = [],
@@ -104,12 +105,22 @@ vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
     onAgregarPersona,
     confirmacionPersonal,
     refFormik,
+    tipoTransportePorDefecto,
+    avisoPersonal,
+    idPersonaRechazada = null,
+    onValoresCambian,
+    onLimpiar,
   }: {
+    onValoresCambian?: (valores: ValoresOperativo) => void;
+    onLimpiar?: () => void;
+    avisoPersonal?: string | null;
+    idPersonaRechazada?: number | null;
+    tipoTransportePorDefecto?: string;
     valoresIniciales?: ValoresOperativo;
     observacionesExistentes?: { texto: string }[];
     textoAccion?: string;
     onCancelar?: () => void;
-    onGuardar: (valores: unknown, ayudas: unknown) => void;
+    onGuardar: (valores: unknown, ayudas: unknown, extras?: unknown) => void;
     onAgregarPersona: (persona: { id: number }) => void;
     confirmacionPersonal?: string | null;
     refFormik?: Ref<FormikProps<ValoresOperativo>>;
@@ -119,7 +130,9 @@ vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
         refFormik as MutableRefObject<FormikProps<ValoresOperativo> | null>
       ).current = {
         values: TECLEADO,
-      } as FormikProps<ValoresOperativo>;
+        // «Limpiar» repone los valores por aquí.
+        resetForm: AYUDAS.resetForm,
+      } as unknown as FormikProps<ValoresOperativo>;
     }
 
     return (
@@ -147,6 +160,17 @@ vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
         >
           {textoAccion}
         </button>
+        {/* El envío real suma la nota escrita sin «Agregar» y lo avisa por `extras` (2026-10-16). */}
+        <button
+          type="button"
+          onClick={() =>
+            onGuardar({ ...VALORES, horaFin: "13:00" }, AYUDAS, {
+              notaPendienteAgregada: true,
+            })
+          }
+        >
+          {`${textoAccion} con la nota escrita`}
+        </button>
         {onCancelar && (
           <button
             type="button"
@@ -166,14 +190,40 @@ vi.mock("../../components/cuadro/FormularioOperativo.tsx", () => ({
         >
           agregar-persona
         </button>
+        {/*
+          Lo que el formulario real informa en cada cambio (`ReporteroDeValores`): con esto la
+          página aparta la captura al cambiar de formulario. Teclea una nota con el texto dado.
+        */}
+        {["nota del OCF", "nota del PMO"].map((nota) => (
+          <button
+            key={nota}
+            type="button"
+            onClick={() => {
+              Object.assign(TECLEADO, { observaciones: [nota] });
+              onValoresCambian?.({ ...TECLEADO });
+            }}
+          >
+            {`teclear ${nota}`}
+          </button>
+        ))}
+        {onLimpiar && (
+          <button type="button" onClick={onLimpiar}>
+            Limpiar
+          </button>
+        )}
+        {avisoPersonal && <p>{`aviso de personal: ${avisoPersonal}`}</p>}
+        {/* R2: a quién se refiere el rechazo, para pintarlo bajo su horario. */}
+        <p>{`persona rechazada: ${idPersonaRechazada ?? "(ninguna)"}`}</p>
         {confirmacionPersonal && <p>{confirmacionPersonal}</p>}
+        {/* El transporte que la PÁGINA le pasa como sugerencia (de `/formularios/permitidos`). */}
+        <p>{`transporte sugerido: ${tipoTransportePorDefecto ?? "(ninguno)"}`}</p>
       </div>
     );
   },
 }));
 
 /*
-  EL DOBLE DEL PANEL DEL CAJÓN hace de FormularioOperativo embebido: publica un `<form>` con el
+  EL DOBLE DEL PANEL DEL CAJÓN hace de FormOperativo embebido: publica un `<form>` con el
   `idForm` que el pie del cajón envía con «Guardar cambios», un botón que dispara la asignación
   (diferida) y muestra el aviso/confirmación de personal. Así estas pruebas conducen el cableado de
   la PÁGINA (abrir el cajón, diferir el personal, aplicar al guardar) sin el formulario real.
@@ -184,13 +234,22 @@ vi.mock("../../components/cuadro/PanelEdicionOperativo.tsx", () => ({
     idForm,
     onGuardar,
     onAgregarPersona,
+    onEstadoEnvio,
     avisoPersonal,
     confirmacionPersonal,
+    idPersonaRechazada = null,
   }: {
+    idPersonaRechazada?: number | null;
     operativo: { identificador: string };
     idForm?: string;
     onGuardar: (valores: unknown, ayudas: unknown) => void;
     onAgregarPersona: (persona: { id: number }) => void;
+    onEstadoEnvio?: (estado: {
+      faltantes: string[];
+      hayCambios: boolean;
+      zonalesIds: number[];
+      intentado: boolean;
+    }) => void;
     avisoPersonal?: string | null;
     confirmacionPersonal?: string | null;
   }) => (
@@ -209,8 +268,18 @@ vi.mock("../../components/cuadro/PanelEdicionOperativo.tsx", () => ({
         >
           asignar-en-cajón
         </button>
+        {/* Un cambio en los generales: sin él, «Guardar cambios» va apagado («Sin cambios»). */}
+        <button
+          type="button"
+          onClick={() =>
+            onEstadoEnvio?.({ faltantes: [], hayCambios: true, zonalesIds: [], intentado: false })
+          }
+        >
+          cambiar-en-cajón
+        </button>
       </form>
       {avisoPersonal && <p>{avisoPersonal}</p>}
+      <p>{`rechazo en el cajón: ${idPersonaRechazada ?? "(ninguna)"}`}</p>
       {confirmacionPersonal && <p>{confirmacionPersonal}</p>}
     </div>
   ),
@@ -225,6 +294,8 @@ vi.mock("../../services/operativo.service.ts", () => ({
     asignarPersonal: vi.fn(),
     retirarPersonal: vi.fn(),
     actualizarTurnoPersonal: vi.fn(),
+    crearAdicional: vi.fn(),
+    conteo: vi.fn(),
   },
 }));
 vi.mock("../../services/personal.service.ts", () => ({
@@ -259,12 +330,15 @@ const CATALOGOS = {
 const PERMITIDOS = {
   formularios: [
     {
+      id: 1,
       codigo: "OCF",
       numero: 1,
       nombre: "Operativos de Control Fijos",
+      rolDueno: "DMIP_OPERATIVOS",
       acceso: "ESCRITURA",
       colorFondo: "#EEEEEE",
       colorAcento: "#000000",
+      tipoTransportePorDefecto: "PROPIOS_MEDIOS",
     },
     /*
       UN SEGUNDO FORMULARIO PROPIO, para poder cambiar de pestaña. Sin él no se puede
@@ -272,12 +346,16 @@ const PERMITIDOS = {
       pantalla existe para dar.
     */
     {
+      id: 2,
+      rolDueno: "DMIP_OPERATIVOS",
       codigo: "OCPMO",
       numero: 2,
       nombre: "Puestos de Mando Operativo",
       acceso: "ESCRITURA",
       colorFondo: "#DDDDDD",
       colorAcento: "#000000",
+      // Un valor configurado distinto, para ver que al cambiar de formulario se toma el del nuevo.
+      tipoTransportePorDefecto: "INICIO_Y_FIN",
     },
   ],
   cargando: false,
@@ -336,6 +414,8 @@ const operativo = (parcial: Partial<Operativo> = {}): Operativo =>
       codigo: "OCF",
       numero: 1,
       nombre: "Operativos de Control Fijos",
+      // El chip del cajón pinta el banner del servidor (regla 3).
+      colorFondo: "#1b77bb",
       admiteAdicionales: false,
       politicaVehiculo: "CONDICIONAL",
       /*
@@ -358,6 +438,15 @@ const pagina = (datos: Operativo[]) =>
     meta: { pagina: 1, tamanio: 100, total: datos.length, totalPaginas: 1 },
   }) as Awaited<ReturnType<typeof OperativoService.consultar>>;
 
+/**
+ * Elige un formulario en el selector de la barra «FORMULARIO» (2026-10-16): abre la caja y pulsa la
+ * opción. Cambia directo: la captura del formulario que se deja se aparta bajo él (2026-09-10).
+ */
+const elegirFormulario = async (nombre: RegExp) => {
+  await userEvent.click(screen.getByRole("button", { name: /^Formulario/ }));
+  await userEvent.click(screen.getByRole("option", { name: nombre }));
+};
+
 /** Elige el formulario y dispara una captura: es lo que llena la tabla de la sesión. */
 const registrarUno = async (devuelve: Operativo = operativo()) => {
   vi.mocked(OperativoService.registrar).mockResolvedValue(devuelve);
@@ -368,9 +457,7 @@ const registrarUno = async (devuelve: Operativo = operativo()) => {
     </MemoryRouter>,
   );
 
-  await userEvent.click(
-    screen.getByRole("button", { name: /Operativos de Control Fijos/ }),
-  );
+  await elegirFormulario(/Operativos de Control Fijos/);
   await userEvent.click(
     screen.getByRole("button", { name: "Registrar operativo" }),
   );
@@ -378,12 +465,6 @@ const registrarUno = async (devuelve: Operativo = operativo()) => {
   await waitFor(() =>
     expect(screen.getByText(devuelve.identificador)).toBeInTheDocument(),
   );
-};
-
-/** El modal de éxito tapa la tabla tras cada operación; se cierra para seguir. */
-const cerrarExito = async () => {
-  const cerrar = screen.queryByRole("button", { name: /Aceptar|Cerrar|Entendido/ });
-  if (cerrar) await userEvent.click(cerrar);
 };
 
 beforeEach(() => {
@@ -403,18 +484,29 @@ afterEach(() => {
 });
 
 describe("P-01 · corregir lo que se acaba de registrar", () => {
-  it("cada fila de la sesión ofrece editar y eliminar", async () => {
+  /*
+    El grupo de acciones único de Mis operativos, solo con icono desde el 2026-10-19: Editar,
+    Agregar adicional, Ver detalle y Eliminar, sin «⋮». El formulario del fixture no admite
+    adicionales: se apaga con su motivo.
+  */
+  it("cada fila de la sesión ofrece Editar, Agregar adicional, Ver detalle y Eliminar", async () => {
     await registrarUno();
-    await cerrarExito();
 
-    const fila = screen.getByText("OCF-001-02-SEP-2026").closest("tr");
+    const fila = screen.getByText("OCF-001-02-SEP-2026").closest("tr") as HTMLElement;
 
-    expect(
-      within(fila as HTMLElement).getByRole("button", { name: "Editar" }),
-    ).toBeEnabled();
-    expect(
-      within(fila as HTMLElement).getByRole("button", { name: "Eliminar" }),
-    ).toBeEnabled();
+    expect(within(fila).getByRole("button", { name: /^Editar\b/ })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+    const adicional = within(fila).getByRole("button", { name: /^Agregar adicional\b/ });
+    expect(adicional).toHaveAttribute("aria-disabled", "true");
+    expect(adicional).toHaveAccessibleDescription(
+      "Este formulario no admite operativos adicionales.",
+    );
+    expect(within(fila).getByRole("button", { name: /^Ver detalle\b/ })).toBeInTheDocument();
+    expect(within(fila).getByRole("button", { name: /^Eliminar\b/ })).not.toHaveAttribute(
+      "aria-disabled",
+    );
+    expect(within(fila).queryByRole("button", { name: /Más acciones/ })).toBeNull();
   });
 
   /**
@@ -422,9 +514,12 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
    * no lo descubre al guardar —eso es lo que devuelve a la gente al WhatsApp—: lo dice
    * antes, y dice por qué.
    */
-  it("con la ventana cerrada llegan apagados y explican el motivo", async () => {
+  /*
+    Con la ventana cerrada la fila solo se CONSULTA (como Mis operativos): desde el 2026-10-19 solo
+    queda «Ver detalle» —y «Agregar adicional», que ignora la ventana—; Editar y Eliminar se ocultan.
+  */
+  it("con la ventana cerrada, la fila solo se consulta: «Ver detalle», sin Editar ni Eliminar", async () => {
     await registrarUno();
-    await cerrarExito();
 
     VENTANA.puedeEscribir = false;
     // Se vuelve a pintar con la ventana cerrada: el estado de la sesión no se pierde.
@@ -432,32 +527,38 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
       screen.getByRole("button", { name: "Registrar operativo" }),
     );
 
-    await waitFor(() => {
-      const editar = screen.getAllByRole("button", { name: "Editar" })[0];
-      expect(editar).toBeDisabled();
-      expect(editar).toHaveAttribute(
-        "title",
-        expect.stringContaining("ventana de carga"),
-      );
-    });
+    // Se acota a la fila: el formulario de captura tiene sus propios botones «Ver». El segundo
+    // «Registrar» devuelve el mismo operativo, así que hay dos filas iguales: basta la primera.
+    const fila = () =>
+      screen.getAllByText("OCF-001-02-SEP-2026")[0].closest("tr") as HTMLElement;
+    const ver = await waitFor(() =>
+      within(fila()).getByRole("button", { name: /^Ver detalle\b/ }),
+    );
+    expect(ver).not.toHaveAttribute("aria-disabled");
+    expect(within(fila()).queryByRole("button", { name: /^Editar\b/ })).toBeNull();
+    expect(within(fila()).queryByRole("button", { name: /^Eliminar\b/ })).toBeNull();
   });
 
   /**
-   * CU-03, paso 2: «el sistema solicita confirmación indicando identificador, punto,
-   * horario y formulario». No pregunta en abstracto.
+   * CU-03, paso 2: la confirmación nombra el operativo, no pregunta en abstracto. Desde el
+   * 2026-10-13 es la misma de Mis operativos: «¿Eliminar <ID>?», qué pasa, y el botón en rojo.
    */
-  it("la confirmación de la baja nombra el operativo", async () => {
+  it("la confirmación de la baja nombra el operativo y es la de Mis operativos", async () => {
     await registrarUno();
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Eliminar OCF-001/ }));
 
     // Se acota al diálogo: el identificador también está en la fila de la tabla, y
     // encontrarlo ahí no probaría que la confirmación lo nombre.
-    const dialogo = within(screen.getByRole("dialog"));
+    const dialogo = screen.getByRole("alertdialog", { name: "¿Eliminar OCF-001-02-SEP-2026?" });
 
-    expect(dialogo.getByText(/OCF-001-02-SEP-2026/)).toBeInTheDocument();
-    expect(dialogo.getByText(/AMC Matriz/)).toBeInTheDocument();
+    expect(
+      within(dialogo).getByText(
+        "Se quitará el operativo y su personal quedará libre. Esta acción no se puede deshacer.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialogo).getByRole("button", { name: "Eliminar" })).toHaveClass("btn-error");
+    expect(OperativoService.retirar).not.toHaveBeenCalled();
   });
 
   it("al confirmar, retira con su versión y la fila desaparece de la sesión", async () => {
@@ -470,10 +571,11 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     } as Awaited<ReturnType<typeof OperativoService.retirar>>);
 
     await registrarUno();
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
-    await userEvent.click(screen.getByRole("button", { name: "Sí, eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Eliminar OCF-001/ }));
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Eliminar" }),
+    );
 
     await waitFor(() =>
       expect(OperativoService.retirar).toHaveBeenCalledWith(7, 1),
@@ -500,9 +602,9 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     );
 
     await registrarUno();
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
+    await userEvent.click(screen.getByRole("button", { name: "cambiar-en-cajón" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Guardar cambios" }),
     );
@@ -514,9 +616,9 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
       ),
     );
 
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
+    await userEvent.click(screen.getByRole("button", { name: "cambiar-en-cajón" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Guardar cambios" }),
     );
@@ -541,17 +643,20 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
    */
   it("editar abre el cajón lateral con el operativo, y deja el formulario de arriba en captura", async () => {
     await registrarUno(operativo({ observaciones: [nota("lo ya registrado")] }));
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
 
     // Se abre el cajón (diálogo) con el operativo; su panel lo nombra.
     const dialogo = screen.getByRole("dialog", {
-      name: /Editar operativo OCF-001-02-SEP-2026/,
+      name: "Editar operativo",
     });
     expect(
       within(dialogo).getByText(/panel de edición para OCF-001-02-SEP-2026/),
     ).toBeInTheDocument();
+    // El cajón único de Mis operativos y del adicional, en su modo «editar» (2026-10-08).
+    expect(
+      dialogo.querySelector('[data-drawer-operativo="editar"]'),
+    ).not.toBeNull();
 
     // El formulario de arriba NO carga el operativo: sus notas («lo ya registrado») no
     // aparecen en él; sigue siendo el de captura (alta).
@@ -571,11 +676,10 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
    */
   it("editar pide los puntos de la zonal del operativo", async () => {
     await registrarUno(operativo({ observaciones: [nota("con su zonal")] }));
-    await cerrarExito();
 
     expect(CATALOGOS.cargarPuntosDeZonales).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
 
     // La zonal del operativo fixture es la 1 (Eugenio Espejo).
     expect(CATALOGOS.cargarPuntosDeZonales).toHaveBeenCalledWith([1]);
@@ -597,14 +701,13 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
    */
   it("al cancelar la corrección en el cajón, el formulario de arriba conserva lo capturado", async () => {
     await registrarUno(operativo({ observaciones: [nota("lo ya registrado")] }));
-    await cerrarExito();
 
     TECLEADO.observaciones = ["media captura sin enviar"];
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
     // El cajón se abre; el formulario de arriba sigue mostrando la captura, no el operativo.
     const dialogo = screen.getByRole("dialog", {
-      name: /Editar operativo OCF-001-02-SEP-2026/,
+      name: "Editar operativo",
     });
     expect(
       screen.getByText("cargado con: media captura sin enviar"),
@@ -627,11 +730,10 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     );
 
     await registrarUno(operativo({ observaciones: [nota("lo ya registrado")] }));
-    await cerrarExito();
 
     TECLEADO.observaciones = ["media captura sin enviar"];
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
     await userEvent.click(
       screen.getByRole("button", { name: "Guardar cambios" }),
     );
@@ -682,9 +784,7 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Operativos de Control Fijos/ }),
-    );
+    await elegirFormulario(/Operativos de Control Fijos/);
 
     await waitFor(() =>
       expect(screen.getByText("OCF-002-02-SEP-2026")).toBeInTheDocument(),
@@ -732,16 +832,12 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Operativos de Control Fijos/ }),
-    );
+    await elegirFormulario(/Operativos de Control Fijos/);
     await waitFor(() =>
       expect(screen.getByText("OCF-001-02-SEP-2026")).toBeInTheDocument(),
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Puestos de Mando Operativo/ }),
-    );
+    await elegirFormulario(/Puestos de Mando Operativo/);
 
     // La segunda consulta sigue en vuelo: aquí es donde se vería el rótulo del formulario
     // nuevo sobre las filas del anterior.
@@ -781,28 +877,127 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Operativos de Control Fijos/ }),
-    );
+    await elegirFormulario(/Operativos de Control Fijos/);
     // Una persona en el primer formulario.
     await userEvent.click(
       screen.getByRole("button", { name: "agregar-persona" }),
     );
 
     // Se cambia de pestaña y se registra en la segunda.
-    await userEvent.click(
-      screen.getByRole("button", { name: /Puestos de Mando Operativo/ }),
-    );
+    await elegirFormulario(/Puestos de Mando Operativo/);
     await userEvent.click(
       screen.getByRole("button", { name: "Registrar operativo" }),
     );
 
-    // Lo que viaja al servidor no lleva a nadie: el personal se quedó en el otro formulario.
+    // Lo que viaja al servidor no lleva a nadie: el personal se quedó apartado en el primero.
     await waitFor(() =>
       expect(OperativoService.registrar).toHaveBeenCalledWith(
         expect.objectContaining({ personal: [] }),
       ),
     );
+  });
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * Y AL VOLVER, LA CAPTURA APARTADA REGRESA TAL CUAL. 2026-09-10 (restaurado el 2026-10-16).
+   *
+   * Cambiar de formulario no pregunta ni descarta: aparta. El doble teclea una nota (lo que el
+   * formulario real informa con `ReporteroDeValores`) y la página la guarda, con el personal,
+   * bajo el formulario que se deja. El otro empieza en blanco; volver la devuelve.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  const montarYCapturarEnOcf = async () => {
+    render(
+      <MemoryRouter>
+        <CuadroRegistroPage />
+      </MemoryRouter>,
+    );
+    await elegirFormulario(/Operativos de Control Fijos/);
+    await userEvent.click(screen.getByRole("button", { name: "teclear nota del OCF" }));
+    await userEvent.click(screen.getByRole("button", { name: "agregar-persona" }));
+  };
+
+  it("cambiar de formulario no pregunta, y al volver la captura regresa con su personal", async () => {
+    vi.mocked(OperativoService.registrar).mockResolvedValue(operativo());
+    await montarYCapturarEnOcf();
+
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByText("cargado con: (formulario en blanco)")).toBeInTheDocument();
+
+    await elegirFormulario(/Operativos de Control Fijos/);
+    expect(await screen.findByText("cargado con: nota del OCF")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+    await waitFor(() =>
+      expect(OperativoService.registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          personal: [expect.objectContaining({ funcionarioId: PERSONA.id })],
+        }),
+      ),
+    );
+  });
+
+  it("cada formulario conserva la suya: el segundo vuelve con su propia captura", async () => {
+    await montarYCapturarEnOcf();
+
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    await userEvent.click(screen.getByRole("button", { name: "teclear nota del PMO" }));
+
+    await elegirFormulario(/Operativos de Control Fijos/);
+    expect(await screen.findByText("cargado con: nota del OCF")).toBeInTheDocument();
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    expect(await screen.findByText("cargado con: nota del PMO")).toBeInTheDocument();
+  });
+
+  it("«Limpiar» vacía solo el formulario actual; el apartado sigue", async () => {
+    await montarYCapturarEnOcf();
+
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    await userEvent.click(screen.getByRole("button", { name: "teclear nota del PMO" }));
+    await userEvent.click(screen.getByRole("button", { name: "Limpiar" }));
+
+    await elegirFormulario(/Operativos de Control Fijos/);
+    expect(await screen.findByText("cargado con: nota del OCF")).toBeInTheDocument();
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    expect(screen.getByText("cargado con: (formulario en blanco)")).toBeInTheDocument();
+  });
+
+  it("registrar retira solo la captura del formulario registrado", async () => {
+    vi.mocked(OperativoService.registrar).mockResolvedValue(operativo());
+    await montarYCapturarEnOcf();
+
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    await userEvent.click(screen.getByRole("button", { name: "teclear nota del PMO" }));
+
+    // Se registra en el primero (el doble envía siempre los valores del OCF).
+    await elegirFormulario(/Operativos de Control Fijos/);
+    await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+    await waitFor(() => expect(OperativoService.registrar).toHaveBeenCalled());
+
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    expect(await screen.findByText("cargado con: nota del PMO")).toBeInTheDocument();
+    await elegirFormulario(/Operativos de Control Fijos/);
+    expect(screen.getByText("cargado con: (formulario en blanco)")).toBeInTheDocument();
+  });
+
+  it("la captura apartada sobrevive a recargar la pantalla (sessionStorage)", async () => {
+    await montarYCapturarEnOcf();
+    await elegirFormulario(/Puestos de Mando Operativo/);
+    cleanup();
+
+    render(
+      <MemoryRouter>
+        <CuadroRegistroPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent(
+        /Puestos de Mando Operativo/,
+      ),
+    );
+    await elegirFormulario(/Operativos de Control Fijos/);
+    expect(await screen.findByText("cargado con: nota del OCF")).toBeInTheDocument();
   });
 
   /**
@@ -818,7 +1013,7 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
    * otra que sí las tiene se lee como un fallo de la pantalla.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  it("la fila del otro departamento llega apagada y nombra a quién pedírselo", async () => {
+  it("la fila del otro departamento solo se consulta y nombra a quién pedírselo", async () => {
     vi.mocked(OperativoService.consultar).mockResolvedValue(
       pagina([
         operativo({ id: 9, identificador: "OCF-002-02-SEP-2026" }),
@@ -836,29 +1031,26 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Operativos de Control Fijos/ }),
-    );
+    await elegirFormulario(/Operativos de Control Fijos/);
 
     await waitFor(() =>
       expect(screen.getByText("OCF-003-02-SEP-2026")).toBeInTheDocument(),
     );
 
-    const ajena = screen.getByText("OCF-003-02-SEP-2026").closest("tr");
-    const editarAjeno = within(ajena as HTMLElement).getByRole("button", {
-      name: "Editar",
-    });
-
-    expect(editarAjeno).toBeDisabled();
-    expect(editarAjeno).toHaveAttribute(
-      "title",
-      expect.stringContaining("DMIT_INSTRUCTOR"),
-    );
+    const ajena = screen.getByText("OCF-003-02-SEP-2026").closest("tr") as HTMLElement;
+    // No se edita: «Editar» va apagado (sin permiso) y el tooltip dice a quién pedírselo.
+    const editarAjeno = within(ajena).getByRole("button", { name: /^Editar\b/ });
+    expect(editarAjeno).toHaveAttribute("aria-disabled", "true");
+    expect(editarAjeno).toHaveAccessibleDescription(expect.stringContaining("DMIT_INSTRUCTOR"));
+    expect(within(ajena).getByRole("button", { name: /^Ver detalle\b/ })).toBeInTheDocument();
+    const eliminarAjeno = within(ajena).getByRole("button", { name: /^Eliminar\b/ });
+    expect(eliminarAjeno).toHaveAttribute("aria-disabled", "true");
+    expect(eliminarAjeno).toHaveAccessibleDescription(expect.stringContaining("DMIT_INSTRUCTOR"));
 
     // Y la propia sigue viva: lo que se apaga es la fila ajena, no la columna.
     const propia = screen.getByText("OCF-002-02-SEP-2026").closest("tr");
     expect(
-      within(propia as HTMLElement).getByRole("button", { name: "Editar" }),
+      within(propia as HTMLElement).getByRole("button", { name: /^Editar\b/ }),
     ).toBeEnabled();
   });
 
@@ -883,9 +1075,8 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     );
 
     await registrarUno();
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
 
     // Asignar en el cajón NO toca el servidor todavía (diferido).
     await userEvent.click(
@@ -923,9 +1114,8 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     });
 
     await registrarUno();
-    await cerrarExito();
 
-    await userEvent.click(screen.getByRole("button", { name: "Editar" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
     await userEvent.click(
       screen.getByRole("button", { name: "asignar-en-cajón" }),
     );
@@ -935,7 +1125,7 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Su departamento ya asignó/),
+        screen.getByText(/^Su departamento ya asignó/),
       ).toBeInTheDocument(),
     );
     expect(OperativoService.editar).not.toHaveBeenCalled();
@@ -943,7 +1133,6 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
 
   it("ofrece la visión general del día, con el prefijo de las rutas privadas", async () => {
     await registrarUno();
-    await cerrarExito();
 
     expect(
       screen.getByRole("link", { name: "Ver la Jornada del Día" }),
@@ -951,3 +1140,278 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
   });
 });
 
+
+/**
+ * TRANSPORTE (2026-10-06, rediseño de la DAF): sin elegir nada, el registro viaja como COMPLETO y
+ * no macrooperativo. Un borrador anterior a esa fecha no trae los campos y aun así se envían.
+ */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * «OPERATIVOS DE ESTE FORMULARIO» ES LA TABLA DE MIS OPERATIVOS. 2026-10-13.
+ *
+ * El mismo `PanelOperativos`: mismas columnas (sin «Formulario», con «Transporte»), filtros por
+ * columna, páginas, el grupo de acciones único y la fila recién registrada resaltada.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+describe("P-01 · la tabla única de operativos", () => {
+  /** Monta la página con la jornada que devuelve el servidor y elige el formulario 1. */
+  const abrirCon = async (datos: Operativo[]) => {
+    vi.mocked(OperativoService.consultar).mockResolvedValue(pagina(datos));
+    render(
+      <MemoryRouter>
+        <CuadroRegistroPage />
+      </MemoryRouter>,
+    );
+    await elegirFormulario(/Operativos de Control Fijos/);
+    await screen.findByText(datos[0].identificador);
+  };
+
+  it("las columnas, la fila de filtros y la paginación son las de Mis operativos", async () => {
+    await abrirCon([operativo()]);
+
+    // La primera fila de la cabecera: la segunda es la de los filtros.
+    const cabecera = screen.getAllByRole("row")[0];
+    expect(
+      within(cabecera).getAllByRole("columnheader").map((th) => th.textContent?.trim()),
+    ).toEqual([
+      "Identificador",
+      "Horario",
+      "Personal",
+      "Teléfono",
+      "Zonal",
+      "Punto",
+      "Tipo de control",
+      "Transporte",
+      "Conductor",
+      "Estado",
+      "Observaciones",
+      "Acciones",
+    ]);
+    expect(screen.getByLabelText("Filtrar por punto")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filtrar por observaciones")).toBeInTheDocument();
+    expect(screen.getByText(/Mostrando/)).toHaveTextContent("Mostrando 1–1 de 1 operativos");
+    // El grupo de acciones con icono, con su ancho fijo (2026-10-19).
+    expect(document.querySelector("[data-acciones-operativo]")).toHaveClass("app-acciones-icono");
+    expect(screen.getByRole("columnheader", { name: "Acciones" })).toHaveClass("w-[9.5rem]");
+  });
+
+  it("el filtro de una columna recorta la tabla, sin distinguir tildes ni mayúsculas", async () => {
+    await abrirCon([
+      operativo(),
+      operativo({
+        id: 8,
+        identificador: "OCF-002-02-SEP-2026",
+        puntoEncuentro: { id: 2, nombre: "Parque El Ejido" },
+      } as Partial<Operativo>),
+    ]);
+
+    await userEvent.type(screen.getByLabelText("Filtrar por punto"), "ejido");
+
+    expect(screen.queryByText("OCF-001-02-SEP-2026")).toBeNull();
+    expect(screen.getByText("OCF-002-02-SEP-2026")).toBeInTheDocument();
+  });
+
+  it("al registrar, la fila nueva aparece arriba, resaltada y en la primera página", async () => {
+    // Doce operativos ya en la jornada: la tabla tiene dos páginas de diez.
+    const previos = Array.from({ length: 12 }, (_, indice) =>
+      operativo({
+        id: 100 + indice,
+        identificador: `OCF-${String(110 - indice).padStart(3, "0")}-02-SEP-2026`,
+      }),
+    );
+    await abrirCon(previos);
+    await userEvent.click(screen.getByRole("button", { name: "Siguiente ›" }));
+    expect(screen.getByText(/Mostrando/)).toHaveTextContent("Mostrando 11–12 de 12 operativos");
+
+    vi.mocked(OperativoService.registrar).mockResolvedValue(
+      operativo({ id: 7, identificador: "OCF-111-02-SEP-2026" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+
+    const fila = (await screen.findByText("OCF-111-02-SEP-2026")).closest("tr");
+    expect(fila).toHaveAttribute("data-resaltado", "true");
+    expect(screen.getByText(/Mostrando/)).toHaveTextContent("Mostrando 1–10 de 13 operativos");
+    // Es la primera fila de datos.
+    expect(screen.getAllByRole("row")[2]).toBe(fila);
+  });
+
+  /**
+   * R11 (2026-10-16): el aviso dice qué se registró y dónde quedó; el «N hoy» del selector y el «N
+   * en la jornada» de la tabla se vuelven a pedir; el formulario se limpia y sigue el mismo.
+   */
+  it("al registrar avisa, refresca los contadores y deja el formulario limpio en el mismo", async () => {
+    vi.mocked(OperativoService.conteo).mockResolvedValue([
+      { formularioId: 1, total: 4 },
+      { formularioId: 2, total: 0 },
+    ]);
+    await abrirCon([operativo({ id: 9, identificador: "OCF-001-02-SEP-2026" })]);
+    expect(await screen.findByText("4 en la jornada")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent("4 hoy");
+
+    vi.mocked(OperativoService.conteo).mockResolvedValue([
+      { formularioId: 1, total: 5 },
+      { formularioId: 2, total: 0 },
+    ]);
+    vi.mocked(OperativoService.registrar).mockResolvedValue(
+      operativo({ id: 7, identificador: "OCF-002-02-SEP-2026" }),
+    );
+    AYUDAS.resetForm.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+
+    const avisos = await screen.findByRole("region", { name: "Avisos" });
+    expect(avisos).toHaveTextContent("OCF-002-02-SEP-2026 registrado");
+    expect(avisos).toHaveTextContent("Quedó en la tabla de abajo, resaltado.");
+    expect(await screen.findByText("5 en la jornada")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent("5 hoy");
+    expect(AYUDAS.resetForm).toHaveBeenCalledWith({
+      values: expect.objectContaining({ formularioCodigo: "OCF", zonalesIds: [] }),
+    });
+  });
+
+  it("si al registrar se sumó la nota escrita sin «Agregar», el aviso lo menciona", async () => {
+    await abrirCon([operativo({ id: 9, identificador: "OCF-001-02-SEP-2026" })]);
+    vi.mocked(OperativoService.registrar).mockResolvedValue(
+      operativo({ id: 7, identificador: "OCF-002-02-SEP-2026" }),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Registrar operativo con la nota escrita" }),
+    );
+
+    const avisos = await screen.findByRole("region", { name: "Avisos" });
+    expect(avisos).toHaveTextContent("OCF-002-02-SEP-2026 registrado");
+    expect(avisos).toHaveTextContent("Se agregó también la nota que estaba escrita.");
+  });
+
+  it("«+ Adicional» abre el cajón del adicional, el mismo de Mis operativos", async () => {
+    await abrirCon([
+      operativo({
+        cuadroFecha: fechaDeJornadaPorDefecto(),
+        formulario: {
+          codigo: "OCF",
+          numero: 1,
+          nombre: "Operativos de Control Fijos",
+          colorFondo: "#1b77bb",
+          admiteAdicionales: true,
+          politicaVehiculo: "CONDICIONAL",
+          roles: [{ rol: "DMIP_OPERATIVOS", acceso: "ESCRITURA" }],
+        } as Operativo["formulario"],
+      } as Partial<Operativo>),
+    ]);
+
+    const adicional = screen.getByRole("button", { name: /^Agregar adicional\b/ });
+    expect(adicional).not.toHaveAttribute("aria-disabled");
+    await userEvent.click(adicional);
+
+    const cajon = await screen.findByRole("dialog");
+    expect(within(cajon).getByText("Operativo adicional")).toBeInTheDocument();
+    expect(
+      within(cajon).getAllByRole("button", { name: "Registrar adicional" }).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("«Ver detalle» abre el cajón en solo lectura aunque la fila admita edición", async () => {
+    await abrirCon([operativo()]);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Ver detalle\b/ }));
+
+    const cajon = await screen.findByRole("dialog");
+    expect(within(cajon).getByText(/Solo lectura/)).toBeInTheDocument();
+    expect(within(cajon).queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+  });
+});
+
+describe("el tipo de transporte al registrar", () => {
+  it("por defecto viaja COMPLETO y sin macrooperativo", async () => {
+    await registrarUno();
+
+    expect(OperativoService.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tipoTransporte: "COMPLETO",
+        esMacrooperativo: false,
+      }),
+    );
+  });
+});
+
+/**
+ * EL DEFECTO SALE DE `/formularios/permitidos` (2026-10-07). El formulario 1 abría en «Completo»
+ * porque esa respuesta no traía `tipoTransportePorDefecto` y las pruebas del formulario se lo
+ * pasaban a mano. Aquí se fija el eslabón que faltaba: lo que dice la lista llega al formulario.
+ */
+describe("el transporte sugerido llega desde la lista de formularios", () => {
+  it("al abrir el formulario 1 se sugiere Propios medios", async () => {
+    render(
+      <MemoryRouter>
+        <CuadroRegistroPage />
+      </MemoryRouter>,
+    );
+    await elegirFormulario(/Operativos de Control Fijos/);
+
+    expect(
+      await screen.findByText("transporte sugerido: PROPIOS_MEDIOS"),
+    ).toBeInTheDocument();
+  });
+
+  it("al cambiar de formulario se sugiere el valor configurado del nuevo", async () => {
+    render(
+      <MemoryRouter>
+        <CuadroRegistroPage />
+      </MemoryRouter>,
+    );
+    await elegirFormulario(/Operativos de Control Fijos/);
+    await elegirFormulario(/Puestos de Mando Operativo/);
+
+    expect(
+      await screen.findByText("transporte sugerido: INICIO_Y_FIN"),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * R2 (2026-10-16): cuando el servidor rechaza a UNA persona y la nombra en
+ * `detalles.funcionarioId`, la página le dice al formulario a quién: el motivo se pinta bajo el
+ * horario de esa persona y no sobre el bloque. Vale en el alta y en el cajón de edición.
+ */
+describe("P-01 · el rechazo de una persona va a esa persona (R2)", () => {
+  const rechazo = (funcionarioId: number) => ({
+    status: 409,
+    originalError: {
+      response: {
+        data: {
+          codigo: "SOLAPAMIENTO_HORARIO",
+          mensaje: "YUNDA JESSICA ya tiene otro operativo a esa hora.",
+          detalles: { funcionarioId },
+        },
+      },
+    },
+  });
+
+  it("al registrar, el formulario recibe a la persona rechazada junto al motivo", async () => {
+    vi.mocked(OperativoService.registrar).mockRejectedValue(rechazo(41));
+
+    render(
+      <MemoryRouter>
+        <CuadroRegistroPage />
+      </MemoryRouter>,
+    );
+    await elegirFormulario(/Operativos de Control Fijos/);
+    await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+
+    expect(
+      await screen.findByText(/aviso de personal: YUNDA JESSICA ya tiene otro operativo/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("persona rechazada: 41")).toBeInTheDocument();
+  });
+
+  it("en el cajón de edición, el rechazo al guardar también nombra a la persona", async () => {
+    vi.mocked(OperativoService.asignarPersonal).mockRejectedValue(rechazo(41));
+
+    await registrarUno();
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
+    await userEvent.click(screen.getByRole("button", { name: "asignar-en-cajón" }));
+    await userEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+
+    expect(await screen.findByText("rechazo en el cajón: 41")).toBeInTheDocument();
+  });
+});

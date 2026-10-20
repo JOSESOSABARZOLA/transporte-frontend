@@ -20,10 +20,24 @@
  */
 
 import type { Alerta } from "./Alerta";
+import type { EstadoCuadro } from "./CuadroDiario";
 import type { AreaPersonal, PoliticaVehiculo } from "./Formulario";
 import type { RolDepartamental } from "../config/env";
+import type { TramiteInspeccion } from "./TramiteInspeccion.ts";
 
 export type EstadoTransporte = "PENDIENTE" | "ASIGNADO" | "PROPIOS_MEDIOS";
+
+/**
+ * Cómo se moviliza el operativo (2026-10-06, rediseño de la DAF). Lo elige quien registra:
+ * COMPLETO (el conductor lleva, espera y trae), SOLO_INICIO (solo dejar), SOLO_FIN (solo retirar),
+ * INICIO_Y_FIN (dejar y retirar; entre medio el conductor queda libre) o PROPIOS_MEDIOS.
+ */
+export type TipoTransporte =
+  | "COMPLETO"
+  | "SOLO_INICIO"
+  | "SOLO_FIN"
+  | "INICIO_Y_FIN"
+  | "PROPIOS_MEDIOS";
 
 /** Datos del formulario que viajan con cada operativo, para pintar la fila. */
 export interface FormularioDelOperativo {
@@ -97,6 +111,11 @@ export interface PersonaAsignada {
    */
   horaInicio: string;
   horaFin: string;
+  /**
+   * Trámite de Inspección copiado a esta persona en este operativo (2026-10-07). Nulo si no tiene.
+   * Es la copia guardada al elegirlo; la orden de servicio la menciona.
+   */
+  tramiteInspeccion?: TramiteInspeccion | null;
 }
 
 /** Una persona con su turno propio opcional, para el registro. */
@@ -105,6 +124,8 @@ export interface PersonaConHorario {
   /** Turno propio dentro del operativo. Ausente = cumple el horario del operativo. */
   horaInicio?: string;
   horaFin?: string;
+  /** Trámite de Inspección elegido (2026-10-07). Solo el código: el servidor copia el resto. */
+  tramiteInspeccion?: { codigoTramite: string };
 }
 
 /** RN-31 y RN-32. Se informa, no bloquea. Ver PV-29. */
@@ -142,6 +163,21 @@ export interface ObservacionOperativo {
   texto: string;
   creadoPorRol: string;
   creadoEn: string;
+}
+
+/**
+ * Una nota de la celda «Observaciones» (2026-10-19, plan «acciones-icono-notas»). `NOTA` es una
+ * observación escrita (`t_operativo_observacion`); `COMPARTIDA` se deriva de la solicitud de
+ * compartir unidad (`compartirCon`) y apunta al operativo con `operativoRelacionadoId`. La lista
+ * llega de la más reciente a la más antigua. Ver `CONTRATO-notas-operativo.md` del backend.
+ */
+export interface NotaOperativo {
+  id: string;
+  tipo: "NOTA" | "COMPARTIDA";
+  texto: string;
+  autor: string;
+  fecha: string;
+  operativoRelacionadoId: number | null;
 }
 
 /** Respuesta de `GET /operativos` y `POST /operativos`. */
@@ -192,10 +228,27 @@ export interface Operativo {
   personal: PersonaAsignada[];
   composicion: ComposicionOperativo;
   estadoTransporte: EstadoTransporte;
+  /** Opcionales: contratos anteriores al 2026-10-06 no los traen (se leen con `??`). */
+  tipoTransporte?: TipoTransporte;
+  esMacrooperativo?: boolean;
+  /**
+   * COMPARTIR UNIDAD (2026-10-19): el operativo con el que quien registró pidió viajar en la misma
+   * unidad. Es una INTENCIÓN: la ejecuta la DAF (RN-40). Opcional: contratos anteriores no lo traen.
+   */
+  compartirCon?: { id: number; identificador: string } | null;
+  /** Por qué pide vehículo exclusivo (macrooperativo), si lo justificó al registrar. */
+  justificacionExclusivo?: string | null;
+  /**
+   * Solo en la respuesta de una EDICIÓN, y solo si hay alguno. `COMPARTIR_RETIRADO`: el cambio dejó
+   * la intención de compartir sin coincidencia y el servidor la retiró (no es un error).
+   */
+  avisos?: string[];
   alertaActiva: boolean;
   alertas: Alerta[];
   /** Notas del operativo (bitácora append-only, 2026-09-09), en el orden en que se escribieron. */
   observaciones: ObservacionOperativo[];
+  /** Las notas de la tabla (NOTA y COMPARTIDA). Opcional: un servidor anterior no las trae. */
+  notas?: NotaOperativo[];
   creadoPorRol: RolDepartamental;
   creadoPor: number;
   modificadoPorRol: RolDepartamental;
@@ -203,6 +256,19 @@ export interface Operativo {
   /** Bloqueo optimista: se devuelve al editar, y sin ella el servidor responde 400. */
   version: number;
   creadoEn: string;
+  /** Estado del cuadro de la fila (2026-10-13): con un rango, cada fila puede ser de otro cuadro. */
+  cuadroEstado?: EstadoCuadro;
+  /**
+   * Solo en el listado de P-02 (2026-10-13): el servidor dice si el cuadro de la fila admite
+   * edición —no cerrado, vigente y con la ventana abierta—. La propiedad la sigue decidiendo
+   * el cliente con `creadoPorRol`.
+   */
+  admiteEdicion?: boolean;
+  /**
+   * Solo en el listado de P-02 (2026-10-13): conductor y placa que asignó la DAF, para la celda
+   * «Conductor». Vacío si aún no hay; varios si los tramos van con conductores distintos.
+   */
+  transporteAsignado?: { conductor: string; placa: string | null }[];
 }
 
 /** Cuerpo de `POST /operativos`. */
@@ -256,6 +322,17 @@ export interface CrearOperativo {
    * y la edición no lo llevan. Las copias quedan **exentas** del cruce mutuo entre ellas (RN-28).
    */
   cantidad?: number;
+  /** Cómo se moviliza (2026-10-06). Opcional: sin él, el servidor asume COMPLETO. */
+  tipoTransporte?: TipoTransporte;
+  /** Macrooperativo: no admite compartir carro. */
+  esMacrooperativo?: boolean;
+  /**
+   * Compartir unidad (2026-10-19): el operativo con el que pide viajar, o `null` para retirar la
+   * intención. Al EDITAR solo viaja si cambió: lo que no viene se conserva.
+   */
+  compartirConOperativoId?: number | null;
+  /** Justificación del vehículo exclusivo: 10 a 300 caracteres, o `null`. */
+  justificacionExclusivo?: string | null;
 }
 
 /**
@@ -287,6 +364,13 @@ export interface ActualizarOperativo
   extends Partial<Omit<CrearOperativo, "observaciones" | "cantidad">> {
   version: number;
   observacionesNuevas?: string[];
+  /**
+   * Transporte requerido (2026-10-07). Confirma que, al cambiar el tipo de transporte de un operativo
+   * que ya tiene transporte asignado, se libera la asignación. Sin ella el servidor responde 409
+   * con `CAMBIO_TIPO_CON_TRANSPORTE`, o con `CAMBIO_CON_TRANSPORTE` si cambian el horario o la
+   * zonal (2026-10-14). Ver `useConfirmarLiberacion`.
+   */
+  confirmarLiberacion?: boolean;
 }
 
 /** Cuerpo de `POST /operativos/:id/personal`. Sin teléfono: RN-34. */
@@ -298,8 +382,27 @@ export interface AsignarPersonal {
   horaFin?: string;
 }
 
+/** `GET /operativos/rango` (2026-10-13): lo que la pantalla necesita para validar un rango. */
+export interface RangoConsulta {
+  /** Cuadro vigente, AAAA-MM-DD: mañana en America/Guayaquil. */
+  fechaVigente: string;
+  rangoMaxDias: number;
+}
+
+/**
+ * `GET /operativos/conteo?fecha=` (2026-10-16): cuántos operativos lleva cada formulario permitido
+ * en esa jornada, el «N hoy» del selector de P-01. Trae TODOS los permitidos, con 0 si no hay.
+ */
+export interface ConteoFormulario {
+  formularioId: number;
+  total: number;
+}
+
 export interface FiltroOperativos {
   fecha?: string;
+  /** Rango Desde–Hasta (2026-10-13), inclusive. No se mezcla con `fecha`. */
+  desde?: string;
+  hasta?: string;
   formulario?: string;
   pagina?: number;
   tamanio?: number;
@@ -334,4 +437,51 @@ export interface RespuestaPaginada<T> {
     total: number;
     totalPaginas: number;
   };
+}
+
+/**
+ * `GET /operativos/coincidencias-transporte` (2026-10-19, compartir unidad). Los parámetros: la
+ * captura en curso. `horaInicio`/`horaFin` son la envolvente del personal (la calcula la pantalla).
+ */
+export interface FiltroCoincidencias {
+  fecha: string;
+  puntoEncuentroId: number;
+  zonalId: number;
+  horaInicio: string;
+  horaFin: string;
+  tipoTransporte: Exclude<TipoTransporte, "PROPIOS_MEDIOS">;
+  esMacrooperativo?: boolean;
+  excluirOperativoId?: number;
+}
+
+/**
+ * Un operativo del PROPIO ámbito del rol (RN-48) en el mismo punto, día y horario, con transporte
+ * DAF. `compatible` lo decide el servidor con la misma regla que usa la DAF; si no, `motivo`.
+ */
+export interface CoincidenciaTransporte {
+  operativoId: number;
+  identificador: string;
+  formularioNumero: number;
+  /** Solo nombres: ni teléfono ni cédula. */
+  personal: string[];
+  horaInicio: string;
+  horaFin: string;
+  tipoTransporte: TipoTransporte;
+  esMacrooperativo: boolean;
+  compatible: boolean;
+  motivo?: string | null;
+  /**
+   * «La misma unidad» (2026-10-19): traslados que harían juntos («dejar») y los del nuevo sin
+   * pareja («retirar»), que la misma unidad hace después si su agenda lo permite.
+   */
+  comparte?: string[];
+  propios?: string[];
+  /** Con quién va cada traslado compartido (la unidad del grupo, 2026-10-19). */
+  comparteCon?: { tipo: string; con: string }[];
+  /**
+   * «Completo» comparte unidad (2026-10-20): lo que el «completo» del nuevo abarca de la unidad
+   * («dejar», «retirar»), o el «completo» de la unidad dentro del que viajaría el nuevo.
+   */
+  contiene?: string[];
+  contenidoEn?: string | null;
 }

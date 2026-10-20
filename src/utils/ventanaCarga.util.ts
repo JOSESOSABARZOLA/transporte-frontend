@@ -251,3 +251,47 @@ export const cuentaAtrasDeVentana = (
     texto: comun,
   };
 };
+
+/**
+ * El estado de la ventana, en una frase (2026-10-06). Lo comparten «Antes de asignar» y el aviso
+ * único de P-03.
+ */
+export const textoDeVentana = (
+  momento: MomentoDeVentana,
+  cuentaAtras: CuentaAtrasDeVentana | null,
+  horaApertura: string | null,
+  horaCierre: string | null,
+  /**
+   * Por qué abre a esa hora (2026-10-06): «cuando cierra el registro de operativos». Lo calcula el
+   * servidor de las horas reales; así la lista dice UN horario con su motivo.
+   */
+  motivoApertura: string | null = null,
+): { ok: boolean; texto: string } => {
+  switch (momento) {
+    case "SIN_RESTRICCION":
+      return { ok: true, texto: "Ventana de asignación sin restricción horaria" };
+    case "DENTRO":
+      return {
+        ok: true,
+        texto: cuentaAtras
+          ? `Ventana abierta: cierra en ${cuentaAtras.tiempo}`
+          : "Ventana de asignación abierta",
+      };
+    case "ANTES":
+      return {
+        ok: false,
+        texto: horaApertura
+          ? `Abre a las ${horaApertura}${motivoApertura ? `, ${motivoApertura}` : ""}`
+          : "La ventana aún no abre",
+      };
+    case "DESPUES":
+      return {
+        ok: false,
+        texto: horaCierre
+          ? `La ventana cerró a las ${horaCierre}`
+          : "La ventana ya cerró",
+      };
+    default:
+      return { ok: false, texto: "La ventana de asignación está cerrada" };
+  }
+};
