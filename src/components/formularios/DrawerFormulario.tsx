@@ -152,6 +152,12 @@ const GRUPOS_BANDERAS: { titulo: string; banderas: DescripcionBandera[] }[] = [
       descripcion:
         "Muestra «Cantidad de operativos» para crear N copias por persona. Sin esta bandera solo se admite 1. Requiere «Un operativo por persona».",
     },
+    {
+      nombre: "elegirUnaArea",
+      etiqueta: "Un solo tipo de personal por operativo",
+      descripcion:
+        "Al registrar se elige primero el tipo de personal (p. ej. Inspector General o Técnico) y solo se ofrecen personas de ese tipo.",
+    },
   ],
   },
 ];
@@ -655,6 +661,35 @@ const DrawerFormulario: FC<DrawerFormularioProps> = ({
                 </label>
               );
             })}
+            {/* Tope de personas por operativo (2026-10-28): «Sin tope» en todos menos el 8 (1). */}
+            {grupo.titulo === "Personal" && (
+              <label
+                htmlFor={`${id}-maxPersonas`}
+                className="flex items-start justify-between gap-4 rounded-lg border border-base-300 px-3 py-2"
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-sm font-semibold text-app-strong">
+                    Máximo de personas por operativo
+                  </span>
+                  <span className="text-xs text-app-muted">
+                    Con 1, cada operativo lleva una sola persona y el registro ofrece «Reemplazar».
+                  </span>
+                </span>
+                <select
+                  id={`${id}-maxPersonas`}
+                  className="select select-bordered select-sm w-32 shrink-0"
+                  value={valores.maxPersonas}
+                  onChange={(evento) => cambiar("maxPersonas", evento.target.value)}
+                >
+                  <option value="">Sin tope</option>
+                  {Array.from({ length: 10 }, (_, indice) => String(indice + 1)).map((valor) => (
+                    <option key={valor} value={valor}>
+                      {valor}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
         ))}
       </SeccionDrawer>

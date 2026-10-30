@@ -3,8 +3,8 @@
  * Módulo: Cuadro de Colores
  * Feature: Catálogos del cuadro
  * Archivo: BarraCatalogo.tsx
- * Responsabilidad: La barra común de las tres pestañas de P-08: buscar, filtrar por estado, contar
- *                  y dar de alta.
+ * Responsabilidad: La barra común de las tres pestañas de P-08: buscar, filtrar por estado y, a la
+ *                  derecha, lo propio de la pestaña.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-12
  *
@@ -14,6 +14,10 @@
  * «Expandir todo») las pone cada pestaña como `children`; lo que va junto al filtro (el interruptor
  * de zonales, 2026-10-13), como `complemento`. El contador va en `text-app-strong`: es una cifra
  * que se lee, no una ayuda.
+ *
+ * PLANTILLA VISUAL (2026-10-24): es el contenido de la barra blanca de filtros de `PanelTabla`.
+ * El alta subió a la cabecera azul y el contador se retiró; a la derecha (`ml-auto`) quedan, en
+ * puntos, «Expandir / Contraer todo» y el interruptor «Solo zonales con puntos…» (`children`).
  */
 
 import type { FC, ReactNode } from "react";
@@ -29,9 +33,7 @@ type BarraCatalogoProps = {
   onBuscar: (texto: string) => void;
   filtro: FiltroEstado;
   onFiltro: (filtro: FiltroEstado) => void;
-  contador: string;
-  /** Junto al filtro de estado: en puntos, el interruptor «Solo zonales con puntos…». */
-  complemento?: ReactNode;
+  /** A la derecha de la barra: en puntos, «Expandir todo» y el interruptor de zonales. */
   children?: ReactNode;
 };
 
@@ -42,15 +44,13 @@ const BarraCatalogo: FC<BarraCatalogoProps> = ({
   onBuscar,
   filtro,
   onFiltro,
-  contador,
-  complemento,
   children,
 }) => (
-  <div className="flex flex-wrap items-center gap-3">
+  <>
     <input
       id={`${id}-buscar`}
       type="search"
-      className="input input-bordered w-full sm:w-72"
+      className="input input-bordered input-sm min-w-[320px]"
       placeholder={marcador}
       aria-label={marcador.replace(/…$/, "")}
       value={busqueda}
@@ -64,15 +64,8 @@ const BarraCatalogo: FC<BarraCatalogoProps> = ({
       valor={filtro}
       onCambiar={(valor) => onFiltro(valor as FiltroEstado)}
     />
-    {complemento}
-    <span
-      className="text-app-strong text-sm"
-      role="status"
-    >
-      {contador}
-    </span>
-    <div className="ml-auto flex flex-wrap items-center gap-2">{children}</div>
-  </div>
+    {children && <div className="ml-auto flex flex-wrap items-center gap-3">{children}</div>}
+  </>
 );
 
 export default BarraCatalogo;

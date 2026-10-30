@@ -22,6 +22,10 @@
  * vehículo van iguales —azul claro con borde (`app-etiqueta-transporte`)— y se distinguen por la
  * palabra; Propios medios va en gris con borde (`app-etiqueta-transporte-neutra`): no pide
  * vehículo, y de un vistazo se distingue.
+ *
+ * VEHÍCULO DE OTRA INSTITUCIÓN (2026-10-23). Sexta opción: el personal va en el vehículo de otra
+ * institución (p. ej. GIR) y la DAF no asigna nada. Es solo el tipo, como Propios medios, y va en
+ * gris como ella; cuál institución lo presta, si hace falta, se dice en las observaciones.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -38,7 +42,7 @@ export interface OpcionTransporte {
 /** La etiqueta de los tipos que piden vehículo a la DAF. */
 const CLASE_PIDE_VEHICULO = "app-etiqueta-transporte";
 
-/** Las cinco opciones, en el orden en que se ofrecen. */
+/** Las seis opciones, en el orden en que se ofrecen. */
 export const OPCIONES_TRANSPORTE: readonly OpcionTransporte[] = [
   {
     valor: "COMPLETO",
@@ -72,7 +76,17 @@ export const OPCIONES_TRANSPORTE: readonly OpcionTransporte[] = [
     descripcion: "No se solicita vehículo a la DAF. Si necesita transporte, elija otra opción.",
     claseEtiqueta: "app-etiqueta-transporte-neutra",
   },
+  {
+    valor: "OTRA_INSTITUCION",
+    nombre: "Vehículo de otra institución",
+    descripcion:
+      "No se solicita vehículo a la DAF: el personal va en el vehículo de otra institución.",
+    claseEtiqueta: "app-etiqueta-transporte-neutra",
+  },
 ];
+
+/** Lo que se lee en la celda del conductor de un operativo en vehículo de otra institución. */
+export const CONDUCTOR_OTRA_INSTITUCION = "Otra institución";
 
 /** El texto del macrooperativo (vehículo exclusivo). */
 export const DESCRIPCION_MACROOPERATIVO =
@@ -96,9 +110,10 @@ export const nombreTipoTransporte = (valor: string | undefined | null): string =
 export const descripcionTipoTransporte = (valor: string | undefined | null): string =>
   opcionTransporte(valor).descripcion;
 
-/** ¿Pide vehículo a la DAF? Propios medios no. */
+/** ¿Pide vehículo a la DAF? Propios medios y vehículo de otra institución no (espejo del servidor). */
 export const pideVehiculo = (valor: string | undefined | null): boolean =>
-  valor !== "PROPIOS_MEDIOS";
+  valor !== "PROPIOS_MEDIOS" && valor !== "OTRA_INSTITUCION";
+
 
 /**
  * ¿Admite «Requiere vehículo exclusivo (macrooperativo)»? SOLO COMPLETO (2026-10-19, a pedido del

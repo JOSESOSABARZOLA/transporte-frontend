@@ -25,10 +25,12 @@ import type {
   Apartado,
   DatosGeneralesPlantilla,
   DatosMemorando,
+  DepartamentoFormato,
   EditablesMemorando,
   Matriz,
   OrdenServicio,
   Plantilla,
+  ResultadoEmision,
 } from "../interfaces/Documento";
 
 /** `GET /matriz/:fecha`. Solo la Dirección (RN-48). */
@@ -45,11 +47,14 @@ const exportarMatriz = async (fecha: string): Promise<Blob> => {
   return data;
 };
 
-/** `POST /operativos/:id/ordenes-servicio`. Una orden por funcionario asignado. */
+/**
+ * `POST /operativos/:id/ordenes-servicio`. Una orden por funcionario asignado, con el formato de su
+ * área; quien no tiene formato llega en `sinFormato` (2026-10-27).
+ */
 const emitirOrdenes = async (
   operativoId: number,
-): Promise<OrdenServicio[]> => {
-  const { data } = await httpClient.post<OrdenServicio[]>(
+): Promise<ResultadoEmision> => {
+  const { data } = await httpClient.post<ResultadoEmision>(
     `/operativos/${operativoId}/ordenes-servicio`,
   );
   return data;
@@ -100,43 +105,52 @@ const generarMemorandoEditado = async (
   return data;
 };
 
-/**
- * `GET /plantilla-orden`. La plantilla compartida: apartados + datos generales del Director
- * (2026-10-02). Solo Dirección.
- */
-const obtenerPlantilla = async (): Promise<Plantilla> => {
-  const { data } = await httpClient.get<Plantilla>("/plantilla-orden");
+/** `GET /plantillas-orden`. Los tres formatos, en el orden en que se muestran. Solo Dirección. */
+const listarPlantillas = async (): Promise<Plantilla[]> => {
+  const { data } = await httpClient.get<Plantilla[]>("/plantillas-orden");
+  return data;
+};
+
+/** `GET /plantilla-orden/:departamento`. Un formato, con la sugerencia del firmante. */
+const obtenerPlantilla = async (
+  departamento: DepartamentoFormato,
+): Promise<Plantilla> => {
+  const { data } = await httpClient.get<Plantilla>(
+    `/plantilla-orden/${departamento}`,
+  );
   return data;
 };
 
 /**
- * `PUT /plantilla-orden`. Guarda la plantilla (apartados + datos generales); se aplica a todas las
- * órdenes que se emitan después.
+ * `PUT /plantilla-orden/:departamento`. Guarda ESE formato (apartados + datos generales); se aplica a
+ * las órdenes de ese departamento que se emitan después y a sus borradores. Los otros no cambian.
  */
 const guardarPlantilla = async (
+  departamento: DepartamentoFormato,
   apartados: Apartado[],
   datosGenerales: DatosGeneralesPlantilla,
 ): Promise<Plantilla> => {
-  const { data } = await httpClient.put<Plantilla>("/plantilla-orden", {
-    apartados,
-    datosGenerales,
-  });
+  const { data } = await httpClient.put<Plantilla>(
+    `/plantilla-orden/${departamento}`,
+    { apartados, datosGenerales },
+  );
   return data;
 };
 
 /**
- * `POST /plantilla-orden/previsualizar`. El PDF de la plantilla EN EDICIÓN (aún sin guardar), con
- * los datos generales en edición y datos de muestra, para la vista previa real del editor. Solo
- * Dirección.
+ * `POST /plantilla-orden/:departamento/previsualizar`. El PDF del formato EN EDICIÓN (aún sin
+ * guardar), con los datos generales en edición y datos de muestra, para la vista previa real del
+ * editor. Solo Dirección.
  */
 const previsualizarPlantilla = async (
+  departamento: DepartamentoFormato,
   apartados: Apartado[],
   datosGenerales: DatosGeneralesPlantilla,
   /** Cancela la petición si llega una más nueva (el editor aborta la anterior). */
   signal?: AbortSignal,
 ): Promise<Blob> => {
   const { data } = await httpClient.post<Blob>(
-    "/plantilla-orden/previsualizar",
+    `/plantilla-orden/${departamento}/previsualizar`,
     // La plantilla EN BORRADOR (sin guardar). La vista previa es siempre genérica (D17): los datos
     // de la orden salen como marcadores grises; ya no hay `codigo` de una persona real.
     { apartados, datosGenerales },
@@ -153,6 +167,7 @@ export const DocumentoService = {
   verOrdenMemorando,
   obtenerDatosMemorando,
   generarMemorandoEditado,
+  listarPlantillas,
   obtenerPlantilla,
   guardarPlantilla,
   previsualizarPlantilla,

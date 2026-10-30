@@ -32,39 +32,47 @@
  * muestra como «08H00 A 12H00», que es texto para leer, no un rango para consultar.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * CADA ASIGNACIÓN VIAJA SOLA, no se acumula para guardar al final. Cada una tiene su
- * propio veredicto de descanso y de cupo, y puede fallar por su cuenta: agruparlas
- * obligaría a decidir qué hacer con las cinco que sí entraron cuando la sexta se rechaza.
+ * SE GUARDA CON «GUARDAR CAMBIOS», EN TODAS LAS VARIANTES (2026-10-28; la patrulla, 2026-10-29).
+ * Agregar, quitar y cambiar horas tocan el borrador (`useBorradorAporte`, el mismo de Mis
+ * operativos y Registro) y el lote va en una sola llamada (`PUT /operativos/:id/personal/lote`): el
+ * servidor aplica todo o nada. En la patrulla con grupo (5/6) el borrador es la persona de cada
+ * código del registro y una persona nueva dice qué código tendrá al guardar. Si el servidor rechaza
+ * a alguien, el motivo va junto a esa persona y el borrador se conserva.
  *
  * CAJÓN ESTÁNDAR (2026-10-15). Era un `MarcoModal` de 4xl con la versalita del formulario; ahora es
- * `DrawerLateral` `lg` en modo LECTURA (cada persona se guarda al instante: el pie es [Cerrar]).
+ * `DrawerLateral` `lg`, con [Cancelar] [Guardar cambios] y la confirmación al cerrar con cambios.
  * «Reparto de carga» se abre DENTRO de este cajón (`repartoEnCajon`), como una vista con «← Volver»:
  * antes era un cajón aparte (z-40) que quedaba DETRÁS del modal (z-10002) y no se veía (H7).
  */
 
-import { useCallback, useEffect, useState, type FC } from "react";
+import { useEffect, useState, type FC } from "react";
 
 import DrawerLateral from "../common/DrawerLateral.tsx";
 import SelectorPersonal from "../cuadro/SelectorPersonal.tsx";
 import type { Operativo } from "../../interfaces/Operativo.ts";
-import {
-  nombreDePersona,
-  type PersonaElegible,
-} from "../../interfaces/Personal.ts";
+import type { PersonaElegible } from "../../interfaces/Personal.ts";
 import type { FilaJornada, SeccionJornada } from "../../interfaces/Jornada.ts";
 import { OperativoService } from "../../services/operativo.service.ts";
 import { PersonalService } from "../../services/personal.service.ts";
 import { presentarError } from "../../utils/errorApi.util.ts";
 import { toast } from "../../utils/mensaje.ts";
+import { useBorradorAporte } from "../../hooks/useBorradorAporte.ts";
+import { useCatalogosFormulario } from "../../hooks/useCatalogosFormulario.ts";
+import { useConfirmarLiberacion } from "../../hooks/useConfirmarLiberacion.tsx";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
+import AvisoVentanaCerrada from "../common/AvisoVentanaCerrada.tsx";
 
 type PanelPersonalJornadaProps = {
   fila: FilaJornada;
   seccion: SeccionJornada;
   /** Fecha de la jornada, para consultar la elegibilidad de ese día. */
   fecha: string;
+  /** Los roles de quien mira: con qué rol agrega y a quién puede tocar. */
+  roles: readonly string[];
+  /** Por qué no se puede guardar (cuadro o ventana cerrados), o `null`. */
+  motivoBloqueo: string | null;
   onCerrar: () => void;
-  /** Se llama tras cada cambio, para que la tabla vuelva a leer la jornada. */
+  /** Se llama tras guardar, para que la tabla vuelva a leer la jornada. */
   onCambio: () => void;
 };
 
@@ -72,6 +80,8 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
   fila,
   seccion,
   fecha,
+  roles,
+  motivoBloqueo,
   onCerrar,
   onCambio,
 }) => {
@@ -80,29 +90,46 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
   const [cargando, setCargando] = useState(true);
   const [cargandoPersonal, setCargandoPersonal] = useState(true);
   const [aviso, setAviso] = useState<string | null>(null);
-  /**
-   * Que la asignación se guardó, dicho en palabras. 2026-09-01.
-   *
-   * Este panel solo hablaba cuando algo fallaba. Quien aporta personal desde la jornada
-   * lo abre para poner a una persona y lo cierra: si el éxito no dice nada, la única
-   * señal es que el nombre aparezca en la bandeja, y ahí aparecería igual si la petición
-   * se hubiera perdido. Mismo criterio y mismo texto que P-01 en modo aporte.
-   */
+  const catalogos = useCatalogosFormulario(seccion.codigo);
+  const { ejecutar: conLiberacion, modal: modalLiberacion } = useConfirmarLiberacion();
+
+  const borrador = useBorradorAporte({
+    operativo,
+    roles,
+    prefijosPorArea: catalogos.catalogos?.prefijosPorArea,
+    bloqueado: motivoBloqueo !== null,
+    conLiberacion,
+  });
+  const { iniciar } = borrador;
 
   /**
-   * El detalle del operativo: es de donde salen el área, el teléfono y las horas.
+   * El detalle del operativo y, en la patrulla, el de cada código de su registro: de ahí salen el
+   * área, el teléfono, las horas y la persona de cada código. Se pide una vez por apertura y fija
+   * lo guardado del borrador.
    *
-   * NO SE PONE `cargando` A `true` AQUÍ: ya nace así, y el panel se monta de nuevo con
-   * cada fila que se abre —vive bajo un `enPanel &&`—, así que este efecto corre una sola
-   * vez por apertura. Escribir estado de forma síncrona dentro de un efecto encadena
-   * renders y el lint lo señala con razón.
+   * NO SE PONE `cargando` A `true` AQUÍ: ya nace así, y el panel se monta de nuevo con cada fila
+   * que se abre —vive bajo un `enPanel &&`—, así que este efecto corre una sola vez por apertura.
    */
   useEffect(() => {
     let vigente = true;
 
-    OperativoService.obtener(fila.id)
-      .then((detalle) => {
-        if (vigente) setOperativo(detalle);
+    const cargarRegistro = async () => {
+      const detalle = await OperativoService.obtener(fila.id);
+      if (!(detalle.esLote && detalle.formulario.esPatrulla)) {
+        return { detalle, grupo: [detalle] };
+      }
+      const otros = seccion.filas.filter(
+        (otra) => otra.grupoRegistro === fila.grupoRegistro && otra.id !== fila.id,
+      );
+      const resto = await Promise.all(otros.map((otra) => OperativoService.obtener(otra.id)));
+      return { detalle, grupo: [detalle, ...resto] };
+    };
+
+    cargarRegistro()
+      .then(({ detalle, grupo }) => {
+        if (!vigente) return;
+        iniciar(detalle, grupo);
+        setOperativo(detalle);
       })
       .catch((fallo: unknown) => {
         if (vigente) setAviso(presentarError(fallo).mensaje);
@@ -114,14 +141,12 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
     return () => {
       vigente = false;
     };
-  }, [fila.id]);
+  }, [fila.id, fila.grupoRegistro, seccion.filas, iniciar]);
 
   /**
-   * Los candidatos, **con el horario del operativo**.
-   *
-   * Sin él el servidor solo puede descartar por área y por ausencia: las seis reglas de
-   * descanso necesitan el rango. Por eso se espera al detalle en lugar de pedirlos a la
-   * vez, aunque cueste un viaje más.
+   * Los candidatos, **con el horario del operativo**. Sin él el servidor solo puede descartar por
+   * área y por ausencia: las seis reglas de descanso necesitan el rango. Por eso se espera al
+   * detalle en lugar de pedirlos a la vez, aunque cueste un viaje más.
    */
   useEffect(() => {
     if (!operativo) return;
@@ -149,98 +174,85 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
     };
   }, [operativo, seccion.codigo, fecha]);
 
-  const agregar = useCallback(
-    async (persona: PersonaElegible) => {
-      setAviso(null);
+  const guardar = async () => {
+    const guardado = await borrador.guardar();
+    if (!guardado) return;
+    toast.exito(guardado.mensaje);
+    onCambio();
+    onCerrar();
+  };
 
-      try {
-        setOperativo(
-          await OperativoService.asignarPersonal(fila.id, {
-            funcionarioId: persona.id,
-          }),
-        );
-        toast.exito(
-          `Se agregó a ${nombreDePersona(persona)} al operativo ${fila.identificador}.`,
-        );
-        onCambio();
-      } catch (fallo: unknown) {
-        // El motivo lo redacta el servidor —cupo excedido, descanso, área no
-        // compartida— y se muestra tal cual (regla 7).
-        setAviso(presentarError(fallo).mensaje);
-      }
-    },
-    [fila.id, fila.identificador, onCambio],
-  );
-
-  const retirar = useCallback(
-    async (funcionarioId: number) => {
-      setAviso(null);
-
-      // El nombre se toma antes de llamar: la respuesta ya no trae a esa persona.
-      const retirada = operativo?.personal.find(
-        (persona) => persona.funcionarioId === funcionarioId,
-      );
-
-      try {
-        setOperativo(
-          await OperativoService.retirarPersonal(fila.id, funcionarioId),
-        );
-        toast.exito(
-          retirada
-            ? `Se retiró a ${retirada.nombre} del operativo ${fila.identificador}.`
-            : `Se retiró a la persona del operativo ${fila.identificador}.`,
-        );
-        onCambio();
-      } catch (fallo: unknown) {
-        // «Esa persona fue asignada por otro departamento» llega por aquí, y es
-        // información útil: dice a quién hay que pedirle el retiro.
-        setAviso(presentarError(fallo).mensaje);
-      }
-    },
-    [fila.id, fila.identificador, operativo, onCambio],
-  );
+  // Quien aporta solo pone Personal de Instrucción; el dueño del formulario, todas las áreas.
+  const esDueno = operativo !== null && roles.includes(operativo.formulario.rolDueno);
 
   return (
     <DrawerLateral
       abierto
       ancho="lg"
-      modo="lectura"
-      titulo={`Personal de ${fila.identificador}`}
-      subtitulo={`${seccion.numero}. ${seccion.nombre} · ${fila.horario}`}
+      modo="form"
+      titulo={borrador.esPatrulla ? "Personal de patrulla" : `Personal de ${fila.identificador}`}
+      // La patrulla se nombra por sus códigos, no por su `grupoRegistro`.
+      subtitulo={`${
+        borrador.identificadores.length > 0 ? `${borrador.identificadores.join(" · ")} · ` : ""
+      }${seccion.numero}. ${seccion.nombre} · ${fila.horario}`}
       ayuda={
         seccion.acceso === "APORTA"
-          ? "Este formulario no es de su departamento: aporta personal dentro de su cupo."
+          ? "Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura."
           : undefined
       }
       onCerrar={onCerrar}
+      sucio={borrador.resumen.total > 0}
+      guardando={borrador.guardando}
+      onGuardar={() => void guardar()}
+      textoGuardar="Guardar cambios"
+      estadoPie={borrador.estadoPie}
+      motivoGuardar={operativo ? (motivoBloqueo ?? borrador.motivoGuardar) : "Cargando el operativo…"}
+      mensajeDescarte="Se perderán las personas agregadas, las quitadas y los horarios cambiados. Nada se ha guardado todavía."
     >
       <div className="flex min-h-0 flex-1 flex-col gap-4">
-
-        {aviso && (
-          <AvisoEnLinea variante="error">{aviso}</AvisoEnLinea>
-        )}
+        {/* La ventana o el cuadro se cerraron con el cajón abierto: por qué no se puede guardar. */}
+        {motivoBloqueo && <AvisoVentanaCerrada>{motivoBloqueo}</AvisoVentanaCerrada>}
+        {aviso && <AvisoEnLinea variante="error">{aviso}</AvisoEnLinea>}
 
         {cargando ? (
           <p className="text-sm text-app-muted">Cargando el operativo…</p>
         ) : (
-          <SelectorPersonal
-            candidatos={candidatos}
-            cargando={cargandoPersonal}
-            agregadas={(operativo?.personal ?? []).map((persona) => ({
-              funcionarioId: persona.funcionarioId,
-              nombre: persona.nombre,
-              telefono: persona.telefono,
-            }))}
-            onAgregar={(persona) => void agregar(persona)}
-            onRetirar={(funcionarioId) => void retirar(funcionarioId)}
-            deshabilitado={false}
-            avisoRechazo={null}
-            /* El reparto, como vista de este mismo cajón; cada cambio se guarda al instante. */
-            repartoEnCajon
-            guardadoInmediato
-          />
+          operativo && (
+            <SelectorPersonal
+              candidatos={
+                esDueno
+                  ? candidatos
+                  : candidatos.filter((persona) => persona.area === "INSTRUCCION")
+              }
+              cargando={cargandoPersonal}
+              agregadas={borrador.personal.map((persona) => ({
+                funcionarioId: persona.funcionarioId,
+                nombre: persona.nombre,
+                telefono: persona.telefono,
+                horaInicio: persona.horaInicio,
+                horaFin: persona.horaFin,
+                editable: borrador.editable(persona),
+              }))}
+              onAgregar={borrador.agregar}
+              onRetirar={borrador.quitar}
+              onCambiarHorario={borrador.cambiarHorario}
+              deshabilitado={borrador.guardando}
+              // El rechazo del servidor, tal cual, junto a la persona que nombra.
+              avisoRechazo={borrador.rechazo?.mensaje ?? null}
+              idPersonaRechazada={borrador.rechazo?.funcionarioId ?? null}
+              listaCompacta
+              horarioInline
+              /* El reparto, como vista de este mismo cajón. */
+              repartoEnCajon
+              conGuardarCambios
+              idsNuevos={borrador.resumen.idsNuevos}
+              rotulosNuevos={borrador.rotulosNuevos}
+              rotuloLectura={esDueno ? undefined : "Del dueño del formulario · lectura"}
+            />
+          )
         )}
       </div>
+      {modalLiberacion}
     </DrawerLateral>
   );
 };

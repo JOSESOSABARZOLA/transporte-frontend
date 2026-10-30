@@ -36,14 +36,18 @@ import { permisosDeRoles } from "../../pruebas/permisos.ts";
 /** Una clase de opacidad sobre texto (no las de transición, 0 y 100). docs/estilos.md. */
 const CLASE_OPACIDAD = /(?:^| )opacity-(?!0(?: |$)|100(?: |$))[0-9]/;
 
-const conRoles = (rolCodes: RolDepartamental[]) => {
+const conRoles = (
+  rolCodes: RolDepartamental[],
+  /** Permisos concedidos ADEMÁS de los del rol (como si se marcaran en «Permisos por rol»). */
+  permisosExtra: string[] = [],
+) => {
   const user: User = {
     userid: 0,
     usuFullName: "Persona de prueba",
     usuEmail: "prueba",
     rolCodes,
     // El menú gatea por permisos (RBAC): se derivan de los roles como lo hace el servidor.
-    permisos: permisosDeRoles(rolCodes),
+    permisos: [...permisosDeRoles(rolCodes), ...permisosExtra],
     rolName: "Persona de prueba",
     token: "",
     actividades: [],
@@ -108,5 +112,21 @@ describe("el menú lateral según el perfil", () => {
     conRoles(["FUNCIONARIO"]);
 
     expect(screen.queryByText("Administración")).toBeNull();
+  });
+});
+
+/*
+  ÓRDENES DE SERVICIO, SOLO DE LA DIRECCIÓN (2026-10-27): aunque a otro rol se le diera el permiso
+  `ordenes:gestionar`, el menú no le ofrece la entrada (la ruta y el servidor tampoco).
+*/
+describe("«Órdenes de servicio» solo para la Dirección", () => {
+  it("la Dirección la ve", () => {
+    conRoles(["DIRECTOR"]);
+    expect(screen.getByText("Órdenes de servicio")).toBeInTheDocument();
+  });
+
+  it("otro rol no la ve, ni con el permiso concedido", () => {
+    conRoles(["DMIP_OPERATIVOS"], ["ordenes:gestionar"]);
+    expect(screen.queryByText("Órdenes de servicio")).toBeNull();
   });
 });

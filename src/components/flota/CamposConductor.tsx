@@ -20,8 +20,8 @@
  * «Sin asignar» solo se ofrece a quien todavía no tiene uno. Solo se ofrecen vehículos activos;
  * si el que tiene está dado de baja, aparece rotulado así para que se vea qué hay que cambiar.
  *
- * SIN TIPO DE CONTRATO, LA REGLA DE NOCTURNIDAD NO SE APLICA, y se dice en ámbar (regla 6): no es
- * un error —el dato es opcional—, es una consecuencia que conviene leer antes de guardar.
+ * SIN JORNADA LABORAL NO SE LE ASIGNA TRANSPORTE (2026-10-23, reemplaza al tipo de contrato), y se dice
+ * en ámbar (regla 6): no es un error —se puede guardar sin ella—, es una consecuencia que conviene leer.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -38,6 +38,8 @@ import {
   type ValoresConductor,
 } from "../../utils/formularioFlota.util.ts";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
+import { useJornadasLaborales } from "../../hooks/useJornadasLaborales.ts";
+import { jornadasElegibles, textoJornada } from "../../utils/jornadaLaboral.util.ts";
 
 /** Campo fijo: se lee y se copia, no se cambia. */
 const CAMPO_FIJO = "bg-base-200 text-app-strong cursor-default";
@@ -49,13 +51,9 @@ const SECTORES: { valor: ValoresConductor["sector"]; nombre: string }[] = [
   { valor: "VALLE", nombre: "Valle" },
 ];
 
-const CONTRATOS: { valor: ValoresConductor["tipoContrato"]; nombre: string }[] = [
-  { valor: "NOMBRAMIENTO", nombre: "Nombramiento" },
-  { valor: "OCASIONAL", nombre: "Ocasional (contrato)" },
-];
-
-const AVISO_SIN_CONTRATO =
-  "Sin tipo de contrato, la regla de nocturnidad por nombramiento no se aplica a este conductor.";
+/** Sin jornada laboral (2026-10-23, reemplaza al tipo de contrato) no se le asigna transporte. */
+const AVISO_SIN_JORNADA =
+  "Sin jornada laboral, a este conductor no se le asigna transporte en «Planificar el día».";
 
 type CamposConductorProps = {
   idBase: string;
@@ -91,6 +89,11 @@ const CamposConductor: FC<CamposConductorProps> = ({
     Boolean(errorDe(campo)) || senalado(campo);
   const senal = (campo: keyof ValoresConductor): ReactNode =>
     senalado(campo) ? <span className="text-xs font-medium text-error">{FALTA}</span> : null;
+
+  // Jornada laboral (2026-10-23): las activas, y la actual aunque esté desactivada.
+  const { jornadas } = useJornadasLaborales();
+  const actualId = valores.jornadaLaboralId ? Number(valores.jornadaLaboralId) : null;
+  const elegida = jornadas.find((jornada) => jornada.id === actualId);
 
   // Activos, y el actual aunque esté de baja: así se ve qué hay que cambiar.
   const elegibles = vehiculos.filter(
@@ -248,32 +251,31 @@ const CamposConductor: FC<CamposConductorProps> = ({
             </select>
           </CampoCajon>
           <CampoCajon
-            id={id("tipoContrato")}
-            etiqueta="Tipo de contrato"
-            senal={senal("tipoContrato")}
+            id={id("jornadaLaboralId")}
+            etiqueta="Jornada laboral"
+            senal={senal("jornadaLaboralId")}
+            ayuda={elegida ? textoJornada(elegida) : undefined}
           >
             <select
-              id={id("tipoContrato")}
-              className={`select select-bordered w-full ${senalado("tipoContrato") ? "select-error" : ""}`}
-              value={valores.tipoContrato}
-              onChange={(evento) =>
-                cambiar("tipoContrato", evento.target.value as ValoresConductor["tipoContrato"])
-              }
+              id={id("jornadaLaboralId")}
+              className={`select select-bordered w-full ${senalado("jornadaLaboralId") ? "select-error" : ""}`}
+              value={valores.jornadaLaboralId}
+              onChange={(evento) => cambiar("jornadaLaboralId", evento.target.value)}
             >
-              <option value="">Sin registrar</option>
-              {CONTRATOS.map((contrato) => (
+              <option value="">Sin jornada</option>
+              {jornadasElegibles(jornadas, actualId).map((jornada) => (
                 <option
-                  key={contrato.valor}
-                  value={contrato.valor}
+                  key={jornada.id}
+                  value={String(jornada.id)}
                 >
-                  {contrato.nombre}
+                  {jornada.activo ? jornada.nombre : `${jornada.nombre} (desactivada)`}
                 </option>
               ))}
             </select>
           </CampoCajon>
         </div>
-        {!valores.tipoContrato && (
-          <AvisoEnLinea variante="advertencia">⚠ {AVISO_SIN_CONTRATO}</AvisoEnLinea>
+        {!valores.jornadaLaboralId && (
+          <AvisoEnLinea variante="advertencia">⚠ {AVISO_SIN_JORNADA}</AvisoEnLinea>
         )}
       </SeccionDrawer>
 

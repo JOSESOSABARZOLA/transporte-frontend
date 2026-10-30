@@ -4,7 +4,8 @@
  * Feature: Turnos de conductores
  * Archivo: turnosConductores.spec.tsx
  * Responsabilidad: Verificar la matriz de turnos de conductores (la matriz común con su configuración):
- *                  rotación de cinco turnos, rango + tecla, deshacer, ausencias y publicar con vacías.
+ *                  clic por los cinco turnos, barra «Poner:», rango + tecla, deshacer, ausencias, publicar con
+ *                  vacías y lo propio de la DAF (copiar mes, propuesta, PDF y mínimos).
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-06
  *
@@ -61,7 +62,7 @@ const nuevoAlmacen = (): PersonaCobertura[] =>
         conductorId: 10,
         nombre: "PÉREZ JUAN",
         sector: "NORTE",
-        tipoContrato: "NOMBRAMIENTO",
+        jornada: "Lunes a Viernes 8 horas",
         celdas: DIAS.map((fecha, i) => ({
           fecha,
           estado: i === 2 ? "VACACIONES" : null,
@@ -72,7 +73,7 @@ const nuevoAlmacen = (): PersonaCobertura[] =>
         conductorId: 11,
         nombre: "LOOR ANA",
         sector: "NORTE",
-        tipoContrato: "OCASIONAL",
+        jornada: "Lunes a Domingo 24/7",
         celdas: DIAS.map((fecha) => ({ fecha, estado: null, esAusencia: false })),
       },
     ],
@@ -149,10 +150,16 @@ describe("Turnos de conductores", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Turnos de conductores" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("La carga el jefe de la DAF antes de fin de mes."),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText(/Norte/).length).toBeGreaterThan(0);
+    // La explicación y la nota de la DAF van juntas en la nota al pie del panel.
+    const nota = screen.getByText(/La carga el jefe de la DAF antes de fin de mes\./);
+    expect(nota.closest("[data-nota-panel]")).toHaveTextContent(
+      "La asignación de transporte solo ofrece al conductor en el turno que tenga ese día; vacía, sin turno cargado. La carga el jefe de la DAF antes de fin de mes.",
+    );
+    // El grupo es solo su título, sin contador (cobertura simplificada, 2026-10-24).
+    expect(screen.getByRole("rowheader", { name: "Norte" })).toBeInTheDocument();
+    expect(screen.queryByText(/Norte \(\d+\)/)).not.toBeInTheDocument();
+    // Ni el distintivo «N conductores · N sectores» en la cabecera.
+    expect(screen.queryByText(/conductores · \d+ sector/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Cambiar zona/ }),
     ).not.toBeInTheDocument();
@@ -160,42 +167,125 @@ describe("Turnos de conductores", () => {
     expect(CatalogoCuadroService.listarZonales).not.toHaveBeenCalled();
   });
 
-  it("la rotación por clic recorre los cinco turnos y llega a vacía", async () => {
-    const usuario = userEvent.setup();
+  it("plantilla: estado del mes y ‹ mes › en el encabezado; botones en la cabecera azul", async () => {
     await pintar();
 
-    for (const esperado of [
-      "Día",
-      "Noche",
-      "ECU noche",
-      "Libre",
-      "Administrativo",
-      "sin turno",
+    const encabezado = screen
+      .getByRole("heading", { level: 1, name: "Turnos de conductores" })
+      .closest("header") as HTMLElement;
+    expect(within(encabezado).getByText("Transporte · DAF")).toBeInTheDocument();
+    expect(within(encabezado).getByRole("button", { name: "Mes anterior" })).toBeInTheDocument();
+    expect(within(encabezado).getByRole("button", { name: "Mes siguiente" })).toBeInTheDocument();
+    expect(within(encabezado).getByText("noviembre de 2026")).toBeInTheDocument();
+    const chips = encabezado.querySelector("[data-chips-encabezado]") as HTMLElement;
+    expect(within(chips).getByText("Borrador")).toBeInTheDocument();
+
+    const cabeceraAzul = screen
+      .getByRole("heading", { level: 2, name: "Turnos de noviembre" })
+      .closest(".app-section-header") as HTMLElement;
+    for (const nombre of [
+      "Publicar mes",
+      "Generar propuesta del mes",
+      "Exportar Excel",
+      "Exportar PDF",
     ]) {
+      expect(within(cabeceraAzul).getByRole("button", { name: nombre })).toBeInTheDocument();
+    }
+    // Ya no hay un rótulo «Exportar» suelto delante de los dos botones.
+    expect(screen.queryByText("Exportar")).not.toBeInTheDocument();
+  });
+
+  it("plantilla: filtros sin rótulo encima y la leyenda una sola vez", async () => {
+    await pintar();
+
+    expect(screen.getByRole("searchbox", { name: "Buscar conductor" })).toHaveAttribute(
+      "placeholder",
+      "Buscar conductor",
+    );
+    const sector = screen.getByRole("combobox", { name: "Sector" });
+    expect(within(sector).getByRole("option", { name: "Todos los sectores" })).toBeInTheDocument();
+    // Sin reglas de aviso configuradas no se ofrece el filtro; ni el selector del clic.
+    expect(screen.queryByRole("checkbox", { name: "Solo con avisos" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Al pulsar una celda/)).not.toBeInTheDocument();
+
+    // La leyenda, bajo la grilla, con los turnos de la DAF (Día y Noche también rotulan el pie).
+    for (const turno of ["ECU noche", "Libre", "Administrativo"]) {
+      expect(screen.getByText(turno)).toBeInTheDocument();
+    }
+    expect(screen.getByText("Vacío: sin restricción")).toBeInTheDocument();
+  });
+
+  it("quien no tiene ningún turno lo dice un aviso de advertencia con «Asignar turnos a quienes faltan»", async () => {
+    almacen[1].celdas[0].estado = "DIA";
+    await pintar();
+
+    const aviso = screen
+      .getByText(/1 conductor no tiene ningún turno en noviembre/)
+      .closest('[data-variante="advertencia"]') as HTMLElement;
+    expect(aviso).toBeInTheDocument();
+    expect(
+      within(aviso).getByRole("button", { name: "Asignar turnos a quienes faltan" }),
+    ).toBeInTheDocument();
+  });
+
+  it("el clic recorre los cinco turnos y llega a vacía", async () => {
+    const usuario = userEvent.setup();
+    await pintar();
+    expect(
+      screen.getByText(/Clic en un día: cambia el turno D → N → E → L → A → vacío/),
+    ).toBeInTheDocument();
+
+    for (const esperado of ["Día", "Noche", "ECU noche", "Libre", "Administrativo", "sin turno"]) {
       await usuario.click(celda("LOOR ANA", "01"));
       expect(celda("LOOR ANA", "01")).toHaveAttribute(
         "aria-label",
         expect.stringMatching(new RegExp(`· ${esperado}$`)),
       );
     }
-
-    await waitFor(() =>
-      expect(TurnosConductoresService.editarCelda).toHaveBeenCalledTimes(6),
-    );
+    await waitFor(() => expect(TurnosConductoresService.editarCelda).toHaveBeenCalledTimes(6));
     expect(
       vi.mocked(TurnosConductoresService.editarCelda).mock.calls.map((c) => c[2]),
     ).toEqual(["DIA", "NOCHE", "ECU_NOCHE", "LIBRE", "ADMINISTRATIVO", null]);
+  });
+
+  it("con Mayús+clic sobre dos días, la barra «Poner:» ofrece los cinco turnos de la DAF", async () => {
+    const usuario = userEvent.setup();
+    await pintar();
+
+    await usuario.keyboard("{Shift>}");
+    await usuario.click(celda("LOOR ANA", "01"));
+    await usuario.click(celda("LOOR ANA", "02"));
+    await usuario.keyboard("{/Shift}");
+    expect(TurnosConductoresService.editarCelda).not.toHaveBeenCalled();
+    const barra = screen.getByRole("toolbar", { name: "Acciones sobre la selección" });
+    for (const nombre of [
+      "D · Día",
+      "N · Noche",
+      "E · ECU noche",
+      "L · Libre",
+      "A · Administrativo",
+    ]) {
+      expect(within(barra).getByRole("button", { name: nombre })).toBeInTheDocument();
+    }
+
+    await usuario.click(within(barra).getByRole("button", { name: "E · ECU noche" }));
+    await waitFor(() =>
+      expect(TurnosConductoresService.aplicarLote).toHaveBeenCalledWith([
+        { funcionarioId: 11, fecha: "2026-11-01", estado: "ECU_NOCHE" },
+        { funcionarioId: 11, fecha: "2026-11-02", estado: "ECU_NOCHE" },
+      ]),
+    );
   });
 
   it("selección de rango + tecla E asigna ECU noche con UN lote", async () => {
     const usuario = userEvent.setup();
     await pintar();
 
-    await usuario.click(screen.getByRole("button", { name: "Seleccionar rango" }));
-    await usuario.click(celda("PÉREZ JUAN", "05"));
+    // Con el teclado el rango puede abarcar varias filas (Mayús+flechas).
     await usuario.keyboard("{Shift>}");
-    await usuario.click(celda("LOOR ANA", "06"));
-    await usuario.keyboard("{/Shift}");
+    await usuario.click(celda("PÉREZ JUAN", "05"));
+    await usuario.keyboard("{ArrowRight}{ArrowDown}{/Shift}");
+    expect(screen.getByText("2 conductores · del 5 al 6 (4 días)")).toBeInTheDocument();
 
     await usuario.keyboard("e");
 
@@ -300,9 +390,8 @@ describe("Turnos de conductores", () => {
     );
     await pintar();
 
-    expect(screen.getByText(/Aún no hay turnos cargados para/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Aplicar patrón" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continuar rotación" })).toBeInTheDocument();
+    expect(screen.getByText("Noviembre todavía no tiene turnos")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Asignar turnos del mes" })).toBeInTheDocument();
 
     await usuario.click(screen.getByRole("button", { name: "Copiar mes anterior" }));
     const dialogo = await screen.findByRole("alertdialog");
@@ -327,7 +416,7 @@ describe("Turnos de conductores", () => {
   it("la pantalla ya no ofrece «Importar Excel», ni con el mes vacío", async () => {
     await pintar();
 
-    expect(screen.getByText(/Aún no hay turnos cargados para/)).toBeInTheDocument();
+    expect(screen.getByText("Noviembre todavía no tiene turnos")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Importar Excel/ })).not.toBeInTheDocument();
   });
 
@@ -376,10 +465,10 @@ describe("Turnos de conductores", () => {
       { funcionarioId: 11, fecha: "2026-11-01", estado: "DIA" },
       { funcionarioId: 11, fecha: "2026-11-02", estado: "NOCHE" },
     ]);
-    expect(await screen.findByRole("button", { name: "Deshacer (1)" })).not.toHaveAttribute("aria-disabled");
+    expect(await screen.findByRole("button", { name: "↶ Deshacer" })).not.toHaveAttribute("aria-disabled");
   });
 
-  it("«Exportar» Excel / PDF se apaga con el mes sin publicar y dice por qué", async () => {
+  it("«Exportar Excel» y «Exportar PDF» se apagan con el mes sin publicar y dice por qué", async () => {
     await pintar();
 
     expect(screen.getByRole("button", { name: "Exportar Excel" })).toHaveAttribute("aria-disabled", "true");
@@ -405,7 +494,7 @@ describe("Turnos de conductores", () => {
     );
   });
 
-  it("subtotal compacto del sector («D1 · N1», «—» sin nadie) y el día bajo el mínimo resaltado con su texto", async () => {
+  it("sin subtotal del sector; el día bajo el mínimo se resalta en el pie con su texto", async () => {
     almacen[1].celdas[0].estado = "DIA";
     almacen[0].celdas[0].estado = "NOCHE";
     vi.mocked(TurnosConductoresService.obtenerMatriz).mockImplementation(() =>
@@ -416,9 +505,7 @@ describe("Turnos de conductores", () => {
     );
     await pintar();
 
-    const subtotal = screen.getByTitle(/^Subtotal Norte · 01:/);
-    expect(subtotal).toHaveTextContent("D1 · N1");
-    expect(screen.getByTitle(/^Subtotal Norte · 02:/)).toHaveTextContent("—");
+    expect(screen.queryByTitle(/^Subtotal Norte/)).not.toBeInTheDocument();
 
     const dia02 = document.querySelector('[data-total="dia-2026-11-02"]');
     expect(dia02).toHaveAttribute("title", "bajo el mínimo");

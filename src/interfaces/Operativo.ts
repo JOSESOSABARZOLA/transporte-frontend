@@ -30,14 +30,16 @@ export type EstadoTransporte = "PENDIENTE" | "ASIGNADO" | "PROPIOS_MEDIOS";
 /**
  * Cómo se moviliza el operativo (2026-10-06, rediseño de la DAF). Lo elige quien registra:
  * COMPLETO (el conductor lleva, espera y trae), SOLO_INICIO (solo dejar), SOLO_FIN (solo retirar),
- * INICIO_Y_FIN (dejar y retirar; entre medio el conductor queda libre) o PROPIOS_MEDIOS.
+ * INICIO_Y_FIN (dejar y retirar; entre medio el conductor queda libre), PROPIOS_MEDIOS u
+ * OTRA_INSTITUCION (2026-10-23: va en el vehículo de otra institución, p. ej. GIR; la DAF no asigna).
  */
 export type TipoTransporte =
   | "COMPLETO"
   | "SOLO_INICIO"
   | "SOLO_FIN"
   | "INICIO_Y_FIN"
-  | "PROPIOS_MEDIOS";
+  | "PROPIOS_MEDIOS"
+  | "OTRA_INSTITUCION";
 
 /** Datos del formulario que viajan con cada operativo, para pintar la fila. */
 export interface FormularioDelOperativo {
@@ -103,6 +105,11 @@ export interface PersonaAsignada {
   area: string;
   /** RN-34. Viene del maestro; nunca se digita en el formulario. */
   telefono: string | null;
+  /**
+   * El cargo ACTUAL del Maestro de personal (2026-10-27), el «Cargo (opcional)» de la ficha. Se lee
+   * en vivo en cada respuesta: no es una copia guardada en el operativo. Sin cargo, `null`.
+   */
+  cargo: string | null;
   esResponsable: boolean;
   asignadoPorRol: RolDepartamental;
   /**
@@ -129,6 +136,11 @@ export interface PersonaConHorario {
 }
 
 /** RN-31 y RN-32. Se informa, no bloquea. Ver PV-29. */
+/**
+ * RN-31 y RN-32. DESDE EL 2026-10-22 ES DEL REGISTRO (`grupoRegistro`), no del operativo, y
+ * solo en formularios de varias áreas: `areasPendientes` son las que ningún operativo del
+ * registro tiene. Se informa (nota en Observaciones y en el panel); no se reclama.
+ */
 export interface ComposicionOperativo {
   esPatrulla: boolean;
   completa: boolean;
@@ -185,12 +197,23 @@ export interface Operativo {
   id: number;
   identificador: string;
   secuencial: number;
+  /** Id único del registro (2026-10-27): siempre presente; lo comparten los operativos que nacen de él. */
+  grupoRegistro: string;
   /**
-   * Lote del registro-patrulla (Form 5/6): los N operativos de una misma patrulla lo comparten,
-   * para agruparlos en las listas como «una sola patrulla». Nulo en el resto (registro de uno,
-   * adicional, copias del 8). Lo entrega el servidor; el navegador solo agrupa por él.
+   * ¿Se agrupa con su registro (patrulla 5/6 u 8)? Lo decide el servidor (`esLoteDeRegistro`).
+   * Que tenga id NO lo dice: desde el 2026-10-27 todos lo tienen.
    */
-  grupoRegistro: string | null;
+  esLote: boolean;
+  /**
+   * Solo en la respuesta del lote de una patrulla (2026-10-29): los códigos de todo su registro tras
+   * guardar, para el aviso «Personal guardado: … en la patrulla X · Y».
+   */
+  identificadoresDelRegistro?: string[];
+  /**
+   * Registro por zonas del 8 (2026-10-28): si es de la zona principal, que va primero en el bloque
+   * de la persona. `null` o ausente en los demás formularios.
+   */
+  esZonaPrincipal?: boolean | null;
   cuadroFecha: string;
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -251,6 +274,11 @@ export interface Operativo {
   notas?: NotaOperativo[];
   creadoPorRol: RolDepartamental;
   creadoPor: number;
+  /**
+   * Nombre de quien registró el operativo (2026-10-27): el «Registrado por» del detalle. Si su
+   * cuenta ya no existe, el servidor manda el departamento. Opcional: un servidor anterior no lo trae.
+   */
+  registradoPor?: string;
   modificadoPorRol: RolDepartamental;
   modificadoPor: number;
   /** Bloqueo optimista: se devuelve al editar, y sin ella el servidor responde 400. */
@@ -269,6 +297,42 @@ export interface Operativo {
    * «Conductor». Vacío si aún no hay; varios si los tramos van con conductores distintos.
    */
   transporteAsignado?: { conductor: string; placa: string | null }[];
+}
+
+/** Una zona del registro por zonas (2026-10-28): su lugar, su control y su cantidad. */
+export interface ZonaDelRegistro {
+  zonalId: number;
+  puntoId: number;
+  cantidad: number;
+  institucionIds: number[];
+  tipoControlIds: number[];
+}
+
+/** Cuerpo de `POST /operativos/por-zonas` (formulario 8, 2026-10-28). */
+export interface RegistrarPorZonas {
+  cuadroFecha: string;
+  formularioCodigo: string;
+  /** Una sola persona: el servidor rechaza más con el tope del formulario. */
+  personal: PersonaConHorario[];
+  zonas: ZonaDelRegistro[];
+  tipoTransporte?: TipoTransporte;
+  esMacrooperativo?: boolean;
+  observaciones?: string[];
+}
+
+/** Cuerpo de `PUT /operativos/registro/:grupoRegistro/zonas`: el estado FINAL de las zonas. */
+export interface EditarPorZonas {
+  zonas: ZonaDelRegistro[];
+  tipoTransporte?: TipoTransporte;
+  esMacrooperativo?: boolean;
+  observacionesNuevas?: string[];
+  confirmarLiberacion?: boolean;
+}
+
+/** Vista previa de la numeración: prefijo del tipo y siguiente número del día, sin reservarlo. */
+export interface ProximoIdentificador {
+  prefijo: string;
+  siguiente: number;
 }
 
 /** Cuerpo de `POST /operativos`. */
@@ -449,7 +513,7 @@ export interface FiltroCoincidencias {
   zonalId: number;
   horaInicio: string;
   horaFin: string;
-  tipoTransporte: Exclude<TipoTransporte, "PROPIOS_MEDIOS">;
+  tipoTransporte: Exclude<TipoTransporte, "PROPIOS_MEDIOS" | "OTRA_INSTITUCION">;
   esMacrooperativo?: boolean;
   excluirOperativoId?: number;
 }

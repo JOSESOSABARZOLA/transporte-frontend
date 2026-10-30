@@ -25,7 +25,11 @@
 import type { Alerta } from "./Alerta";
 import type { AreaPersonal } from "./Formulario";
 import type { EstadoCuadro } from "./CuadroDiario";
-import type { EstadoTransporte, NotaOperativo } from "./Operativo";
+import type {
+  EstadoTransporte,
+  NotaOperativo,
+  TipoTransporte,
+} from "./Operativo";
 
 /**
  * Qué puede hacer en esta sección quien la consulta.
@@ -40,8 +44,15 @@ export type AccesoSeccion = "ESCRITURA" | "APORTA" | "LECTURA";
 export interface FilaJornada {
   id: number;
   identificador: string;
-  /** Lote del registro-patrulla (Form 5/6): agrupa los N en la jornada. Nulo en el resto. */
-  grupoRegistro: string | null;
+  /** Id único del registro (2026-10-27): siempre presente; lo comparten los operativos que nacen de él. */
+  grupoRegistro: string;
+  /**
+   * ¿Se agrupa con su registro (patrulla 5/6 u 8)? Lo decide el servidor (`esLoteDeRegistro`).
+   * Que tenga id NO lo dice: desde el 2026-10-27 todos lo tienen.
+   */
+  esLote: boolean;
+  /** Registro por zonas del 8 (2026-10-28): de la zona principal. `null` en los demás. */
+  esZonaPrincipal?: boolean | null;
   esAdicional: boolean;
   /** Identificador del operativo del que nace. Nulo en uno ordinario. */
   origen: string | null;
@@ -60,6 +71,8 @@ export interface FilaJornada {
     funcionarioId: number;
     nombre: string;
     telefono: string | null;
+    /** El cargo ACTUAL del Maestro (2026-10-27), leído en vivo. Sin cargo, `null`. */
+    cargo: string | null;
     esResponsable: boolean;
     /** Ventana efectiva de la persona (su turno propio o el del operativo). 2026-09-08. */
     horaInicio: string;
@@ -82,6 +95,11 @@ export interface FilaJornada {
    */
   notas?: NotaOperativo[];
   estadoTransporte: EstadoTransporte;
+  /**
+   * Transporte pedido (2026-10-23). Con OTRA_INSTITUCION el distintivo no dice «Pendiente». Opcional:
+   * un servidor anterior no lo manda.
+   */
+  tipoTransporte?: TipoTransporte;
   esNocturno: boolean;
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
@@ -103,6 +121,13 @@ export interface FilaJornada {
    * ═══════════════════════════════════════════════════════════════════════════════
    */
   areasPendientesDelRol: AreaPersonal[];
+  /**
+   * LO QUE SE INFORMA A QUIEN REGISTRA (2026-10-22): las áreas del formulario que ningún
+   * operativo del REGISTRO (`grupoRegistro`) tiene. Se pinta como nota informativa en
+   * Observaciones y quien registra decide si agrega a esa persona; no entra en el aviso de
+   * arriba. Llega calculada; vacía en las secciones donde el rol solo aporta.
+   */
+  composicionPorInformar: AreaPersonal[];
   /** POL-06. Por celda: la pantalla sabe cuál marcar en Amarillo de Alerta. */
   alertas: Alerta[];
 }

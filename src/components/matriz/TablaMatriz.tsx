@@ -24,6 +24,9 @@
  * LA CELDA CON ALERTA LA PINTA `CeldaAlerta`, el mismo componente de P-01 y P-02: el
  * Amarillo de Alerta lleva **siempre** el mensaje del servidor, en el `title` y como texto
  * visible cuando la celda está vacía (regla 6).
+ *
+ * PLANTILLA VISUAL (2026-10-24): el horario va en una línea que no se parte, con la «a» en
+ * minúscula (`horarioLegible`), como en la Jornada, Registro, Mis operativos y Órdenes.
  */
 
 import type { FC } from "react";
@@ -35,9 +38,19 @@ import { useAnclaDeFila } from "../../hooks/useAnclaDeFila.ts";
 import FilaSinInformacion from "./FilaSinInformacion.tsx";
 import type { FilaMatriz, SeccionMatriz } from "../../interfaces/Documento.ts";
 import { colorEstado } from "../../config/env.ts";
-import { nombreEstadoTransporte } from "../../utils/listadoOperativos.util.ts";
+import { nombreEstadoDeFila } from "../../utils/listadoOperativos.util.ts";
 import { comoHorario } from "../../utils/horario.util.ts";
-import { agruparPorClave } from "../../utils/agrupacionForm8.util.ts";
+import {
+  agruparPorClave,
+  ordenarPorPersona,
+  ordenarPorPersonaYZona,
+} from "../../utils/agrupacionForm8.util.ts";
+import {
+  esRegistroPorZonas,
+  lineasDeZona,
+  type LineaDeZona,
+} from "../../utils/zonasDelBloque.util.ts";
+import { horarioLegible } from "../../utils/texto.util.ts";
 
 /**
  * Clave de fusión de las copias del formulario 8: los operativos de UNA sola persona que son
@@ -56,7 +69,20 @@ const claveDeFusion = (fila: FilaMatriz): string | null => {
   // entrara en la clave, el aportado quedaría SIEMPRE en un grupo aparte en cuanto la patrulla
   // tuviera una nota. La celda fusionada muestra las notas de coordinación del registrante, que
   // describen a toda la patrulla.
-  if (fila.grupoRegistro) {
+  // REGISTRO POR ZONAS DEL 8 (2026-10-28): UN bloque por registro. Zonal, punto, tipo e
+  // instituciones cambian por zona y NO parten el bloque: se dicen en una línea por zona.
+  if (esRegistroPorZonas(fila)) {
+    return JSON.stringify([
+      "ZONAS",
+      fila.grupoRegistro,
+      fila.esNocturno,
+      fila.esAdicional,
+      fila.conductor,
+      fila.placa,
+      fila.estadoTransporte,
+    ]);
+  }
+  if (fila.esLote) {
     // SIN `horario` (2026-09-21): el `grupoRegistro` YA identifica a la patrulla, y cada persona
     // lleva su ventana EFECTIVA (RN-66), que puede diferir (el aporte del DMIT a otra hora). Con el
     // horario en la clave ese código se saldría de la patrulla y se pintaría aparte. Baja POR
@@ -219,7 +245,7 @@ const Seccion: FC<{ seccion: SeccionMatriz }> = ({ seccion }) => (
           fila={grupo[0]}
           bandaGris={indiceGrupo % 2 === 0}
         />
-      ) : grupo[0].grupoRegistro ? (
+      ) : grupo[0].esLote ? (
         <GrupoForm6
           key={grupo[0].id}
           filas={grupo}
@@ -305,15 +331,15 @@ const Fila: FC<{ fila: FilaMatriz; bandaGris: boolean }> = ({
           >
             {indice === 0 && (
               <td
-                className={`px-3 py-1 align-top font-mono font-semibold${borde}`}
+                className={`min-w-[170px] whitespace-nowrap px-3 py-1 align-top font-mono font-semibold${borde}`}
                 rowSpan={abarca}
               >
                 {fila.identificador}
               </td>
             )}
             {horarioPorPersona ? (
-              <td className={`px-3 py-1 align-top${borde}`}>
-                {comoHorario(persona.horaInicio, persona.horaFin)}
+              <td className={`px-3 py-1 align-top whitespace-nowrap${borde}`}>
+                {horarioLegible(comoHorario(persona.horaInicio, persona.horaFin))}
                 {indice === 0 && fila.esNocturno && (
                   <span className="badge badge-ghost badge-xs ml-2">
                     Nocturno
@@ -323,10 +349,10 @@ const Fila: FC<{ fila: FilaMatriz; bandaGris: boolean }> = ({
             ) : (
               indice === 0 && (
                 <td
-                  className={`px-3 py-1 align-top${borde}`}
+                  className={`px-3 py-1 align-top whitespace-nowrap${borde}`}
                   rowSpan={abarca}
                 >
-                  {fila.horario}
+                  {horarioLegible(fila.horario)}
                   {fila.esNocturno && (
                     <span className="badge badge-ghost badge-xs ml-2">
                       Nocturno
@@ -383,45 +409,63 @@ const RestoDeLaFila: FC<{
   abarca?: number;
   /** Centra las celdas: los grupos del 8 las fusionan y el dato va centrado en el bloque. */
   centrado?: boolean;
-}> = ({ fila, abarca, centrado }) => (
+  /**
+   * Registro por zonas (2026-10-28): una línea por zona —zonal, punto, tipo y sus identificadores—
+   * que ocupa las tres columnas Zonal · Punto · Tipo; las instituciones, la unión del registro.
+   */
+  zonas?: { lineas: LineaDeZona[]; instituciones: string[] };
+}> = ({ fila, abarca, centrado, zonas }) => (
   <>
+    {zonas ? (
+      <td className={`px-3 py-1 align-middle ${BORDE_OPERATIVO}`} rowSpan={abarca} colSpan={3}>
+        <ul aria-label="Zonas del registro">
+          {zonas.lineas.map((linea) => (
+            <li key={linea.clave}>{linea.texto}</li>
+          ))}
+        </ul>
+      </td>
+    ) : (
+      <>
+        <td
+          className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
+          rowSpan={abarca}
+        >
+          {fila.zonales.join(", ")}
+        </td>
+
+        <CeldaAlerta
+          alertas={fila.alertas}
+          campo="puntoEncuentro"
+          rowSpan={abarca}
+          className={BORDE_OPERATIVO}
+          centrado={centrado}
+        >
+          {fila.puntoEncuentro || null}
+        </CeldaAlerta>
+
+        <CeldaAlerta
+          alertas={fila.alertas}
+          campo="tipoControl"
+          rowSpan={abarca}
+          className={BORDE_OPERATIVO}
+          centrado={centrado}
+        >
+          {fila.tipoControl || null}
+        </CeldaAlerta>
+      </>
+    )}
+
     <td
       className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
       rowSpan={abarca}
     >
-      {fila.zonales.join(", ")}
-    </td>
-
-    <CeldaAlerta
-      alertas={fila.alertas}
-      campo="puntoEncuentro"
-      rowSpan={abarca}
-      className={BORDE_OPERATIVO}
-      centrado={centrado}
-    >
-      {fila.puntoEncuentro || null}
-    </CeldaAlerta>
-
-    <CeldaAlerta
-      alertas={fila.alertas}
-      campo="tipoControl"
-      rowSpan={abarca}
-      className={BORDE_OPERATIVO}
-      centrado={centrado}
-    >
-      {fila.tipoControl || null}
-    </CeldaAlerta>
-
-    <td
-      className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
-      rowSpan={abarca}
-    >
-      {fila.instituciones.join(", ")}
+      {(zonas?.instituciones ?? fila.instituciones).join(", ")}
     </td>
 
     <CeldaAlerta
       alertas={fila.alertas}
       campo="conductor"
+      textoCorto="Sin asignar"
       rowSpan={abarca}
       className={BORDE_OPERATIVO}
       centrado={centrado}
@@ -432,6 +476,7 @@ const RestoDeLaFila: FC<{
     <CeldaAlerta
       alertas={fila.alertas}
       campo="placa"
+      textoCorto="Sin asignar"
       rowSpan={abarca}
       className={BORDE_OPERATIVO}
       centrado={centrado}
@@ -443,12 +488,8 @@ const RestoDeLaFila: FC<{
       className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
       rowSpan={abarca}
     >
-      <span
-        className={`badge badge-sm ${colorEstado(
-          nombreEstadoTransporte[fila.estadoTransporte],
-        )}`}
-      >
-        {nombreEstadoTransporte[fila.estadoTransporte]}
+      <span className={`badge badge-sm ${colorEstado(nombreEstadoDeFila(fila))}`}>
+        {nombreEstadoDeFila(fila)}
       </span>
     </td>
 
@@ -500,7 +541,7 @@ const GrupoForm8: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
         >
           {/* El identificador NO se fusiona: una fila por operativo. Borde solo en la primera. */}
           <td
-            className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+            className={`min-w-[170px] whitespace-nowrap px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
           >
             {fila.identificador}
           </td>
@@ -509,10 +550,10 @@ const GrupoForm8: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
           {indice === 0 && (
             <>
               <td
-                className={`px-3 py-1 align-middle text-center ${BORDE_OPERATIVO}`}
+                className={`px-3 py-1 align-top whitespace-nowrap ${BORDE_OPERATIVO}`}
                 rowSpan={total}
               >
-                {cabeza.horario}
+                {horarioLegible(cabeza.horario)}
                 {cabeza.esNocturno && (
                   <span className="badge badge-ghost badge-xs ml-2">Nocturno</span>
                 )}
@@ -523,13 +564,12 @@ const GrupoForm8: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
                 campo="personal"
                 rowSpan={total}
                 className={BORDE_OPERATIVO}
-                centrado
               >
                 {nombreConConteo}
               </CeldaAlerta>
 
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono ${BORDE_OPERATIVO}`}
+                className={`px-3 py-1 align-top whitespace-nowrap font-mono ${BORDE_OPERATIVO}`}
                 rowSpan={total}
               >
                 {persona.telefono ?? "Sin teléfono"}
@@ -561,10 +601,36 @@ const GrupoForm8: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
-  filas,
+  filas: llegadas,
   bandaGris,
 }) => {
+  const idDePersona = (fila: FilaMatriz): string =>
+    String(fila.personal[0]?.funcionarioId ?? `sin-${fila.id}`);
+  // Los códigos de cada persona, SEGUIDOS (2026-10-26): ver `ordenarPorPersona`. En un registro por
+  // zonas (2026-10-28), además, la zona principal primero y cada zona con sus códigos juntos.
+  const porZonas = esRegistroPorZonas(llegadas[0]);
+  const filas = porZonas
+    ? ordenarPorPersonaYZona(
+        llegadas,
+        idDePersona,
+        (fila) => fila.zonales.join(", "),
+        (fila) => fila.esZonaPrincipal,
+        (fila) => fila.identificador,
+      )
+    : ordenarPorPersona(llegadas, idDePersona, (fila) => fila.identificador);
   const cabeza = filas[0];
+  const zonas = porZonas
+    ? {
+        lineas: lineasDeZona(filas, {
+          zonal: (fila) => fila.zonales.join(", "),
+          punto: (fila) => fila.puntoEncuentro,
+          tipo: (fila) => fila.tipoControl,
+          identificador: (fila) => fila.identificador,
+          esPrincipal: (fila) => fila.esZonaPrincipal,
+        }),
+        instituciones: [...new Set(filas.flatMap((fila) => fila.instituciones))],
+      }
+    : undefined;
   const total = filas.length;
   const anclaDeFila = useAnclaDeFila();
 
@@ -577,9 +643,8 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
   // teléfono y —si difiere— el horario se fusionan por persona en vez de repetirse por fila, y el
   // nombre muestra el total de operativos de esa persona: «VILLAVICENCIO VACA MIGUEL ANGEL (2)».
   // En la patrulla cada persona trae UN código (n=1): no se muestra el conteo y el marcado queda
-  // idéntico al de antes. Los códigos de una persona van contiguos, así que el `rowSpan` calza.
-  const idDePersona = (fila: FilaMatriz): string =>
-    String(fila.personal[0]?.funcionarioId ?? `sin-${fila.id}`);
+  // idéntico al de antes. Los códigos de una persona van contiguos porque `ordenarPorPersona` los
+  // juntó arriba: así el `rowSpan` calza aunque el servidor los entregue intercalados.
   const conteoPorPersona = new Map<string, number>();
   for (const fila of filas) {
     const clave = idDePersona(fila);
@@ -612,7 +677,7 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
           >
             {/* Identificador POR FILA: cada persona lleva su propio código por área. */}
             <td
-              className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+              className={`min-w-[170px] whitespace-nowrap px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
             >
               {fila.identificador}
             </td>
@@ -622,10 +687,10 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
             {horarioPorPersona ? (
               esPrimeraDeLaPersona && (
                 <td
-                  className={`px-3 py-1 align-top${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+                  className={`px-3 py-1 align-top whitespace-nowrap${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
                   rowSpan={abarcaPersona}
                 >
-                  {fila.horario}
+                  {horarioLegible(fila.horario)}
                   {indice === 0 && fila.esNocturno && (
                     <span className="badge badge-ghost badge-xs ml-2">
                       Nocturno
@@ -636,10 +701,10 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
             ) : (
               indice === 0 && (
                 <td
-                  className={`px-3 py-1 align-middle text-center ${BORDE_OPERATIVO}`}
+                  className={`px-3 py-1 align-top whitespace-nowrap ${BORDE_OPERATIVO}`}
                   rowSpan={total}
                 >
-                  {cabeza.horario}
+                  {horarioLegible(cabeza.horario)}
                   {cabeza.esNocturno && (
                     <span className="badge badge-ghost badge-xs ml-2">
                       Nocturno
@@ -650,15 +715,14 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
             )}
 
             {/* Personal y teléfono se fusionan POR PERSONA: solo en su primera fila, con «(n)» en
-                el nombre cuando la persona lleva varios operativos (las copias del 8). CENTRADOS
-                (2026-09-22), como el resto de la celda combinada del bloque. */}
+                el nombre cuando la persona lleva varios operativos (las copias del 8). Arriba a la
+                izquierda (2026-10-26), como en las demás filas; antes iban centrados. */}
             {esPrimeraDeLaPersona && (
               <CeldaAlerta
                 alertas={fila.alertas}
                 campo="personal"
                 rowSpan={abarcaPersona}
                 className={indice === 0 ? BORDE_OPERATIVO : undefined}
-                centrado
               >
                 {etiquetaPersonal}
               </CeldaAlerta>
@@ -666,7 +730,7 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
 
             {esPrimeraDeLaPersona && (
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+                className={`px-3 py-1 align-top whitespace-nowrap font-mono${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
                 rowSpan={abarcaPersona}
               >
                 {persona?.telefono ?? "Sin teléfono"}
@@ -679,6 +743,7 @@ const GrupoForm6: FC<{ filas: FilaMatriz[]; bandaGris: boolean }> = ({
                 fila={cabeza}
                 abarca={total}
                 centrado
+                zonas={zonas}
               />
             )}
           </tr>

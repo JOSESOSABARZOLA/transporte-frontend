@@ -87,7 +87,7 @@ const INCOMPLETO: Conductor = {
   activo: true,
   sector: null,
   parqueaderoAutorizado: false,
-  tipoContrato: "NOMBRAMIENTO",
+  jornadaLaboralId: 1,
 };
 
 describe("Planificar el día · «Completar» abre el cajón de Flota, no un modal", () => {

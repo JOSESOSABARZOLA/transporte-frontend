@@ -191,7 +191,7 @@ describe("filtros", () => {
     activo: true,
     sector: null,
     parqueaderoAutorizado: false,
-    tipoContrato: null,
+    jornadaLaboralId: null,
     ...parcial,
   });
 
@@ -224,7 +224,7 @@ describe("filtros", () => {
   });
 
   it("conductores incompletos: los que el servidor marca con faltantes", () => {
-    const lista = [conductor({ id: 1, faltantes: ["TIPO_CONTRATO"] }), conductor({ id: 2, faltantes: [] })];
+    const lista = [conductor({ id: 1, faltantes: ["JORNADA_LABORAL"] }), conductor({ id: 2, faltantes: [] })];
     expect(
       filtrarConductores(lista, { busqueda: "", estado: "activos", indicador: "incompletos" }).map((uno) => uno.id),
     ).toEqual([1]);

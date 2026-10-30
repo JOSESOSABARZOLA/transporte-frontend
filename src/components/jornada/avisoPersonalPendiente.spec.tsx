@@ -71,6 +71,9 @@ const jornadaCon = (pendientes: string[][]) => ({
       filas: pendientes.map((areas, indice) => ({
         id: indice + 1,
         identificador: `OCECU-00${indice + 1}-28-AGO-2026`,
+        // Cada uno es su propio registro (2026-10-27: todos llevan id).
+        grupoRegistro: `registro-${indice + 1}`,
+        esLote: false,
         esAdicional: false,
         origen: null,
         horario: "08H00 A 12H00",

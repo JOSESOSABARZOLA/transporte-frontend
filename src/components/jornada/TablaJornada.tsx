@@ -28,13 +28,20 @@
  * el Amarillo de Alerta lleva **siempre** el mensaje del servidor, en el `title` y como
  * texto visible cuando la celda está vacía (regla 6). Ese sí se comparte: no es una
  * pieza de la matriz, es la forma en que este sistema pinta una alerta.
+ *
+ * PLANTILLA VISUAL (2026-10-24). El horario va en una línea que no se parte, con la «a» en
+ * minúscula (`horarioLegible`). «Agregar personal» es un botón de icono con su tooltip
+ * (`BotonIcono`), con el «Falta …» debajo como siempre. Y si NINGUNA sección de lo que se muestra
+ * concede el camino (`puedeEditarPersonal`), la columna Acciones no se pinta: era una columna
+ * entera vacía para quien solo consulta.
  */
 
-import type { FC } from "react";
+import { createContext, useContext, type FC } from "react";
 
-import Boton from "../common/Boton.tsx";
+import { BotonIcono } from "../common/AccionesFila.tsx";
 import BannerJornada from "./BannerJornada.tsx";
 import CeldaAlerta from "../cuadro/CeldaAlerta.tsx";
+import { nombreConCargo } from "../cuadro/NombreConCargo.tsx";
 import NotasDeFila, { ProveedorNotas } from "../cuadro/NotasDeFila.tsx";
 import { useAnclaDeFila } from "../../hooks/useAnclaDeFila.ts";
 import FilaSinCarga from "./FilaSinCarga.tsx";
@@ -42,9 +49,19 @@ import type { FilaJornada, SeccionJornada } from "../../interfaces/Jornada.ts";
 import type { AreaPersonal } from "../../interfaces/Formulario.ts";
 import { NOMBRE_AREA } from "../../utils/personal.util.ts";
 import { colorEstado } from "../../config/env.ts";
-import { nombreEstadoTransporte } from "../../utils/listadoOperativos.util.ts";
+import { nombreEstadoDeFila } from "../../utils/listadoOperativos.util.ts";
 import { comoHorario } from "../../utils/horario.util.ts";
-import { agruparPorClave } from "../../utils/agrupacionForm8.util.ts";
+import {
+  agruparPorClave,
+  ordenarPorPersona,
+  ordenarPorPersonaYZona,
+} from "../../utils/agrupacionForm8.util.ts";
+import {
+  esRegistroPorZonas,
+  lineasDeZona,
+  type LineaDeZona,
+} from "../../utils/zonasDelBloque.util.ts";
+import { horarioLegible } from "../../utils/texto.util.ts";
 
 /**
  * Clave de fusión de las copias del formulario 8 (mismo criterio que `TablaMatriz`): los
@@ -61,7 +78,20 @@ const claveDeFusion = (fila: FilaJornada): string | null => {
   // (INECU) nace sin notas propias, mientras el registrante (IGNECU/ITNECU) sí las tiene. Si
   // entrara en la clave, el aportado quedaría siempre en un grupo aparte en cuanto la patrulla
   // tuviera una nota. La celda fusionada muestra las notas de coordinación del registrante.
-  if (fila.grupoRegistro) {
+  // REGISTRO POR ZONAS DEL 8 (2026-10-28): UN bloque por registro. Zonal, punto, tipo e
+  // instituciones cambian por zona y NO parten el bloque: se dicen en una línea por zona.
+  if (esRegistroPorZonas(fila)) {
+    return JSON.stringify([
+      "ZONAS",
+      fila.grupoRegistro,
+      fila.esNocturno,
+      fila.esAdicional,
+      fila.conductor,
+      fila.placa,
+      fila.estadoTransporte,
+    ]);
+  }
+  if (fila.esLote) {
     // SIN `areasPendientesDelRol` (2026-09-21): se calcula POR OPERATIVO —cada código de una
     // persona reclama las áreas que ÉL no tiene—, así que difiere entre los códigos de la misma
     // patrulla (el IGNECU «reclama» Instrucción aunque el INECU ya la cubra). Si entrara en la
@@ -135,6 +165,12 @@ const COLUMNAS = [
 */
 const BORDE_OPERATIVO = "border-t border-base-300";
 
+/**
+ * ¿Se pinta la columna Acciones? (plantilla visual, 2026-10-24). La decide la tabla —alguna
+ * sección con `puedeEditarPersonal`— y la leen las filas, que están varios niveles más abajo.
+ */
+const ConAcciones = createContext(true);
+
 type TablaJornadaProps = {
   secciones: SeccionJornada[];
   mensajeVacio: string;
@@ -151,63 +187,74 @@ const TablaJornada: FC<TablaJornadaProps> = ({
   onEditarPersonal,
   bloqueado,
   motivoBloqueo,
-}) => (
-  /*
-   * El desplazamiento vive **dentro** del contenedor, no en la página: a 375 px las doce
-   * columnas no caben de ninguna manera, y lo que no puede pasar es que la página entera
-   * se desplace en horizontal y arrastre la navegación con ella.
-   *
-   * `ProveedorNotas` (2026-10-19): la nota «Comparte con X» lleva a la fila de X si está aquí.
-   */
-  <ProveedorNotas ids={secciones.flatMap((seccion) => seccion.filas.map((fila) => fila.id))}>
-  <div className="overflow-x-auto">
-    {/*
-      SIN `table-zebra`: esa clase alterna el fondo por `<tr>`, y aquí un operativo ocupa
-      VARIOS `<tr>` (uno por persona), así que rayaba a las personas, no a los operativos —dos
-      operativos seguidos podían salir del mismo gris—. La banda se pinta POR OPERATIVO en
-      `Fila` (2026-09-14, mismo cambio que `TablaMatriz`): gris y blanco alternos por operativo.
-    */}
-    <table className="table table-sm">
-      <thead>
-        <tr className="text-xs uppercase tracking-wider text-app-label">
-          {COLUMNAS.map((titulo) => (
-            <th
-              key={titulo}
-              scope="col"
-              className={titulo === "Observaciones" ? "app-columna-notas" : undefined}
-            >
-              {titulo}
-            </th>
-          ))}
-        </tr>
-      </thead>
+}) => {
+  // Sin ninguna sección donde se asigne personal desde aquí, la columna Acciones sobra.
+  const conAcciones = secciones.some((seccion) => seccion.puedeEditarPersonal);
+  const columnas = conAcciones
+    ? COLUMNAS
+    : COLUMNAS.filter((titulo) => titulo !== "Acciones");
 
-      <tbody>
-        {secciones.length === 0 ? (
-          <tr>
-            <td
-              colSpan={COLUMNAS.length}
-              className="px-3 py-6 text-center text-sm text-app-muted"
-            >
-              {mensajeVacio}
-            </td>
+  return (
+    /*
+     * El desplazamiento vive **dentro** del contenedor, no en la página: a 375 px las doce
+     * columnas no caben de ninguna manera, y lo que no puede pasar es que la página entera
+     * se desplace en horizontal y arrastre la navegación con ella.
+     *
+     * `ProveedorNotas` (2026-10-19): la nota «Comparte con X» lleva a la fila de X si está aquí.
+     */
+    <ConAcciones.Provider value={conAcciones}>
+    <ProveedorNotas ids={secciones.flatMap((seccion) => seccion.filas.map((fila) => fila.id))}>
+    <div className="overflow-x-auto">
+      {/*
+        SIN `table-zebra`: esa clase alterna el fondo por `<tr>`, y aquí un operativo ocupa
+        VARIOS `<tr>` (uno por persona), así que rayaba a las personas, no a los operativos —dos
+        operativos seguidos podían salir del mismo gris—. La banda se pinta POR OPERATIVO en
+        `Fila` (2026-09-14, mismo cambio que `TablaMatriz`): gris y blanco alternos por operativo.
+      */}
+      <table className="table table-sm">
+        <thead>
+          <tr className="text-xs uppercase tracking-wider text-app-label">
+            {columnas.map((titulo) => (
+              <th
+                key={titulo}
+                scope="col"
+                className={titulo === "Observaciones" ? "app-columna-notas" : undefined}
+              >
+                {titulo}
+              </th>
+            ))}
           </tr>
-        ) : (
-          secciones.map((seccion) => (
-            <Seccion
-              key={seccion.codigo}
-              seccion={seccion}
-              onEditarPersonal={onEditarPersonal}
-              bloqueado={bloqueado}
-              motivoBloqueo={motivoBloqueo}
-            />
-          ))
-        )}
-      </tbody>
-    </table>
-  </div>
-  </ProveedorNotas>
-);
+        </thead>
+
+        <tbody>
+          {secciones.length === 0 ? (
+            <tr>
+              <td
+                colSpan={columnas.length}
+                className="px-3 py-6 text-center text-sm text-app-muted"
+              >
+                {mensajeVacio}
+              </td>
+            </tr>
+          ) : (
+            secciones.map((seccion) => (
+              <Seccion
+                key={seccion.codigo}
+                seccion={seccion}
+                columnas={columnas.length}
+                onEditarPersonal={onEditarPersonal}
+                bloqueado={bloqueado}
+                motivoBloqueo={motivoBloqueo}
+              />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+    </ProveedorNotas>
+    </ConAcciones.Provider>
+  );
+};
 
 /**
  * Una sección: su banner, y debajo sus filas o su evidencia.
@@ -218,20 +265,22 @@ const TablaJornada: FC<TablaJornadaProps> = ({
  */
 const Seccion: FC<{
   seccion: SeccionJornada;
+  /** Cuántas columnas pinta la tabla (sin Acciones si nadie asigna personal). */
+  columnas: number;
   onEditarPersonal: (fila: FilaJornada, seccion: SeccionJornada) => void;
   bloqueado: boolean;
   motivoBloqueo: string | null;
-}> = ({ seccion, onEditarPersonal, bloqueado, motivoBloqueo }) => (
+}> = ({ seccion, columnas, onEditarPersonal, bloqueado, motivoBloqueo }) => (
   <>
     <BannerJornada
       seccion={seccion}
-      columnas={COLUMNAS.length}
+      columnas={columnas}
     />
 
     {seccion.evidencia && (
       <FilaSinCarga
         evidencia={seccion.evidencia}
-        columnas={COLUMNAS.length}
+        columnas={columnas}
       />
     )}
 
@@ -251,7 +300,7 @@ const Seccion: FC<{
           motivoBloqueo={motivoBloqueo}
           bandaGris={indiceGrupo % 2 === 0}
         />
-      ) : grupo[0].grupoRegistro ? (
+      ) : grupo[0].esLote ? (
         <GrupoForm6
           key={grupo[0].id}
           filas={grupo}
@@ -319,6 +368,7 @@ const Fila: FC<{
             funcionarioId: 0,
             nombre: "",
             telefono: null,
+            cargo: null,
             esResponsable: false,
             horaInicio: "",
             horaFin: "",
@@ -355,15 +405,15 @@ const Fila: FC<{
           >
             {indice === 0 && (
               <td
-                className={`px-3 py-1 align-top font-mono font-semibold${borde}`}
+                className={`min-w-[170px] whitespace-nowrap px-3 py-1 align-top font-mono font-semibold${borde}`}
                 rowSpan={abarca}
               >
                 {fila.identificador}
               </td>
             )}
             {horarioPorPersona ? (
-              <td className={`px-3 py-1 align-top${borde}`}>
-                {comoHorario(persona.horaInicio, persona.horaFin)}
+              <td className={`px-3 py-1 align-top whitespace-nowrap${borde}`}>
+                {horarioLegible(comoHorario(persona.horaInicio, persona.horaFin))}
                 {indice === 0 && fila.esNocturno && (
                   <span className="badge badge-ghost badge-xs ml-2">
                     Nocturno
@@ -373,10 +423,10 @@ const Fila: FC<{
             ) : (
               indice === 0 && (
                 <td
-                  className={`px-3 py-1 align-top${borde}`}
+                  className={`px-3 py-1 align-top whitespace-nowrap${borde}`}
                   rowSpan={abarca}
                 >
-                  {fila.horario}
+                  {horarioLegible(fila.horario)}
                   {fila.esNocturno && (
                     <span className="badge badge-ghost badge-xs ml-2">
                       Nocturno
@@ -397,10 +447,10 @@ const Fila: FC<{
             className={indice === 0 ? BORDE_OPERATIVO : undefined}
           >
             {persona.nombre ? (
-              persona.esResponsable ? (
-                `${persona.nombre} (R)`
-              ) : (
-                persona.nombre
+              // El cargo del Maestro bajo el nombre (2026-10-27), como en Mis operativos.
+              nombreConCargo(
+                persona.esResponsable ? `${persona.nombre} (R)` : persona.nombre,
+                persona.cargo,
               )
             ) : seccion.acceso === "LECTURA" ? (
               /*
@@ -463,6 +513,11 @@ const RestoDeLaFila: FC<{
    * cubre). 2026-09-21.
    */
   areasPendientes?: AreaPersonal[];
+  /**
+   * Registro por zonas (2026-10-28): una línea por zona —zonal, punto, tipo y sus identificadores—
+   * que ocupa las tres columnas Zonal · Punto · Tipo; las instituciones, la unión del registro.
+   */
+  zonas?: { lineas: LineaDeZona[]; instituciones: string[] };
 }> = ({
   fila,
   seccion,
@@ -472,157 +527,182 @@ const RestoDeLaFila: FC<{
   abarca,
   centrado,
   areasPendientes,
-}) => (
-  <>
-    <td
-      className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
-      rowSpan={abarca}
-    >
-      {fila.zonales.join(", ")}
-    </td>
+  zonas,
+}) => {
+  const conAcciones = useContext(ConAcciones);
 
-    <CeldaAlerta
-      alertas={fila.alertas}
-      campo="puntoEncuentro"
-      rowSpan={abarca}
-      className={BORDE_OPERATIVO}
-      centrado={centrado}
-    >
-      {fila.puntoEncuentro || null}
-    </CeldaAlerta>
-
-    <CeldaAlerta
-      alertas={fila.alertas}
-      campo="tipoControl"
-      rowSpan={abarca}
-      className={BORDE_OPERATIVO}
-      centrado={centrado}
-    >
-      {fila.tipoControl || null}
-    </CeldaAlerta>
-
-    <td
-      className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
-      rowSpan={abarca}
-    >
-      {fila.instituciones.join(", ")}
-    </td>
-
-    <CeldaAlerta
-      alertas={fila.alertas}
-      campo="conductor"
-      rowSpan={abarca}
-      className={BORDE_OPERATIVO}
-      centrado={centrado}
-    >
-      {fila.conductor}
-    </CeldaAlerta>
-
-    <CeldaAlerta
-      alertas={fila.alertas}
-      campo="placa"
-      rowSpan={abarca}
-      className={BORDE_OPERATIVO}
-      centrado={centrado}
-    >
-      {fila.placa}
-    </CeldaAlerta>
-
-    <td
-      className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
-      rowSpan={abarca}
-    >
-      <span
-        className={`badge badge-sm ${colorEstado(
-          nombreEstadoTransporte[fila.estadoTransporte],
-        )}`}
-      >
-        {nombreEstadoTransporte[fila.estadoTransporte]}
-      </span>
-    </td>
-
-    {/*
-      OBSERVACIONES SIN ALERTA (2026-09-14). Ya no es `CeldaAlerta`: la única alerta que tenía
-      —ALV-05, «este operativo no tiene ninguna nota»— se retiró por ruido a petición del
-      negocio, así que sin notas la celda queda VACÍA (ni «—» ni mensaje ni Amarillo de Alerta).
-
-      NOTAS INDEPENDIENTES (bitácora, 2026-09-21): cada observación es una nota aparte y se pinta
-      en SU renglón, separada de la anterior. Antes se pintaban seguidas y varias notas se leían
-      como una sola. Mismo criterio que `TablaMatriz`.
-
-      COMO TARJETAS (2026-10-19, plan «notas-jornada-matriz»): `NotasDeFila` → `NotasObservacion`,
-      el mismo componente de Mis operativos, con la nota «Comparte con X». Sin notas, «—».
-    */}
-    <td
-      className={`px-2 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
-      rowSpan={abarca}
-    >
-      <NotasDeFila fila={fila} />
-    </td>
-
-    {/*
-      LA CELDA EXISTE SIEMPRE, EL BOTÓN NO.
-      Es una sola tabla continua: quitar la celda en las secciones de lectura
-      descuadraría las columnas de todas las demás. En lectura queda vacía, y quien
-      quiera saber por qué lo lee en el banner de la sección —«solo lectura»—, que es
-      donde se dice una vez en lugar de repetirse en cada fila.
-
-      ═══════════════════════════════════════════════════════════════════════════════
-      Y LO DECIDE `puedeEditarPersonal`, NO `acceso`. 2026-09-01.
-
-      Preguntaba `acceso !== "LECTURA"`, que es «participo en este formulario». No es la
-      misma pregunta que «asigno personal DESDE aquí»: cuando esta rejilla se abrió a los
-      tres departamentos, ese mismo día, los dos nuevos tenían ESCRITURA en sus propios
-      formularios y por tanto la acción, cuando la decisión del negocio decía **solo en
-      lectura**. Tienen P-01 y P-02 para eso, que son sus pantallas.
-
-      EL SERVIDOR LO RESUELVE CONTRA `t_formulario_rol`, así que aquí no se comprueba
-      ningún rol y conceder o retirar el camino es un `UPDATE`. Escribir el nombre de un
-      departamento en este `if` habría creado la segunda fuente de verdad sobre permisos
-      que este módulo lleva evitando desde el 2026-08-25.
-      ═══════════════════════════════════════════════════════════════════════════════
-    */}
-    <td
-      className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
-      rowSpan={abarca}
-    >
-      {seccion.puedeEditarPersonal && (
+  return (
+    <>
+      {zonas ? (
+        <td
+          className={`px-3 py-1 align-middle ${BORDE_OPERATIVO}`}
+          rowSpan={abarca}
+          colSpan={3}
+        >
+          <ul aria-label="Zonas del registro">
+            {zonas.lineas.map((linea) => (
+              <li key={linea.clave}>{linea.texto}</li>
+            ))}
+          </ul>
+        </td>
+      ) : (
         <>
-          <Boton
-            variante="acento"
-            tamano="sm"
-            onClick={() => onEditarPersonal(fila, seccion)}
-            deshabilitado={bloqueado}
-            motivoDeshabilitado={bloqueado ? motivoBloqueo : null}
+          <td
+            className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
+            rowSpan={abarca}
           >
-            Agregar personal
-          </Boton>
+            {fila.zonales.join(", ")}
+          </td>
 
-          {/*
-            QUÉ FALTA DE LO QUE A ESTE DEPARTAMENTO LE TOCA PONER.
-            Es el aviso por fila, y ocupa el sitio de la notificación que no existe:
-            cuando otro departamento registra el operativo, esta línea es lo que le dice
-            al que consulta que le toca mover ficha.
+          <CeldaAlerta
+            alertas={fila.alertas}
+            campo="puntoEncuentro"
+            rowSpan={abarca}
+            className={BORDE_OPERATIVO}
+            centrado={centrado}
+          >
+            {fila.puntoEncuentro || null}
+          </CeldaAlerta>
 
-            EN TEXTO NEUTRO Y A PROPÓSITO. El color de atención va en el resumen de la
-            cabecera, que se lee una vez; aquí, en una tabla de doce columnas y decenas de
-            filas, un distintivo de color por fila deja de señalar nada. Y el nombre se
-            escribe entero —nunca el código del enumerado— porque `NOMBRE_AREA` es la
-            única traducción del sistema.
-          */}
-          {(areasPendientes ?? fila.areasPendientesDelRol).length > 0 && (
-            <span className="mt-1 block text-xs text-app-muted">
-              Falta{" "}
-              {(areasPendientes ?? fila.areasPendientesDelRol)
-                .map((area) => NOMBRE_AREA[area])
-                .join(", ")}
-            </span>
-          )}
+          <CeldaAlerta
+            alertas={fila.alertas}
+            campo="tipoControl"
+            rowSpan={abarca}
+            className={BORDE_OPERATIVO}
+            centrado={centrado}
+          >
+            {fila.tipoControl || null}
+          </CeldaAlerta>
         </>
       )}
-    </td>
-  </>
-);
+
+      <td
+        className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
+        rowSpan={abarca}
+      >
+        {(zonas?.instituciones ?? fila.instituciones).join(", ")}
+      </td>
+
+      <CeldaAlerta
+        alertas={fila.alertas}
+        campo="conductor"
+        textoCorto="Sin asignar"
+        rowSpan={abarca}
+        className={BORDE_OPERATIVO}
+        centrado={centrado}
+      >
+        {fila.conductor}
+      </CeldaAlerta>
+
+      <CeldaAlerta
+        alertas={fila.alertas}
+        campo="placa"
+        textoCorto="Sin asignar"
+        rowSpan={abarca}
+        className={BORDE_OPERATIVO}
+        centrado={centrado}
+      >
+        {fila.placa}
+      </CeldaAlerta>
+
+      <td
+        className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
+        rowSpan={abarca}
+      >
+        <span className={`badge badge-sm ${colorEstado(nombreEstadoDeFila(fila))}`}>
+          {nombreEstadoDeFila(fila)}
+        </span>
+      </td>
+
+      {/*
+        OBSERVACIONES SIN ALERTA (2026-09-14). Ya no es `CeldaAlerta`: la única alerta que tenía
+        —ALV-05, «este operativo no tiene ninguna nota»— se retiró por ruido a petición del
+        negocio, así que sin notas la celda queda VACÍA (ni «—» ni mensaje ni Amarillo de Alerta).
+
+        NOTAS INDEPENDIENTES (bitácora, 2026-09-21): cada observación es una nota aparte y se pinta
+        en SU renglón, separada de la anterior. Antes se pintaban seguidas y varias notas se leían
+        como una sola. Mismo criterio que `TablaMatriz`.
+
+        COMO TARJETAS (2026-10-19, plan «notas-jornada-matriz»): `NotasDeFila` → `NotasObservacion`,
+        el mismo componente de Mis operativos, con la nota «Comparte con X». Sin notas, «—».
+      */}
+      <td
+        className={`px-2 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
+        rowSpan={abarca}
+      >
+        <NotasDeFila fila={fila} />
+      </td>
+
+      {/*
+        LA CELDA EXISTE SIEMPRE, EL BOTÓN NO.
+        Es una sola tabla continua: quitar la celda en las secciones de lectura
+        descuadraría las columnas de todas las demás. En lectura queda vacía, y quien
+        quiera saber por qué lo lee en el banner de la sección —«solo lectura»—, que es
+        donde se dice una vez en lugar de repetirse en cada fila.
+        La excepción es la tabla entera (plantilla visual, 2026-10-24): si NINGUNA sección
+        concede el camino, la columna no se pinta (`ConAcciones`), y nada se descuadra.
+
+        ═══════════════════════════════════════════════════════════════════════════════
+        Y LO DECIDE `puedeEditarPersonal`, NO `acceso`. 2026-09-01.
+
+        Preguntaba `acceso !== "LECTURA"`, que es «participo en este formulario». No es la
+        misma pregunta que «asigno personal DESDE aquí»: cuando esta rejilla se abrió a los
+        tres departamentos, ese mismo día, los dos nuevos tenían ESCRITURA en sus propios
+        formularios y por tanto la acción, cuando la decisión del negocio decía **solo en
+        lectura**. Tienen P-01 y P-02 para eso, que son sus pantallas.
+
+        EL SERVIDOR LO RESUELVE CONTRA `t_formulario_rol`, así que aquí no se comprueba
+        ningún rol y conceder o retirar el camino es un `UPDATE`. Escribir el nombre de un
+        departamento en este `if` habría creado la segunda fuente de verdad sobre permisos
+        que este módulo lleva evitando desde el 2026-08-25.
+        ═══════════════════════════════════════════════════════════════════════════════
+      */}
+      {conAcciones && (
+        <td
+          className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
+          rowSpan={abarca}
+        >
+          {seccion.puedeEditarPersonal && (
+            <>
+              {/* Icono con su tooltip (plantilla visual, 2026-10-24); apagado, el motivo. */}
+              <BotonIcono
+                icono="agregar"
+                rotulo="Agregar personal"
+                nombre={fila.identificador}
+                variante="acento"
+                motivo={bloqueado ? motivoBloqueo : null}
+                procesando={bloqueado}
+                alinear="fin"
+                onClick={() => onEditarPersonal(fila, seccion)}
+              />
+
+              {/*
+                QUÉ FALTA DE LO QUE A ESTE DEPARTAMENTO LE TOCA PONER.
+                Es el aviso por fila, y ocupa el sitio de la notificación que no existe:
+                cuando otro departamento registra el operativo, esta línea es lo que le dice
+                al que consulta que le toca mover ficha.
+
+                EN TEXTO NEUTRO Y A PROPÓSITO. El color de atención va en el resumen de la
+                cabecera, que se lee una vez; aquí, en una tabla de doce columnas y decenas de
+                filas, un distintivo de color por fila deja de señalar nada. Y el nombre se
+                escribe entero —nunca el código del enumerado— porque `NOMBRE_AREA` es la
+                única traducción del sistema.
+              */}
+              {(areasPendientes ?? fila.areasPendientesDelRol).length > 0 && (
+                <span className="mt-1 block text-xs text-app-muted">
+                  Falta{" "}
+                  {(areasPendientes ?? fila.areasPendientesDelRol)
+                    .map((area) => NOMBRE_AREA[area])
+                    .join(", ")}
+                </span>
+              )}
+            </>
+          )}
+        </td>
+      )}
+    </>
+  );
+};
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -657,7 +737,7 @@ const GrupoForm8: FC<{
         >
           {/* El identificador NO se fusiona: una fila por operativo. Borde solo en la primera. */}
           <td
-            className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+            className={`min-w-[170px] whitespace-nowrap px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
           >
             {fila.identificador}
           </td>
@@ -666,10 +746,10 @@ const GrupoForm8: FC<{
           {indice === 0 && (
             <>
               <td
-                className={`px-3 py-1 align-middle text-center ${BORDE_OPERATIVO}`}
+                className={`px-3 py-1 align-top whitespace-nowrap ${BORDE_OPERATIVO}`}
                 rowSpan={total}
               >
-                {cabeza.horario}
+                {horarioLegible(cabeza.horario)}
                 {cabeza.esNocturno && (
                   <span className="badge badge-ghost badge-xs ml-2">Nocturno</span>
                 )}
@@ -680,13 +760,12 @@ const GrupoForm8: FC<{
                 campo="personal"
                 rowSpan={total}
                 className={BORDE_OPERATIVO}
-                centrado
               >
-                {nombreConConteo}
+                {nombreConCargo(nombreConConteo, persona.cargo)}
               </CeldaAlerta>
 
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono ${BORDE_OPERATIVO}`}
+                className={`px-3 py-1 align-top whitespace-nowrap font-mono ${BORDE_OPERATIVO}`}
                 rowSpan={total}
               >
                 {persona.telefono ?? "Sin teléfono"}
@@ -726,8 +805,34 @@ const GrupoForm6: FC<{
   bloqueado: boolean;
   motivoBloqueo: string | null;
   bandaGris: boolean;
-}> = ({ filas, seccion, onEditarPersonal, bloqueado, motivoBloqueo, bandaGris }) => {
+}> = ({ filas: llegadas, seccion, onEditarPersonal, bloqueado, motivoBloqueo, bandaGris }) => {
+  const idDePersona = (fila: FilaJornada): string =>
+    String(fila.personal[0]?.funcionarioId ?? `sin-${fila.id}`);
+  // Los códigos de cada persona, SEGUIDOS (2026-10-26): ver `ordenarPorPersona`. En un registro por
+  // zonas (2026-10-28), además, la zona principal primero y cada zona con sus códigos juntos.
+  const porZonas = esRegistroPorZonas(llegadas[0]);
+  const filas = porZonas
+    ? ordenarPorPersonaYZona(
+        llegadas,
+        idDePersona,
+        (fila) => fila.zonales.join(", "),
+        (fila) => fila.esZonaPrincipal,
+        (fila) => fila.identificador,
+      )
+    : ordenarPorPersona(llegadas, idDePersona, (fila) => fila.identificador);
   const cabeza = filas[0];
+  const zonas = porZonas
+    ? {
+        lineas: lineasDeZona(filas, {
+          zonal: (fila) => fila.zonales.join(", "),
+          punto: (fila) => fila.puntoEncuentro,
+          tipo: (fila) => fila.tipoControl,
+          identificador: (fila) => fila.identificador,
+          esPrincipal: (fila) => fila.esZonaPrincipal,
+        }),
+        instituciones: [...new Set(filas.flatMap((fila) => fila.instituciones))],
+      }
+    : undefined;
   const total = filas.length;
   const anclaDeFila = useAnclaDeFila();
 
@@ -749,9 +854,8 @@ const GrupoForm6: FC<{
   // teléfono y —si difiere— el horario se fusionan por persona en vez de repetirse por fila, y el
   // nombre muestra el total de operativos de esa persona: «VILLAVICENCIO VACA MIGUEL ANGEL (2)».
   // En la patrulla cada persona trae UN código (n=1): no se muestra el conteo y el marcado queda
-  // idéntico al de antes. Los códigos de una persona van contiguos, así que el `rowSpan` calza.
-  const idDePersona = (fila: FilaJornada): string =>
-    String(fila.personal[0]?.funcionarioId ?? `sin-${fila.id}`);
+  // idéntico al de antes. Los códigos de una persona van contiguos porque `ordenarPorPersona` los
+  // juntó arriba: así el `rowSpan` calza aunque el servidor los entregue intercalados.
   const conteoPorPersona = new Map<string, number>();
   for (const fila of filas) {
     const clave = idDePersona(fila);
@@ -784,7 +888,7 @@ const GrupoForm6: FC<{
           >
             {/* Identificador POR FILA: cada persona lleva su propio código por área. */}
             <td
-              className={`px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+              className={`min-w-[170px] whitespace-nowrap px-3 py-1 align-top font-mono font-semibold${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
             >
               {fila.identificador}
             </td>
@@ -794,10 +898,10 @@ const GrupoForm6: FC<{
             {horarioPorPersona ? (
               esPrimeraDeLaPersona && (
                 <td
-                  className={`px-3 py-1 align-top${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+                  className={`px-3 py-1 align-top whitespace-nowrap${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
                   rowSpan={abarcaPersona}
                 >
-                  {fila.horario}
+                  {horarioLegible(fila.horario)}
                   {indice === 0 && fila.esNocturno && (
                     <span className="badge badge-ghost badge-xs ml-2">
                       Nocturno
@@ -808,10 +912,10 @@ const GrupoForm6: FC<{
             ) : (
               indice === 0 && (
                 <td
-                  className={`px-3 py-1 align-middle text-center ${BORDE_OPERATIVO}`}
+                  className={`px-3 py-1 align-top whitespace-nowrap ${BORDE_OPERATIVO}`}
                   rowSpan={total}
                 >
-                  {cabeza.horario}
+                  {horarioLegible(cabeza.horario)}
                   {cabeza.esNocturno && (
                     <span className="badge badge-ghost badge-xs ml-2">
                       Nocturno
@@ -822,23 +926,22 @@ const GrupoForm6: FC<{
             )}
 
             {/* Personal y teléfono se fusionan POR PERSONA: solo en su primera fila, con «(n)» en
-                el nombre cuando la persona lleva varios operativos (las copias del 8). CENTRADOS
-                (2026-09-22), como el resto de la celda combinada del bloque. */}
+                el nombre cuando la persona lleva varios operativos (las copias del 8). Arriba a la
+                izquierda (2026-10-26), como en las demás filas; antes iban centrados. */}
             {esPrimeraDeLaPersona && (
               <CeldaAlerta
                 alertas={fila.alertas}
                 campo="personal"
                 rowSpan={abarcaPersona}
                 className={indice === 0 ? BORDE_OPERATIVO : undefined}
-                centrado
               >
-                {etiquetaPersonal}
+                {nombreConCargo(etiquetaPersonal, persona?.cargo)}
               </CeldaAlerta>
             )}
 
             {esPrimeraDeLaPersona && (
               <td
-                className={`px-3 py-1 align-middle text-center whitespace-nowrap font-mono${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
+                className={`px-3 py-1 align-top whitespace-nowrap font-mono${indice === 0 ? ` ${BORDE_OPERATIVO}` : ""}`}
                 rowSpan={abarcaPersona}
               >
                 {persona?.telefono ?? "Sin teléfono"}
@@ -857,6 +960,7 @@ const GrupoForm6: FC<{
                 centrado
                 // «Falta …» muestra el pendiente COLECTIVO, no el del código cabeza.
                 areasPendientes={areasPendientes}
+                zonas={zonas}
               />
             )}
           </tr>

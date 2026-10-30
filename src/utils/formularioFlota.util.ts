@@ -214,7 +214,8 @@ export const TIPOS_LICENCIA = ["A", "A1", "B", "C", "C1", "D", "D1", "E", "E1", 
 
 /**
  * Lo que maneja la ficha del conductor. `vehiculoHabitualId` es TEXTO porque un `<select>` solo
- * tiene cadenas. `sector` y `tipoContrato` se tipan con la unión, y la cadena vacía es «no consta».
+ * tiene cadenas, como `jornadaLaboralId` (2026-10-23). `sector` se tipa con la unión; la cadena vacía
+ * es «no consta».
  */
 export type ValoresConductor = {
   cedula: string;
@@ -224,7 +225,8 @@ export type ValoresConductor = {
   vehiculoHabitualId: string;
   sector: "" | "NORTE" | "SUR" | "CENTRO" | "VALLE";
   parqueaderoAutorizado: boolean;
-  tipoContrato: "" | "NOMBRAMIENTO" | "OCASIONAL";
+  /** Id de la jornada laboral como texto; "" = sin jornada (no se le asigna transporte). */
+  jornadaLaboralId: string;
   actaParqueaderoNumero: string;
   actaParqueaderoDesde: string;
   actaParqueaderoHasta: string;
@@ -238,7 +240,7 @@ const NOMBRES_CONDUCTOR: Record<keyof ValoresConductor, string> = {
   vehiculoHabitualId: "vehículo habitual",
   licenciaTipo: "licencia",
   sector: "sector",
-  tipoContrato: "contrato",
+  jornadaLaboralId: "jornada laboral",
   patronRotacion: "patrón",
   parqueaderoAutorizado: "parqueadero",
   actaParqueaderoNumero: "número de acta",
@@ -254,7 +256,8 @@ export const valoresConductor = (conductor: Conductor | null): ValoresConductor 
   vehiculoHabitualId: conductor?.vehiculoHabitual ? String(conductor.vehiculoHabitual.id) : "",
   sector: conductor?.sector ?? "",
   parqueaderoAutorizado: conductor?.parqueaderoAutorizado ?? false,
-  tipoContrato: conductor?.tipoContrato ?? "",
+  jornadaLaboralId:
+    conductor?.jornadaLaboralId != null ? String(conductor.jornadaLaboralId) : "",
   actaParqueaderoNumero: conductor?.actaParqueaderoNumero ?? "",
   actaParqueaderoDesde: conductor?.actaParqueaderoDesde ?? "",
   actaParqueaderoHasta: conductor?.actaParqueaderoHasta ?? "",
@@ -359,7 +362,8 @@ export const cambiosDeConductor = (valores: ValoresConductor): ActualizarConduct
       : undefined,
     sector: valores.sector || undefined,
     parqueaderoAutorizado: valores.parqueaderoAutorizado,
-    tipoContrato: valores.tipoContrato || undefined,
+    // Vacía = sin jornada: `null`, que al editar la retira.
+    jornadaLaboralId: valores.jornadaLaboralId ? Number(valores.jornadaLaboralId) : null,
     actaParqueaderoNumero: conActa ? valores.actaParqueaderoNumero.trim() : null,
     actaParqueaderoDesde: conActa ? valores.actaParqueaderoDesde : null,
     actaParqueaderoHasta: conActa ? valores.actaParqueaderoHasta : null,

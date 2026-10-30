@@ -15,11 +15,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { FC, ReactNode } from "react";
+import { useContext, type FC, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { clasesBoton, type TamanoBoton, type VarianteBoton } from "./Boton.tsx";
 import Iconos, { type NombreIcono } from "./Iconos.tsx";
+import { BarraOscuraContexto } from "./barraOscura.ts";
 
 type BotonEnlaceProps = {
   to: string;
@@ -43,17 +44,21 @@ const BotonEnlace: FC<BotonEnlaceProps> = ({
   title,
   className,
   children,
-}) => (
-  <Link
-    to={to}
-    title={title}
-    className={[clasesBoton(variante, tamano, enBarraOscura), className ?? ""]
-      .filter(Boolean)
-      .join(" ")}
-  >
-    {icono && <Iconos nombre={icono} />}
-    {children}
-  </Link>
-);
+}) => {
+  // Como `Boton` (2026-10-24): dentro de una barra azul (`PanelTabla`, cajón) toma solo su variante.
+  const enBarra = useContext(BarraOscuraContexto) || enBarraOscura;
+  return (
+    <Link
+      to={to}
+      title={title}
+      className={[clasesBoton(variante, tamano, enBarra), className ?? ""]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {icono && <Iconos nombre={icono} />}
+      {children}
+    </Link>
+  );
+};
 
 export default BotonEnlace;

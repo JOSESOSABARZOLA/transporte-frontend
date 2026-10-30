@@ -14,7 +14,7 @@
  *
  *   · que el filtro arranque en Activos y la pestaña viva en la URL;
  *   · que cada indicador lleve a su pestaña con su filtro;
- *   · que un vehículo sin conductor habitual, un conductor sin vehículo o sin contrato y un
+ *   · que un vehículo sin conductor habitual, un conductor sin vehículo o sin jornada y un
  *     garaje sin zonal se señalen, con su porqué;
  *   · que los garajes ya no tengan el combo en línea ni dos bajas;
  *   · que una placa o una cédula repetida no se envíen;
@@ -22,11 +22,15 @@
  *     servidor la rechazaría;
  *   · (ajustes finales, 2026-10-15) que las acciones se vean como botones según el estado, que la
  *     cédula tenga su columna, que lo que falta en documentos sea ámbar suave y lo vencido rojo, y
- *     que un kilometraje inusual pida revisión.
+ *     que un kilometraje inusual pida revisión;
+ *   · (2026-10-20, plan «flota-mantenimiento-baja») el orden de pestañas con Conductores por
+ *     omisión, los cinco indicadores y «En taller hoy» con su ficha, las columnas separadas, la
+ *     disponibilidad por fecha, el calendario semanal dentro de Vehículos y la baja que se confirma
+ *     siempre, decide el servidor, se deshace y guarda quién y cuándo.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,6 +50,7 @@ import type { Conductor, UbicacionFlota, Vehiculo } from "../../interfaces/Trans
 vi.mock("../../services/flota.service.ts", () => ({
   FlotaService: {
     resumen: vi.fn(),
+    disponibilidad: vi.fn(),
     impactoBaja: vi.fn(),
     listarConductores: vi.fn(),
     crearConductor: vi.fn(),
@@ -66,6 +71,14 @@ vi.mock("../../services/flota.service.ts", () => ({
     ausenciasDeConductor: vi.fn(),
     registrarAusenciaConductor: vi.fn(),
     retirarAusenciaConductor: vi.fn(),
+  },
+}));
+vi.mock("../../services/transporte.service.ts", () => ({
+  TransporteService: {
+    listarMantenimientos: vi.fn().mockResolvedValue([]),
+    impactoMantenimiento: vi.fn().mockResolvedValue([]),
+    registrarMantenimiento: vi.fn(),
+    retirarMantenimiento: vi.fn(),
   },
 }));
 vi.mock("../../services/catalogoCuadro.service.ts", () => ({
@@ -100,7 +113,7 @@ const conductor = (parcial: Partial<Conductor> = {}): Conductor => ({
   activo: true,
   sector: "SUR",
   parqueaderoAutorizado: false,
-  tipoContrato: "OCASIONAL",
+  jornadaLaboralId: 2,
   patronRotacion: "DDDDDLL",
   faltantes: [],
   ...parcial,
@@ -145,9 +158,9 @@ const PERSONAS: Conductor[] = [
     nombreCompleto: "QUISHPE JORGE",
     telefono: null,
     vehiculoHabitual: null,
-    tipoContrato: null,
+    jornadaLaboralId: null,
     patronRotacion: null,
-    faltantes: ["VEHICULO_HABITUAL", "TIPO_CONTRATO", "PATRON_ROTACION"],
+    faltantes: ["VEHICULO_HABITUAL", "JORNADA_LABORAL", "PATRON_ROTACION"],
   }),
 ];
 
@@ -177,7 +190,8 @@ const usuario = (permisos: string[] = permisosDeRoles(["ADMINISTRADOR_DAF"])): U
   actividades: [],
 });
 
-const montar = (ruta = "/", sesion: User = usuario()) =>
+/** Por omisión abre Vehículos (desde el 2026-10-20 la pestaña por omisión es Conductores). */
+const montar = (ruta = "/?tab=vehiculos", sesion: User = usuario()) =>
   render(
     <UserContext.Provider
       value={{ user: sesion, establecerSesion: vi.fn(), estado: "conSesion", cerrarSesion: vi.fn() }}
@@ -188,6 +202,10 @@ const montar = (ruta = "/", sesion: User = usuario()) =>
       </MemoryRouter>
     </UserContext.Provider>,
   );
+
+/** El botón rojo de la confirmación de baja (dentro del modal, no el de la fila). */
+const confirmarBaja = (): HTMLElement =>
+  within(screen.getByRole("alertdialog")).getByRole("button", { name: "Dar de baja" });
 
 const filaCon = (texto: string): HTMLElement => {
   const fila = screen.getAllByRole("row").find((una) => within(una).queryByText(texto));
@@ -203,6 +221,9 @@ beforeEach(() => {
   vi.mocked(FlotaService.listarUbicaciones).mockResolvedValue(GARAJES);
   vi.mocked(FlotaService.ausenciasDeLaFlota).mockResolvedValue([]);
   vi.mocked(FlotaService.ausenciasDeConductor).mockResolvedValue([]);
+  vi.mocked(FlotaService.disponibilidad).mockImplementation((fecha: string) =>
+    Promise.resolve({ fecha, hasta: fecha, vehiculos: [] }),
+  );
 });
 
 describe("indicadores", () => {
@@ -226,7 +247,8 @@ describe("indicadores", () => {
     expect(screen.queryByText("PMA-7056")).toBeNull();
     expect(screen.getByText("PBA-1235")).toBeInTheDocument();
 
-    await usuario.click(screen.getByRole("button", { name: /^Conductores con datos incompletos/ }));
+    await usuario.click(screen.getByRole("tab", { name: /Conductores/ }));
+    await usuario.click(screen.getByRole("button", { name: "Ver datos incompletos" }));
     expect(screen.getByRole("tab", { name: /Conductores/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("QUISHPE JORGE")).toBeInTheDocument();
     expect(screen.queryByText("ESCALERAS KEVIN ANDRES")).toBeNull();
@@ -252,7 +274,7 @@ describe("pestañas y filtro", () => {
 
     expect(screen.getByRole("button", { name: "Activos" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("ABM-999")).toBeNull();
-    expect(screen.getByText("2 de 3")).toBeInTheDocument();
+    expect(await textoPaginador()).toBe("Mostrando 1–2 de 2");
 
     await usuario.click(screen.getByRole("button", { name: "De baja" }));
     expect(screen.getByText("ABM-999")).toBeInTheDocument();
@@ -285,6 +307,9 @@ describe("pestañas y filtro", () => {
 });
 
 const propsTabla = {
+  disponibilidad: new Map(),
+  puedeProgramar: true,
+  onProgramar: vi.fn(),
   procesando: false,
   resaltado: null,
   mensajeVacio: "Sin datos",
@@ -312,23 +337,23 @@ describe("distintivos", () => {
     expect(screen.getByText("85.000 km")).toBeInTheDocument();
   });
 
-  it("conductor sin vehículo (o con uno de baja) y sin contrato, con su efecto", () => {
+  it("conductor sin vehículo (o con uno de baja) y sin jornada, con su efecto", () => {
     render(
       <TablaConductores
         {...propsTabla}
         conductores={[
           conductor({
             vehiculoHabitual: { id: 3, placa: "ABM-999", activo: false },
-            tipoContrato: null,
+            jornadaLaboralId: null,
             patronRotacion: null,
           }),
         ]}
       />,
     );
     expect(screen.getByText(/⚠ Sin vehículo/)).toBeInTheDocument();
-    expect(screen.getByText(/⚠ Sin contrato/)).toHaveAttribute(
+    expect(screen.getByText(/⚠ Sin jornada/)).toHaveAttribute(
       "title",
-      "La regla de nocturnidad por nombramiento no se aplica.",
+      "Sin jornada laboral no se le asigna transporte.",
     );
     expect(screen.getByText("Sin patrón")).toBeInTheDocument();
   });
@@ -372,9 +397,11 @@ describe("garajes", () => {
 
     await usuario.click(screen.getByRole("button", { name: "Dar de baja Garaje Eloy Alfaro" }));
     expect(
-      screen.getByText("Ya no podrá elegirse como destino de la flota al terminar la jornada."),
+      screen.getByText(
+        "Ya no podrá elegirse como destino de la flota al terminar la jornada. Su historial se conserva y puede reactivarlo después.",
+      ),
     ).toBeInTheDocument();
-    await usuario.click(screen.getByRole("button", { name: "Sí, dar de baja" }));
+    await usuario.click(confirmarBaja());
     expect(FlotaService.darDeBajaUbicacion).toHaveBeenCalledWith(2);
     expect(FlotaService.actualizarUbicacion).not.toHaveBeenCalled();
   });
@@ -512,37 +539,67 @@ describe("baja y reactivación", () => {
     await usuario.click(screen.getByRole("button", { name: "Dar de baja PBA-1235" }));
 
     expect(FlotaService.impactoBaja).toHaveBeenCalledWith("vehiculos", 1);
-    expect(
-      await screen.findByText(
-        "Dejará de ofrecerse en la asignación de transporte. Su historial se conserva. Quedarán sin vehículo habitual: ESCALERAS KEVIN ANDRES.",
-      ),
-    ).toBeInTheDocument();
-    await usuario.click(screen.getByRole("button", { name: "Sí, dar de baja" }));
+    const modal = await screen.findByRole("alertdialog", { name: "¿Dar de baja PBA-1235?" });
+    expect(modal).toHaveTextContent(
+      "Dejará de ofrecerse en la asignación de transporte. Su historial se conserva y puede reactivarlo después. Quedarán sin vehículo habitual: ESCALERAS KEVIN ANDRES.",
+    );
+    await usuario.click(confirmarBaja());
     expect(FlotaService.desactivarVehiculo).toHaveBeenCalledWith(1);
-    expect(
-      await screen.findByText("El vehículo de placa PBA-1235 dejó de ofrecerse en la asignación de transporte"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("PBA-1235 dado de baja")).toBeInTheDocument();
+    expect(screen.getByText("Quedaron sin vehículo habitual: ESCALERAS KEVIN ANDRES.")).toBeInTheDocument();
   });
 
-  it("con transporte asignado desde hoy no se ofrece confirmar: se dice por qué", async () => {
+  it("la baja ya no se bloquea antes de preguntar: se confirma y decide el servidor (D2)", async () => {
     const usuario = userEvent.setup();
-    vi.mocked(FlotaService.impactoBaja).mockResolvedValue({
-      asignacionesVigentes: 2,
-      primeraAsignacion: { fecha: "2026-10-15", horaInicio: "07:30", identificador: "F5-2026-10-15-003" },
-      conductoresHabituales: [],
+    vi.mocked(FlotaService.desactivarConductor).mockResolvedValue({
+      registro: { id: 10, activo: false },
+      operativosHistoricos: 2,
+      mensaje: "ESCALERAS KEVIN ANDRES dejó de ofrecerse a la DAF.",
     });
     montar("/?tab=conductores");
     await screen.findByText("ESCALERAS KEVIN ANDRES");
 
     await usuario.click(screen.getByRole("button", { name: "Dar de baja ESCALERAS KEVIN ANDRES" }));
 
-    // Un mensaje estándar de error (no se permite), con el porqué y qué hacer.
-    const error = await screen.findByRole("alertdialog", { name: "No se puede dar de baja" });
-    expect(error).toHaveTextContent(
-      "ESCALERAS KEVIN ANDRES tiene transporte asignado el 15/10/2026 a las 07H30 (operativo F5-2026-10-15-003) y 1 operativo más. Libere esa asignación en «Planificar el día» antes de darlo de baja.",
+    // Del conductor no se pregunta nada antes: el modal es la confirmación de peligro.
+    expect(FlotaService.impactoBaja).not.toHaveBeenCalled();
+    expect(
+      await screen.findByRole("alertdialog", { name: "¿Dar de baja ESCALERAS KEVIN ANDRES?" }),
+    ).toHaveTextContent("Dejará de ofrecerse a la DAF. Su historial se conserva y puede reactivarlo después.");
+    await usuario.click(confirmarBaja());
+    expect(FlotaService.desactivarConductor).toHaveBeenCalledWith(10);
+  });
+
+  it("[Deshacer] del aviso reactiva lo que se acaba de dar de baja", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(FlotaService.impactoBaja).mockResolvedValue({
+      asignacionesVigentes: 0,
+      primeraAsignacion: null,
+      conductoresHabituales: [],
+    });
+    vi.mocked(FlotaService.desactivarVehiculo).mockResolvedValue({
+      registro: vehiculo({ id: 2, placa: "PMA-7056", activo: false }),
+      operativosHistoricos: 0,
+      mensaje: "El vehículo de placa PMA-7056 dejó de ofrecerse en la asignación de transporte.",
+      conductoresSinVehiculo: [],
+    });
+    vi.mocked(FlotaService.reactivarVehiculo).mockResolvedValue(FLOTA[1]);
+    montar();
+    await screen.findByText("PMA-7056");
+
+    // Tras la baja, con el filtro «Activos» la fila sale y el paginador baja.
+    vi.mocked(FlotaService.listarVehiculos).mockResolvedValue(
+      FLOTA.map((uno) => (uno.id === 2 ? { ...uno, activo: false } : uno)),
     );
-    expect(screen.queryByRole("button", { name: "Sí, dar de baja" })).toBeNull();
-    expect(FlotaService.desactivarConductor).not.toHaveBeenCalled();
+    await usuario.click(screen.getByRole("button", { name: "Dar de baja PMA-7056" }));
+    await screen.findByRole("alertdialog");
+    await usuario.click(confirmarBaja());
+    expect(await screen.findByText("PMA-7056 dado de baja")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("PMA-7056", { selector: "td span" })).toBeNull());
+    expect(await textoPaginador()).toBe("Mostrando 1–1 de 1");
+
+    await usuario.click(screen.getByRole("button", { name: "Deshacer" }));
+    expect(FlotaService.reactivarVehiculo).toHaveBeenCalledWith(2);
   });
 
   it("si el servidor la rechaza al confirmar (409), su mensaje se muestra tal cual", async () => {
@@ -563,9 +620,12 @@ describe("baja y reactivación", () => {
     await screen.findByText("QUISHPE JORGE");
 
     await usuario.click(screen.getByRole("button", { name: "Dar de baja QUISHPE JORGE" }));
-    await usuario.click(await screen.findByRole("button", { name: "Sí, dar de baja" }));
+    await screen.findByRole("alertdialog");
+    await usuario.click(confirmarBaja());
 
+    // El MISMO modal pasa a error, con el motivo del servidor tal cual.
     expect(await screen.findByText(delServidor)).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: "No se pudo dar de baja" })).toBeInTheDocument();
   });
 
   it("un dado de baja se reactiva con su botón, sin confirmación", async () => {
@@ -652,23 +712,97 @@ describe("documentos sin fechas (A5)", () => {
 });
 
 describe("descripción y placa en la tabla", () => {
-  it("bajo la placa solo va la descripción real: vacía o igual al tipo, no se pinta", () => {
+  it("«Descripción del vehículo» lleva el tipo y la descripción real; «Asientos», el número (2026-10-20)", () => {
     render(
       <TablaVehiculos
         {...propsTabla}
         kmMaximo={999_999}
         conductores={[]}
         vehiculos={[
-          vehiculo({ id: 1, placa: "PMA3370", tipo: "Camioneta", descripcion: "Camioneta" }),
-          vehiculo({ id: 2, placa: "PMA-7056", tipo: "Auto", descripcion: null }),
+          vehiculo({ id: 1, placa: "PMA3370", tipo: "Camioneta", descripcion: "Camioneta", asientos: 2 }),
+          vehiculo({ id: 2, placa: "PMA-7056", tipo: "Camioneta", descripcion: "doble cabina blanca" }),
+          vehiculo({ id: 3, placa: "PMA-7057", tipo: null, descripcion: null, asientos: null }),
         ]}
       />,
     );
-    // «Camioneta» solo una vez: la columna Tipo, no repetida bajo la placa.
-    expect(screen.getAllByText("Camioneta")).toHaveLength(1);
-    expect(screen.queryByText("—")).toBeNull();
-    // La placa guardada sin guion se muestra normalizada.
-    expect(screen.getByText("PMA-3370")).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader").map((celda) => celda.textContent)).toEqual([
+      "Placa",
+      "Descripción del vehículo",
+      "Asientos",
+      "Kilometraje",
+      "Documentos",
+      "Conductores habituales",
+      "Disponibilidad",
+      "Estado",
+      "Acciones",
+    ]);
+    // La descripción que repite el tipo no se repite; la real se suma.
+    expect(within(filaCon("PMA-3370")).getByText("Camioneta")).toBeInTheDocument();
+    expect(within(filaCon("PMA-3370")).getByText("2")).toBeInTheDocument();
+    expect(within(filaCon("PMA-7056")).getByText("Camioneta · doble cabina blanca")).toBeInTheDocument();
+    // Sin datos, «—» en descripción y asientos.
+    expect(within(filaCon("PMA-7057")).getAllByText("—").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("«Disponibilidad»: Disponible en verde, «En taller hasta jue 22/10» en ámbar con su motivo, «—» de baja", () => {
+    render(
+      <TablaVehiculos
+        {...propsTabla}
+        kmMaximo={999_999}
+        conductores={[]}
+        disponibilidad={
+          new Map([
+            [1, { vehiculoId: 1, placa: "PBA-1235", activo: true, disponibilidad: "DISPONIBLE", enTaller: null, paradas: [] }],
+            [
+              2,
+              {
+                vehiculoId: 2,
+                placa: "PMA-7056",
+                activo: true,
+                disponibilidad: "EN_TALLER",
+                enTaller: { hasta: "2026-10-22", motivo: "Cambio de frenos" },
+                paradas: [],
+              },
+            ],
+            [3, { vehiculoId: 3, placa: "ABM-999", activo: false, disponibilidad: "DE_BAJA", enTaller: null, paradas: [] }],
+          ] as const)
+        }
+        vehiculos={[
+          vehiculo(),
+          vehiculo({ id: 2, placa: "PMA-7056" }),
+          vehiculo({
+            id: 3,
+            placa: "ABM-999",
+            activo: false,
+            bajaEn: "2026-10-14T20:56:57.198Z",
+            bajaPorNombre: "Ana Pérez",
+          }),
+        ]}
+      />,
+    );
+    expect(within(filaCon("PBA-1235")).getByText("Disponible")).toHaveClass("badge-success");
+    const taller = within(filaCon("PMA-7056")).getByText(/En taller hasta jue 22\/10/);
+    expect(taller).toHaveClass("badge-warning");
+    expect(taller).toHaveTextContent("Cambio de frenos");
+    // La séptima celda es «Disponibilidad».
+    expect(within(filaCon("ABM-999")).getAllByRole("cell")[6]).toHaveTextContent(/^—$/);
+    // «De baja» dice cuándo y quién, también para el lector de pantalla.
+    expect(within(filaCon("ABM-999")).getByText(/De baja/)).toHaveTextContent(
+      "Dado de baja el 14/10/2026 por Ana Pérez",
+    );
+    // De baja: Editar y Reactivar; activo: Editar, Programar mantenimiento y Dar de baja.
+    expect(screen.queryByRole("button", { name: "Programar mantenimiento ABM-999" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Programar mantenimiento PBA-1235" })).toBeInTheDocument();
+  });
+
+  it("sin el permiso de mantenimiento, «Programar mantenimiento» se ve apagado con su motivo", () => {
+    render(
+      <TablaVehiculos {...propsTabla} puedeProgramar={false} kmMaximo={999_999} conductores={[]} vehiculos={[vehiculo()]} />,
+    );
+    expect(screen.getByRole("button", { name: "Programar mantenimiento PBA-1235" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 });
 
@@ -738,12 +872,11 @@ const textoPaginador = async (): Promise<string> =>
 const filasDeDatos = () => screen.getAllByRole("row").length - 1;
 
 describe("paginado (A8)", () => {
-  it("con 19 registros: 10 por página, «Mostrando 1–10 de 19» y el contador cuenta lo filtrado", async () => {
+  it("con 19 registros: 10 por página, «Mostrando 1–10 de 19» (el total está en el paginador)", async () => {
     vi.mocked(FlotaService.listarVehiculos).mockResolvedValue(flotaDe(19));
     montar();
     expect(await textoPaginador()).toBe("Mostrando 1–10 de 19");
     expect(filasDeDatos()).toBe(10);
-    expect(screen.getByText("19 de 19")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Página 1" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "Página 2" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "‹ Anterior" })).toHaveAttribute("aria-disabled", "true");
@@ -846,7 +979,8 @@ describe("paginado (A8)", () => {
       antes.map((uno) => (uno.id === antes[10].id ? { ...uno, activo: false } : uno)),
     );
     await usuario.click(screen.getByRole("button", { name: "Dar de baja AAA-111" }));
-    await usuario.click(await screen.findByRole("button", { name: "Sí, dar de baja" }));
+    await screen.findByRole("alertdialog");
+    await usuario.click(confirmarBaja());
 
     await waitFor(async () => expect(await textoPaginador()).toBe("Mostrando 1–10 de 10"));
     // La página corregida pasa al estado y de ahí a la URL.
@@ -932,12 +1066,12 @@ describe("ajustes finales (2026-10-15)", () => {
     await screen.findByText("Garaje Eloy Alfaro");
 
     await usuario.click(screen.getByRole("button", { name: "Dar de baja Garaje Eloy Alfaro" }));
-    expect(await screen.findByRole("button", { name: "Sí, dar de baja" })).toBeInTheDocument();
+    expect(await screen.findByRole("alertdialog", { name: "¿Dar de baja Garaje Eloy Alfaro?" })).toBeInTheDocument();
     await usuario.click(screen.getByRole("button", { name: "Cancelar" }));
 
     await usuario.click(screen.getByRole("button", { name: "De baja" }));
     await usuario.click(screen.getByRole("button", { name: "Reactivar Garaje Calderón" }));
-    expect(screen.queryByRole("button", { name: "Sí, dar de baja" })).toBeNull();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(FlotaService.reactivarUbicacion).toHaveBeenCalledWith(3);
     expect(await screen.findByText("Garaje Calderón vuelve a estar vigente")).toBeInTheDocument();
   });
@@ -949,7 +1083,7 @@ describe("ajustes finales (2026-10-15)", () => {
       "Identificación",
       "Teléfono",
       "Vehículo habitual",
-      "Sector · contrato",
+      "Sector · jornada",
       "Patrón",
       "Estado",
       "Acciones",
@@ -1136,5 +1270,177 @@ describe("ausencias de los conductores", () => {
     await persona.click(within(cajon).getByRole("button", { name: "Sí, quitar" }));
 
     await waitFor(() => expect(FlotaService.retirarAusenciaConductor).toHaveBeenCalledWith(10, 9));
+  });
+});
+
+describe("pestañas, indicadores y mantenimiento en Vehículos (2026-10-20)", () => {
+  const DIA = (fecha: string) => ({
+    fecha,
+    hasta: fecha,
+    vehiculos: [
+      { vehiculoId: 1, placa: "PBA-1235", activo: true, disponibilidad: "DISPONIBLE" as const, enTaller: null, paradas: [] },
+      {
+        vehiculoId: 2,
+        placa: "PMA7056",
+        activo: true,
+        disponibilidad: "EN_TALLER" as const,
+        enTaller: { hasta: "2099-10-23", motivo: "Cambio de frenos" },
+        paradas: [
+          {
+            id: 70,
+            desde: fecha,
+            hasta: "2099-10-23",
+            motivo: "Cambio de frenos",
+            estado: "EN_TALLER" as const,
+            taller: null,
+            hora: null,
+          },
+        ],
+      },
+      { vehiculoId: 3, placa: "ABM-999", activo: false, disponibilidad: "DE_BAJA" as const, enTaller: null, paradas: [] },
+    ],
+  });
+
+  it("orden Conductores · Vehículos · Garajes, y Conductores por omisión", async () => {
+    montar("/");
+    const pestanas = await screen.findAllByRole("tab");
+    expect(pestanas.map((una) => una.textContent?.replace(/\d+.*$/, "").trim())).toEqual([
+      "Conductores",
+      "Vehículos",
+      "Garajes autorizados",
+    ]);
+    expect(screen.getByRole("tab", { name: /Conductores/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("ESCALERAS KEVIN ANDRES")).toBeInTheDocument();
+  });
+
+  it("cinco indicadores en su orden; «En taller hoy» abre la Lista con la ficha «Solo en taller ese día»", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(FlotaService.resumen).mockResolvedValue({
+      ...RESUMEN,
+      vehiculos: { ...RESUMEN.vehiculos, enTallerHoy: 1 },
+    });
+    vi.mocked(FlotaService.disponibilidad).mockImplementation((fecha: string) => Promise.resolve(DIA(fecha)));
+    montar("/");
+    await screen.findByText("ESCALERAS KEVIN ANDRES");
+
+    const tarjetas = within(screen.getByRole("group", { name: "Indicadores de la flota" })).getAllByRole("button");
+    expect(tarjetas.map((una) => una.getAttribute("aria-label")?.split(":")[0])).toEqual([
+      "Conductores activos",
+      "Vehículos activos",
+      "En taller hoy",
+      "Documentos por vencer",
+      "Sin conductor habitual",
+    ]);
+    const enTaller = screen.getByRole("button", { name: /^En taller hoy: 1..*Requiere atención$/ });
+
+    await usuario.click(enTaller);
+    expect(screen.getByTestId("url")).toHaveTextContent("tab=vehiculos&filtro=en-taller");
+    expect(screen.getByRole("button", { name: "Quitar el filtro «Solo en taller ese día»" })).toBeInTheDocument();
+    expect(await screen.findByText("PMA-7056")).toBeInTheDocument();
+    expect(screen.queryByText("PBA-1235")).toBeNull();
+  });
+
+  it("«Estado el día» pide la disponibilidad de esa fecha", async () => {
+    montar();
+    await screen.findByText("PBA-1235");
+
+    fireEvent.change(screen.getByLabelText("Estado el día"), { target: { value: "2026-10-23" } });
+    await waitFor(() => expect(FlotaService.disponibilidad).toHaveBeenCalledWith("2026-10-23"));
+  });
+
+  it("el calendario semanal: barra con el motivo, día elegido resaltado, semanas ‹ › y el vacío", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(FlotaService.disponibilidad).mockImplementation((fecha: string) => Promise.resolve(DIA(fecha)));
+    montar("/?tab=vehiculos&vista=calendario");
+
+    const calendario = await screen.findByRole("table", { name: "Paradas de taller de la semana" });
+    expect(within(calendario).getByText("Cambio de frenos")).toHaveClass("truncate");
+    // Solo los activos con paradas: ni PBA-1235 (sin paradas) ni la de baja.
+    expect(within(calendario).queryByText("PBA-1235")).toBeNull();
+    expect(within(calendario).getByText("PMA-7056")).toBeInTheDocument();
+    // El día elegido es el primero de la semana y se marca.
+    const cabeceras = within(calendario).getAllByRole("columnheader");
+    expect(cabeceras[1]).toHaveAttribute("aria-current", "date");
+    expect(cabeceras[1]).toHaveClass("bg-primary/5");
+    // Sin paginador en el calendario.
+    expect(screen.queryByText(/^Mostrando/)).toBeNull();
+
+    const llamadas = vi.mocked(FlotaService.disponibilidad).mock.calls.length;
+    await usuario.click(screen.getByRole("button", { name: "Semana siguiente" }));
+    await waitFor(() => expect(vi.mocked(FlotaService.disponibilidad).mock.calls.length).toBeGreaterThan(llamadas));
+    // La semana siguiente ya no incluye el día elegido.
+    const despues = within(screen.getByRole("table", { name: "Paradas de taller de la semana" }));
+    expect(despues.getAllByRole("columnheader").some((una) => una.getAttribute("aria-current"))).toBe(false);
+
+    vi.mocked(FlotaService.disponibilidad).mockResolvedValue({ fecha: "2026-10-20", hasta: "2026-10-26", vehiculos: [] });
+    await usuario.click(screen.getByRole("button", { name: "Hoy" }));
+    await usuario.click(screen.getByRole("button", { name: "Semana anterior" }));
+    expect(await screen.findByText("Ningún vehículo en taller esta semana.")).toBeInTheDocument();
+  });
+
+  it("el calendario respeta el buscador", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(FlotaService.disponibilidad).mockImplementation((fecha: string) => Promise.resolve(DIA(fecha)));
+    montar("/?tab=vehiculos&vista=calendario");
+    await screen.findByText("Cambio de frenos");
+
+    await usuario.type(screen.getByRole("searchbox"), "PBA");
+    expect(await screen.findByText("Ningún vehículo en taller esta semana.")).toBeInTheDocument();
+  });
+
+  it("[Lista | Calendario semanal] escribe la vista en la URL", async () => {
+    const usuario = userEvent.setup();
+    montar();
+    await screen.findByText("PBA-1235");
+
+    await usuario.click(screen.getByRole("button", { name: "Calendario semanal" }));
+    expect(screen.getByTestId("url")).toHaveTextContent("vista=calendario");
+    await usuario.click(screen.getByRole("button", { name: "Lista" }));
+    expect(screen.getByTestId("url")).not.toHaveTextContent("vista=");
+  });
+
+  it("«Programar mantenimiento» de la fila abre su cajón con la placa", async () => {
+    const usuario = userEvent.setup();
+    montar();
+    await screen.findByText("PBA-1235");
+
+    await usuario.click(screen.getByRole("button", { name: "Programar mantenimiento PBA-1235" }));
+    const cajon = await screen.findByRole("dialog", { name: "Programar mantenimiento" });
+    expect(cajon).toHaveTextContent("PBA-1235 · Camioneta");
+  });
+});
+
+describe("plantilla visual (2026-10-24)", () => {
+  /** La cabecera azul de `PanelTabla` que contiene a un elemento. */
+  const cabeceraDe = (elemento: HTMLElement) => elemento.closest(".app-section-header");
+
+  it("las pestañas van en la cabecera azul, sin números, y «+ Nuevo …» a su derecha", async () => {
+    const usuario = userEvent.setup();
+    montar();
+    await screen.findByText("PBA-1235");
+
+    const pestanas = screen.getByRole("tablist", { name: "Maestro" });
+    const cabecera = cabeceraDe(pestanas);
+    expect(cabecera).not.toBeNull();
+    for (const pestana of within(pestanas).getAllByRole("tab")) {
+      expect(pestana.textContent).not.toMatch(/\d/);
+    }
+    expect(within(cabecera as HTMLElement).getByRole("button", { name: "+ Nuevo vehículo" })).toBeInTheDocument();
+
+    await usuario.click(screen.getByRole("tab", { name: "Conductores" }));
+    expect(within(cabecera as HTMLElement).getByRole("button", { name: "+ Nuevo conductor" })).toBeInTheDocument();
+    await usuario.click(screen.getByRole("tab", { name: "Garajes autorizados" }));
+    expect(within(cabecera as HTMLElement).getByRole("button", { name: "+ Nuevo garaje" })).toBeInTheDocument();
+  });
+
+  it("sin el contador «X de Y» en la barra, y la ayuda de la pestaña como nota del pie", async () => {
+    montar();
+    await screen.findByText("PBA-1235");
+
+    expect(screen.queryByText(/^\d+ de \d+$/)).toBeNull();
+    const nota = screen.getByText(
+      "Un vehículo sin conductor habitual no se propone automáticamente al planificar el día.",
+    );
+    expect(nota.closest("[data-nota-panel]")).not.toBeNull();
   });
 });

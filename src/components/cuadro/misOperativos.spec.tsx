@@ -72,7 +72,8 @@ import type { Operativo } from "../../interfaces/Operativo.ts";
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
     id: 1,
     identificador: "IG-002-31-JUL-2026",
-    grupoRegistro: null,
+    grupoRegistro: "registro-suelto",
+    esLote: false,
     secuencial: 2,
     cuadroFecha: "2026-07-31",
     // Los tres del operativo adicional. Faltaban, y el `as Operativo` que llevaba esta
@@ -222,7 +223,7 @@ describe("anchos de Mis operativos · una sola línea donde corresponde", () => 
     });
   };
 
-  it("«Sin conductor» va en una línea, con su relleno, y la columna tiene mínimo de 130 px", () => {
+  it("«Sin conductor» va en una línea, con su relleno, y la columna tiene mínimo de 120 px", () => {
     render(
       <TablaOperativos
         operativos={[
@@ -239,8 +240,39 @@ describe("anchos de Mis operativos · una sola línea donde corresponde", () => 
     const distintivo = screen.getByText("Sin conductor");
     expect(distintivo).toHaveClass("whitespace-nowrap", "px-2", "py-0.5");
     expect(screen.getByRole("columnheader", { name: "Conductor" })).toHaveClass(
-      "min-w-[130px]",
+      "min-w-[120px]",
     );
+  });
+
+  it("la etiqueta de Estado va en una línea y su columna tiene mínimo de 120 px (2026-10-26)", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo({ estadoTransporte: "PROPIOS_MEDIOS" })]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const etiqueta = screen.getByText("Propios medios", { selector: ".badge" });
+    expect(etiqueta).toHaveClass("badge", "whitespace-nowrap");
+    expect(etiqueta.closest("td")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByRole("columnheader", { name: "Estado" })).toHaveClass("min-w-[120px]");
+  });
+
+  it("con vehículo de otra institución, Conductor dice «—» y solo Transporte lo nombra", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo({ tipoTransporte: "OTRA_INSTITUCION" })]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const encabezados = screen.getAllByRole("columnheader").map((th) => th.textContent?.trim());
+    const celdas = within(screen.getAllByRole("row")[1]).getAllByRole("cell");
+    expect(celdas[encabezados.indexOf("Conductor")]).toHaveTextContent(/^—$/);
+    expect(celdas[encabezados.indexOf("Transporte")]).toHaveTextContent(
+      "Vehículo de otra institución",
+    );
+    expect(celdas[encabezados.indexOf("Estado")]).toHaveTextContent("Pendiente");
   });
 
   it("el identificador va en una línea y su columna tiene mínimo de 170 px", () => {
@@ -309,19 +341,18 @@ describe("anchos de Mis operativos · una sola línea donde corresponde", () => 
     expect(filtrarOperativos([conPersona(null)], { personal: "aguirre" })).toHaveLength(1);
   });
 
-  it("el horario va en dos líneas: «08H00 a» arriba y «15H00» abajo", () => {
+  // Plantilla visual (2026-10-24): el horario ya no se parte en dos líneas.
+  it("el horario va en una sola línea que no se parte, con la «a» en minúscula", () => {
     render(
       <TablaOperativos
-        operativos={[operativo({ horario: "08H00 a 15H00" })]}
+        operativos={[operativo({ horario: "08H00 A 15H00" })]}
         columnas={COLUMNAS_LISTADO}
       />,
     );
 
-    const inicio = screen.getByText("08H00 a");
-    const fin = screen.getByText("15H00");
-    expect(inicio).toHaveClass("block", "whitespace-nowrap");
-    expect(fin).toHaveClass("block", "whitespace-nowrap");
-    expect(inicio.closest("td")).toBe(fin.closest("td"));
+    const horario = screen.getByText("08H00 a 15H00");
+    expect(horario).toHaveClass("whitespace-nowrap");
+    expect(horario).toHaveAttribute("data-horario", "08H00 A 15H00");
     // El filtro sigue usando el texto de una línea.
     expect(
       filtrarOperativos([operativo({ horario: "08H00 a 15H00" })], { horario: "08h00 a 15" }),
@@ -368,14 +399,15 @@ describe("los formularios que operan por propios medios lo dicen (RN-41, RN-42)"
     });
 
   /*
-    SIN COLUMNA TRANSPORTE (P-02): el conductor lo dice, en gris corriente y SIN FONDO (2026-10-13:
-    el distintivo gris se leía como otra celda dentro de la fila).
+    SIN COLUMNA TRANSPORTE: el conductor lo dice, en gris corriente y SIN FONDO (2026-10-13: el
+    distintivo gris se leía como otra celda dentro de la fila). Desde el 2026-10-26 P-02 sí la
+    lleva; la regla sigue para una tabla que no la tenga.
   */
   it("sin la columna Transporte, el conductor dice «Propios medios» en gris, sin fondo", () => {
     render(
       <TablaOperativos
         operativos={[fijos()]}
-        columnas={COLUMNAS_LISTADO}
+        columnas={COLUMNAS_LISTADO.filter((columna) => columna !== "transporte")}
       />,
     );
 
@@ -444,7 +476,7 @@ describe("P-01 · la tabla de Mis operativos, con sus columnas (2026-10-13)", ()
     ]);
   });
 
-  it("P-02 conserva las suyas: con Formulario, sin Transporte, y con Observaciones (2026-10-19)", () => {
+  it("P-02 conserva las suyas: con Formulario, con Transporte (2026-10-26) y con Observaciones", () => {
     render(<TablaOperativos operativos={[operativo()]} columnas={COLUMNAS_LISTADO} />);
 
     expect(
@@ -458,6 +490,7 @@ describe("P-01 · la tabla de Mis operativos, con sus columnas (2026-10-13)", ()
       "Zonal",
       "Punto",
       "Tipo de control",
+      "Transporte",
       "Conductor",
       "Estado",
       "Observaciones",
@@ -609,11 +642,12 @@ describe("la fila de filtros solo aparece cuando la pantalla la maneja", () => {
       />,
     );
 
-    // El conductor no se filtra: su celda muestra una alerta, no un texto propio.
-    expect(screen.queryByLabelText("Filtrar por conductor")).toBeNull();
-
     await userEvent.type(screen.getByLabelText("Filtrar por punto"), "m");
     expect(cambiar).toHaveBeenCalledWith("punto", "m");
+
+    // El conductor también desde el 2026-10-26 (filtra por nombre y placa, no por la alerta).
+    await userEvent.type(screen.getByLabelText("Filtrar por conductor"), "p");
+    expect(cambiar).toHaveBeenCalledWith("conductor", "p");
   });
 });
 
@@ -852,6 +886,7 @@ describe("BUG #9 · la fila de la tabla refleja el personal tras asignar", () =>
           nombre: "REDROVAN JUAN",
           area: "OPERATIVOS",
           telefono: null,
+          cargo: null,
           esResponsable: false,
           asignadoPorRol: "DMIP_OPERATIVOS",
           horaInicio: "09:00",
@@ -929,5 +964,52 @@ describe("BUG #9 · la fila de la tabla refleja el personal tras asignar", () =>
         "Este operativo todavía no tiene personal asignado.",
       ),
     ).toBeNull();
+  });
+
+  /*
+    TODO CAMBIO ESPERA A «GUARDAR CAMBIOS» (2026-10-24): un formulario de patrulla SIN grupo (el
+    Form 4, un operativo suelto) ya no guarda cada persona al instante. Solo la patrulla con grupo
+    (Form 5/6) sigue con su roster.
+  */
+  it("en un operativo de patrulla sin grupo (Form 4) el personal también espera a «Guardar cambios»", async () => {
+    const instituciones = [{ id: 7, sigla: "AMC", nombre: "AMC" }];
+    const base = operativo();
+    const deEcu = operativo({
+      creadoPorRol: "DMIP_OPERATIVOS",
+      personal: [],
+      instituciones,
+      grupoRegistro: "registro-suelto",
+      esLote: false,
+      formulario: { ...base.formulario, esPatrulla: true },
+    });
+    const meta = { total: 1, pagina: 1, tamanio: 200, totalPaginas: 1 };
+    vi.mocked(OperativoService.consultar).mockResolvedValue({ datos: [deEcu], meta });
+    vi.mocked(OperativoService.asignarPersonal).mockResolvedValue(deEcu);
+    vi.mocked(OperativoService.actualizarTurnoPersonal).mockResolvedValue(deEcu);
+    vi.mocked(OperativoService.editar).mockResolvedValue(deEcu);
+    vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([
+      {
+        id: 7,
+        apellidos: "REDROVAN",
+        nombres: "JUAN",
+        area: "OPERATIVOS",
+        cargo: null,
+        elegible: true,
+        motivo: null,
+      },
+    ]);
+
+    render(<MisOperativosPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Editar / }));
+    await userEvent.click(await screen.findByRole("button", { name: "+ Agregar" }));
+
+    expect(OperativoService.asignarPersonal).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Se guarda al instante/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    await waitFor(() =>
+      expect(OperativoService.asignarPersonal).toHaveBeenCalledWith(1, { funcionarioId: 7 }),
+    );
   });
 });

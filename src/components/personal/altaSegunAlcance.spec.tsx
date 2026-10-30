@@ -26,6 +26,7 @@
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AdminPersonalPage from "../../pages/AdminPersonalPage.tsx";
@@ -50,7 +51,11 @@ const abrirPantalla = (areas: AreaPersonal[]) => {
   vi.mocked(PersonalService.listar).mockResolvedValue([]);
   vi.mocked(PersonalService.areasQueGestiona).mockResolvedValue(areas);
 
-  return render(<AdminPersonalPage />);
+  return render(
+    <MemoryRouter>
+      <AdminPersonalPage />
+    </MemoryRouter>,
+  );
 };
 
 afterEach(() => {

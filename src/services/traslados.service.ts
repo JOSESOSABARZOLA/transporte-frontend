@@ -3,7 +3,8 @@
  * Módulo: Transporte (DAF)
  * Feature: Traslados entre zonales
  * Archivo: traslados.service.ts
- * Responsabilidad: Leer y guardar la matriz de minutos de traslado entre zonales.
+ * Responsabilidad: Leer y guardar la matriz de minutos de traslado entre zonales, y medir el
+ *                  impacto de un cambio antes de guardarlo.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-06
  *
@@ -63,4 +64,41 @@ const guardar = async (pares: ParTraslado[]): Promise<{ guardados: number }> => 
   return data;
 };
 
-export const TrasladosService = { obtener, guardar };
+/** Un par de asignaciones que dejaría de llegar con la matriz propuesta (2026-10-20). */
+export interface ParQueNoLlegaria {
+  /** AAAA-MM-DD. */
+  fecha: string;
+  conductor: string;
+  placa: string | null;
+  desde: string;
+  hacia: string;
+  /** «HHhMM». */
+  fin: string;
+  inicio: string;
+  huecoMin: number;
+  antesMin: number;
+  despuesMin: number;
+  faltanMin: number;
+  mensaje: string;
+}
+
+export interface ImpactoTraslados {
+  desde: string;
+  hasta: string;
+  afectadas: number;
+  nuevasNoLlega: ParQueNoLlegaria[];
+  resueltas: number;
+}
+
+/**
+ * `POST /administracion/traslados/verificar-impacto` (2026-10-20): qué asignaciones ya hechas,
+ * desde hoy, dejarían de llegar con estos pares. Mismo cuerpo que `guardar`; no escribe nada.
+ */
+const verificarImpacto = async (pares: ParTraslado[]): Promise<ImpactoTraslados> => {
+  const { data } = await httpClient.post<ImpactoTraslados>(`${BASE}/verificar-impacto`, {
+    pares,
+  });
+  return data;
+};
+
+export const TrasladosService = { obtener, guardar, verificarImpacto };

@@ -56,6 +56,12 @@ type CeldaAlertaProps = {
    * y el dato queda centrado en el bloque, como una celda combinada de Excel (2026-09-14).
    */
   centrado?: boolean;
+  /**
+   * Texto corto que se LEE en la celda vacía con alerta (2026-10-26: «Sin asignar» en Conductor y
+   * Placa de la Jornada y la Matriz). El motivo completo queda en el `title`, como dice la nota al
+   * pie. Sin él, la celda muestra el motivo entero, como siempre.
+   */
+  textoCorto?: string;
 };
 
 const CeldaAlerta: FC<CeldaAlertaProps> = ({
@@ -65,6 +71,7 @@ const CeldaAlerta: FC<CeldaAlertaProps> = ({
   rowSpan,
   className,
   centrado,
+  textoCorto,
 }) => {
   const clase = claseDeAlerta(alertas, campo);
   const texto = textoDeAlerta(alertas, campo);
@@ -78,7 +85,7 @@ const CeldaAlerta: FC<CeldaAlertaProps> = ({
       rowSpan={rowSpan}
     >
       {vacia ? (
-        <span className="text-xs text-app-muted">{texto || "—"}</span>
+        <span className="text-xs text-app-muted">{(texto && textoCorto) || texto || "—"}</span>
       ) : (
         children
       )}

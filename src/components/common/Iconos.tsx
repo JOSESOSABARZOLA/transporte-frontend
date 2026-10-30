@@ -55,6 +55,8 @@ import {
   faCalendarWeek,
   faBan,
   faCalendarDays,
+  faCalendarCheck,
+  faCalendarPlus,
   faCarSide,
   faCheck,
   faChevronDown,
@@ -79,12 +81,16 @@ import {
   faGear,
   faListCheck,
   faListUl,
+  faLocationDot,
+  faMap,
   faLock,
   faMagnifyingGlass,
   faMoon,
+  faNoteSticky,
   faPenToSquare,
   faPlus,
   faRotateLeft,
+  faRightLeft,
   faRoute,
   faTruck,
   faScrewdriverWrench,
@@ -96,6 +102,7 @@ import {
   faTrashCan,
   faTriangleExclamation,
   faKey,
+  faUser,
   faUserClock,
   faUserGear,
   faUserShield,
@@ -199,6 +206,11 @@ const ACCIONES = {
   // «Ver» de Mis operativos (2026-10-13): un cuadro cerrado o pasado solo se consulta.
   ver: faEye,
   ausencias: faCalendarDays,
+  // Cobertura por turnos (2026-10-24): los dos iconos de la fila de cada persona.
+  asignarTurnos: faCalendarPlus,
+  cambiarZona: faRightLeft,
+  // Personal y disponibilidad (2026-10-24): de la fila del maestro a sus turnos en la cobertura.
+  verTurnos: faCalendarCheck,
   /*
    * DESACTIVAR y ACTIVAR son las dos caras de la misma acción reversible de P-08 (PV-36):
    * un valor de catálogo se retira de la oferta y se puede volver a ofrecer. NO es
@@ -263,6 +275,17 @@ const ACCIONES = {
   informacion: faCircleInfo,
   /** El «Falta: …» del pie del cajón estándar (2026-10-15): acompaña al texto rojo (regla 6). */
   alerta: faTriangleExclamation,
+  /**
+   * Ficha de solo lectura del operativo (2026-10-28, `DetalleOperativoLectura`): el resumen
+   * («Horario», «Lugar») y los títulos «Personal asignado», «Lugar y control» y «Observaciones».
+   * Acompañan al rótulo, nunca lo sustituyen. `horario` repite el reloj de «Ventanas» a propósito:
+   * la regla de no repetir figura es del menú, y aquí el reloj dice lo mismo, una hora.
+   */
+  horario: faClock,
+  lugar: faLocationDot,
+  personaAsignada: faUser,
+  lugarYControl: faMap,
+  observaciones: faNoteSticky,
 } as const;
 
 /*

@@ -15,6 +15,7 @@
  */
 
 import type { TurnoConductor } from "./Planificacion.ts";
+import type { NivelEquidad, NivelFatiga } from "./Personal.ts";
 
 export type Paso = 1 | 2 | 3 | 4;
 
@@ -36,7 +37,14 @@ export interface Requisito {
   accion: AccionRequisito | null;
 }
 
-export type FaltaConductor = "sector" | "contrato" | "parqueadero";
+export type FaltaConductor = "sector" | "jornada" | "parqueadero";
+
+/** Un registro por zonas visto por la DAF: un solo operativo con todos sus identificadores. */
+export interface RegistroDaf {
+  grupoRegistro: string;
+  identificadores: string[];
+  tambienAtiende: { zonal: string; punto: string | null }[];
+}
 
 export interface OperativoJornada {
   id: number;
@@ -46,6 +54,13 @@ export interface OperativoJornada {
   horaFin: string;
   zonal: string | null;
   zonalId: number | null;
+  /** Punto de encuentro (2026-10-28): el origen de la zona principal en un registro por zonas. */
+  punto?: string | null;
+  /**
+   * Registro por zonas del 8 (2026-10-28): UNA solicitud por registro, con sus identificadores y
+   * las demás zonas («También atiende»). `null` o ausente en los demás formularios.
+   */
+  registro?: RegistroDaf | null;
   tipoTransporte: "COMPLETO" | "SOLO_INICIO" | "SOLO_FIN" | "INICIO_Y_FIN";
   esMacrooperativo: boolean;
   /**
@@ -151,6 +166,8 @@ export interface ResumenJornadaDaf {
     cubiertos: number;
     sinConductor: number;
     propiosMedios: number;
+    /** En vehículo de otra institución (2026-10-23): tampoco piden vehículo. */
+    otraInstitucion?: number;
     conductoresEnUso: number;
     libresEnUso: number;
     vehiculosDisponibles: number;
@@ -200,6 +217,19 @@ export interface Candidato {
   asignable: boolean;
   /** Con `COMPARTE`: el operativo cuya unidad se comparte (`POST /transporte/tramos/compartir`). */
   compartirCon?: { operativoId: number; identificador: string } | null;
+  /**
+   * REPARTO DE CARGA (2026-10-30). Las MISMAS dos señales advisory que el personal del registro:
+   * FATIGA (`indiceCarga`, `nivelFatiga`) y EQUIDAD frente a la cuota justa de los que pueden
+   * tomar el operativo. Opcionales: solo llegan si el servidor las calculó. No cambian la
+   * categoría ni `asignable`.
+   */
+  indiceCarga?: number;
+  nivelFatiga?: NivelFatiga;
+  /** Operativos que condujo en el período de equidad (semana). */
+  operativosAsignados?: number;
+  cuotaJusta?: number;
+  desviacionCarga?: number;
+  nivelEquidad?: NivelEquidad;
 }
 
 /**

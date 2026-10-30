@@ -111,7 +111,7 @@ const FICHA_VACIA: ValoresFichaAlta = {
   correoPersonal: "",
   cargo: "",
   area: "",
-  tipoContrato: "",
+  jornadaLaboralId: "",
   zonalId: "",
 };
 
@@ -122,7 +122,7 @@ const NOMBRE_CAMPO: Partial<Record<keyof ValoresFichaAlta, string>> = {
   cedula: "Cédula",
   apellidos: "Apellidos",
   nombres: "Nombres",
-  tipoContrato: "Contrato",
+  jornadaLaboralId: "Jornada laboral",
   area: "Área",
   telefono: "Teléfono",
   correoPersonal: "Correo personal",
@@ -320,8 +320,8 @@ const DrawerFlujoAlta: FC<DrawerFlujoAltaProps> = ({
 
   const obligatorios: (keyof ValoresFichaAlta)[] =
     modo === "manual" && !edicion
-      ? ["cedula", "apellidos", "nombres", "tipoContrato", "area"]
-      : ["apellidos", "nombres", "tipoContrato", "area"];
+      ? ["cedula", "apellidos", "nombres", "jornadaLaboralId", "area"]
+      : ["apellidos", "nombres", "jornadaLaboralId", "area"];
 
   const alEstado = useCallback((nuevo: EstadoFicha) => setEstado(nuevo), []);
 

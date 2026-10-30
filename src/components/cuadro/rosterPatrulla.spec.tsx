@@ -44,6 +44,7 @@ const asignada = (nombre: string, area: AreaPersonal): PersonaAsignada => ({
   nombre,
   area,
   telefono: null,
+  cargo: null,
   esResponsable: false,
   asignadoPorRol: "DMIP_INSPECCIONES" as RolDepartamental,
   horaInicio: "20:00",

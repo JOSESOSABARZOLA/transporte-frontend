@@ -25,12 +25,24 @@
  *     recién creada o editada se resalta en verde `MS_RESALTADO` ms en su página.
  *   · Baja con su modal centrado (motivo obligatorio) y REACTIVAR también con confirmación.
  *
+ * PLANTILLA VISUAL (2026-10-24): encabezado `EncabezadoPagina` y la tabla en `PanelTabla`, con
+ * cabecera azul «Maestro de personal», «+ Nuevo funcionario» en ella y los filtros en la barra
+ * blanca. El contador «N funcionarios · X activos de Y» se retiró: el total lo dice el paginador.
+ *
+ * DOS PESTAÑAS (2026-10-24): «Maestro de personal» y, para quien gestiona Instrucción, «Cobertura
+ * por turnos», en UN panel y con UN encabezado (antes la cobertura iba apilada debajo, con el suyo).
+ * La pestaña va en `?tab=maestro|cobertura`. La matriz queda montada mientras se ve el maestro, así
+ * cada pestaña conserva sus filtros; entrega sus piezas por `marco` y aquí se colocan. Entre las dos
+ * hay enlaces de NAVEGACIÓN: «Ver turnos» y «Ausente …» llevan a la persona en la cobertura, y su
+ * nombre en la cobertura abre sus Ausencias. Registrar o quitar una ausencia relee la matriz.
+ *
  * DAR DE BAJA NO BORRA. El histórico de quién salió en cada operativo depende de la ficha, y
  * quien sale hoy puede reingresar con su historial intacto. El servidor dice cuántos operativos
  * conserva, y se muestra.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import ModalBajaConMotivo from "../components/personal/ModalBajaConMotivo.tsx";
 import MensajeModal from "../components/common/MensajeModal.tsx";
@@ -39,7 +51,10 @@ import PanelAusencias, {
 } from "../components/personal/PanelAusencias.tsx";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import Paginacion from "../components/common/Paginacion.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
+import Pestanas, { type DefinicionPestana } from "../components/common/Pestanas.tsx";
 import SelectorSegmentado from "../components/forms/SelectorSegmentado.tsx";
 import DrawerFlujoAlta, {
   type OrigenAlta,
@@ -49,31 +64,34 @@ import type { ValoresFichaAlta } from "../components/personal/PasoFichaFuncionar
 import { PARA_FICHA } from "../components/personal/propositoDirectorio.ts";
 import TablaPersonal from "../components/personal/TablaPersonal.tsx";
 import type { AreaPersonal, Zonal } from "../interfaces/Formulario.ts";
-import MatrizCobertura from "../components/personal/MatrizCobertura.tsx";
+import MatrizCobertura, {
+  type PartesCobertura,
+} from "../components/personal/MatrizCobertura.tsx";
 import type { FilaDirectorio } from "../interfaces/DirectorioAuth.ts";
 import type {
   AusenciaDelMaestro,
   BajaFuncionario,
   Disponibilidad,
   Funcionario,
-  TipoContrato,
 } from "../interfaces/Personal.ts";
 import { PersonalService } from "../services/personal.service.ts";
 import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
 import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { DatetimeUtil } from "../utils/datetime.util.ts";
 import { MS_RESALTADO, paginar } from "../utils/listadoOperativos.util.ts";
-import { ausenciaAMostrar, fechaLarga } from "../utils/ausencias.util.ts";
+import { ausenciaAMostrar } from "../utils/ausencias.util.ts";
 import {
   FILTROS_INICIALES,
+  filtrosDesdeUrl,
   NOMBRE_AREA,
-  NOMBRE_CONTRATO,
+  FILTRO_SIN_JORNADA,
   filtrarPersonal,
   hayFiltrosDePersonal,
   nombreCompleto,
   type FiltrosPersonal,
 } from "../utils/personal.util.ts";
 import { toast } from "../utils/mensaje.ts";
+import { useJornadasLaborales } from "../hooks/useJornadasLaborales.ts";
 
 /** Opciones del selector de estado. «Todos» es el valor vacío del filtro. */
 const OPCIONES_ESTADO = [
@@ -81,6 +99,19 @@ const OPCIONES_ESTADO = [
   { valor: "inactivos", nombre: "Inactivos" },
   { valor: "", nombre: "Todos" },
 ];
+
+/** Las dos pestañas de la página; la cobertura solo para quien gestiona Instrucción. */
+type PestanaPersonal = "maestro" | "cobertura";
+const PESTANAS: DefinicionPestana<PestanaPersonal>[] = [
+  { id: "maestro", titulo: "Maestro de personal" },
+  { id: "cobertura", titulo: "Cobertura por turnos" },
+];
+
+const SUBTITULO: Record<PestanaPersonal, string> = {
+  maestro: "Maestro de funcionarios de la AMC. Es la única pantalla que muestra cédulas y teléfonos.",
+  cobertura:
+    "Qué días y en qué turno puede salir cada persona de Instrucción. Se guarda solo al editar.",
+};
 
 /** Códigos del servidor que dicen «Auth no tiene a esta persona o no responde»: salida manual. */
 const SIN_AUTH = new Set(["PERSONA_NO_ENCONTRADA_EN_AUTH", "AUTH_NO_DISPONIBLE"]);
@@ -108,7 +139,12 @@ const AdminPersonalPage = () => {
     [],
   );
 
-  const [filtros, setFiltros] = useState<FiltrosPersonal>(FILTROS_INICIALES);
+  // «N fichas de personal →» de «Jornadas laborales» abre con `?jornada=` (2026-10-24).
+  const [filtros, setFiltros] = useState<FiltrosPersonal>(() =>
+    filtrosDesdeUrl(window.location.search),
+  );
+  // El catálogo de jornadas laborales (2026-10-23), para el filtro «Jornada».
+  const { jornadas } = useJornadasLaborales();
   const [pagina, setPagina] = useState(0);
   // 10 por página, como Mis operativos (2026-10-08).
   const [tamanio, setTamanio] = useState(10);
@@ -132,6 +168,38 @@ const AdminPersonalPage = () => {
   const [resaltadoId, setResaltadoId] = useState<number | null>(null);
 
   const [avisoAusencia, setAvisoAusencia] = useState<string | null>(null);
+
+  // ── Pestañas y enlaces con la cobertura (2026-10-24) ──
+  const [params, setParams] = useSearchParams();
+  const gestionaInstruccion = areasQueGestiona.includes("INSTRUCCION" as AreaPersonal);
+  /** Llevar la cobertura a una persona (y su mes); `clave` lo vuelve a aplicar aunque se repita. */
+  const [enfoque, setEnfoque] = useState<{ texto: string; mes?: string; clave: number } | null>(
+    null,
+  );
+  /** Sube al registrar o quitar una ausencia: la matriz se relee para poner o quitar el candado. */
+  const [recargaCobertura, setRecargaCobertura] = useState(0);
+
+  const elegirPestana = useCallback(
+    (pestana: PestanaPersonal) => {
+      const siguientes = new URLSearchParams(params);
+      siguientes.set("tab", pestana);
+      setParams(siguientes, { replace: true });
+    },
+    [params, setParams],
+  );
+
+  /** A la cobertura, con la persona en el buscador y, si se pide, en un mes. */
+  const verEnCobertura = useCallback(
+    (funcionario: Funcionario, mes?: string) => {
+      setEnfoque((previo) => ({
+        texto: nombreCompleto(funcionario),
+        mes,
+        clave: (previo?.clave ?? 0) + 1,
+      }));
+      elegirPestana("cobertura");
+    },
+    [elegirPestana],
+  );
   const [aviso, setAviso] = useState<AvisoTexto | null>(null);
   /** Aviso breve, abajo a la derecha. */
 
@@ -152,8 +220,10 @@ const AdminPersonalPage = () => {
       const [fichas, areas, zonalesDelCatalogo] = await Promise.all([
         PersonalService.listar(true),
         PersonalService.areasQueGestiona(),
-        // Para el campo Zonal de la ficha. Si falla, el maestro sigue sirviendo.
-        CatalogoCuadroService.listarZonales().catch(() => [] as Zonal[]),
+        // Para el campo Zonal de la ficha. Con las desactivadas (2026-10-26): una ficha puede
+        // conservar una zonal que se desactivó después, y debe verse cuál es. Si falla, el maestro
+        // sigue sirviendo.
+        CatalogoCuadroService.listarZonales(true).catch(() => [] as Zonal[]),
         cargarAusenciasMaestro(),
       ]);
       setPersonal(fichas);
@@ -218,11 +288,6 @@ const AdminPersonalPage = () => {
     [personal],
   );
 
-  const activos = useMemo(
-    () => personal.filter((funcionario) => funcionario.activo).length,
-    [personal],
-  );
-
   const pagina0 = useMemo(
     () => paginar(coincidentes, pagina, tamanio),
     [coincidentes, pagina, tamanio],
@@ -269,7 +334,8 @@ const AdminPersonalPage = () => {
             correoPersonal: editando.correoPersonal ?? "",
             cargo: editando.cargo ?? "",
             area: editando.area,
-            tipoContrato: editando.tipoContrato,
+            jornadaLaboralId:
+              editando.jornadaLaboralId != null ? String(editando.jornadaLaboralId) : "",
             zonalId: editando.zonalId != null ? String(editando.zonalId) : "",
           }
         : null,
@@ -293,8 +359,10 @@ const AdminPersonalPage = () => {
       valores: ValoresFichaAlta,
       { crearOtro, origen }: { crearOtro: boolean; origen: OrigenAlta },
     ): Promise<ResultadoGuardado> => {
-      // Vacía va `undefined`: no se envía y el servidor conserva la que hubiera.
-      const zonalId = valores.zonalId !== "" ? Number(valores.zonalId) : undefined;
+      // Vacía: en el alta no se envía; al editar va `null` y la quita (2026-10-26). El campo
+      // muestra la zonal que tiene la ficha, así que dejarlo en «Sin zonal» es quitarla.
+      const zonalId =
+        valores.zonalId !== "" ? Number(valores.zonalId) : editando ? null : undefined;
 
       const datos = {
         apellidos: valores.apellidos,
@@ -304,7 +372,7 @@ const AdminPersonalPage = () => {
         correoPersonal: valores.correoPersonal || undefined,
         cargo: valores.cargo || undefined,
         area: valores.area as AreaPersonal,
-        tipoContrato: valores.tipoContrato as TipoContrato,
+        jornadaLaboralId: Number(valores.jornadaLaboralId),
         zonalId,
       };
 
@@ -398,9 +466,8 @@ const AdminPersonalPage = () => {
           motivo: valores.motivo.trim() || undefined,
         });
         await refrescarAusenciasDe(enAusencias.id);
-        toast.exito(
-          `Ausencia registrada: ${nombreCompleto(enAusencias)}, del ${fechaLarga(valores.desde)} al ${fechaLarga(valores.hasta)}.`,
-        );
+        setRecargaCobertura((valor) => valor + 1);
+        toast.exito("Ausencia registrada: esos días quedan bloqueados en la cobertura");
         return true;
       } catch (fallo: unknown) {
         // 409 AUSENCIA_SOLAPADA: el servidor conoce también lo que otro acaba de registrar.
@@ -423,7 +490,8 @@ const AdminPersonalPage = () => {
       try {
         await PersonalService.retirarAusencia(enAusencias.id, periodoId);
         await refrescarAusenciasDe(enAusencias.id);
-        toast.exito("Ausencia quitada.");
+        setRecargaCobertura((valor) => valor + 1);
+        toast.exito("Ausencia quitada: los turnos de esos días vuelven a verse");
       } catch (fallo: unknown) {
         // 409 AUSENCIA_PASADA: una ausencia que ya terminó es historial.
         setAvisoAusencia(presentarError(fallo).mensaje);
@@ -465,226 +533,275 @@ const AdminPersonalPage = () => {
     setPagina(0);
   };
 
-  return (
-    <section className="app-page-shell">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-1">
-          <p className="page-heading-kicker font-semibold uppercase">
-            Administración
-          </p>
-          <h1 className="page-heading-title">Personal y disponibilidad</h1>
-          <p className="page-heading-subtitle text-sm">
-            Maestro de funcionarios de la AMC. Es la única pantalla que muestra
-            cédulas y teléfonos.
-          </p>
-        </div>
-      </header>
+  /** El nombre en la cobertura abre las Ausencias de esa ficha (el mismo cajón del maestro). */
+  const verAusenciasDe = (funcionarioId: number) => {
+    const funcionario = personal.find((ficha) => ficha.id === funcionarioId);
+    if (funcionario) void abrirAusencias(funcionario);
+  };
 
-      {aviso && (
-        <AvisoEnLinea
-          variante={aviso.variante}
-          titulo="No se pudo cargar el maestro"
-          accion={
-            <Boton tamano="sm" onClick={() => void cargar()}>
-              Reintentar
-            </Boton>
-          }
-        >
-          {aviso.texto}
-        </AvisoEnLinea>
-      )}
+  /** «Ausente …» lleva al mes de la ausencia: el de su inicio o, si ya empezó, el actual. */
+  const verAusenciaEnCobertura = (
+    funcionario: Funcionario,
+    ausencia: AusenciaDelMaestro,
+  ) => verEnCobertura(funcionario, (ausencia.desde > hoy ? ausencia.desde : hoy).slice(0, 7));
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-4 md:px-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="search"
-              className="input input-bordered input-sm w-full sm:max-w-xs"
-              placeholder="Buscar por cédula, nombre o cargo…"
-              aria-label="Buscar en el maestro"
-              value={filtros.busqueda ?? ""}
-              onChange={(evento) => cambiarFiltro({ busqueda: evento.target.value })}
-            />
-
-            <select
-              className="select select-bordered select-sm"
-              aria-label="Filtrar por área"
-              value={filtros.area ?? ""}
-              onChange={(evento) =>
-                cambiarFiltro({ area: evento.target.value as AreaPersonal | "" })
-              }
-            >
-              <option value="">Todas las áreas</option>
-              {areasPresentes.map((area) => (
-                <option
-                  key={area}
-                  value={area}
-                >
-                  {NOMBRE_AREA[area]}
-                </option>
-              ))}
-            </select>
-
-            <select
-              className="select select-bordered select-sm"
-              aria-label="Filtrar por contrato"
-              value={filtros.contrato ?? ""}
-              onChange={(evento) =>
-                cambiarFiltro({ contrato: evento.target.value as TipoContrato | "" })
-              }
-            >
-              <option value="">Todo contrato</option>
-              {Object.entries(NOMBRE_CONTRATO).map(([valor, nombre]) => (
-                <option
-                  key={valor}
-                  value={valor}
-                >
-                  {nombre}
-                </option>
-              ))}
-            </select>
-
-            <SelectorSegmentado
-              id="filtro-estado"
-              etiqueta="Estado"
-              etiquetaOculta
-              opciones={OPCIONES_ESTADO}
-              valor={filtros.estado ?? ""}
-              onCambiar={(valor) =>
-                cambiarFiltro({ estado: valor as "" | "activos" | "inactivos" })
-              }
-            />
-
-            {/* «Limpiar filtros» solo con filtros distintos de los iniciales. */}
-            {filtrando && (
-              <Boton
-                variante="enlace"
-                tamano="sm"
-                onClick={() => {
-                  setFiltros(FILTROS_INICIALES);
-                  setPagina(0);
-                }}
-              >
-                Limpiar filtros
-              </Boton>
-            )}
-
-            <span
-              className="ml-auto text-sm text-app-muted"
-              role="status"
-              title="«En el maestro» son las fichas de las direcciones que usted administra."
-            >
-              {cargando
-                ? "Cargando…"
-                : `${coincidentes.length} funcionarios · ${activos} activos de ${personal.length} en el maestro`}
-            </span>
-            {/* Estándar de botones (D4): «+ Nuevo» a la derecha de la barra de su tabla. */}
-            {puedeAdministrar && (
-              <Boton
-                variante="primario"
-                onClick={abrirDirectorio}
-              >
-                + Nuevo funcionario
-              </Boton>
-            )}
-          </div>
-
-          <TablaPersonal
-            personal={pagina0.filas}
-            zonales={zonales}
-            ausencias={ausenciaPorFicha}
-            seleccionadoId={enAusencias?.id ?? null}
-            resaltadoId={resaltadoId}
-            onAusencias={(funcionario) => void abrirAusencias(funcionario)}
-            onEditar={(funcionario) => setEditando(funcionario)}
-            onDarDeBaja={setPorDarDeBaja}
-            onReactivar={setPorReactivar}
-            puedeAdministrar={puedeAdministrar}
-            mensajeVacio={
-              cargando
-                ? "Cargando el maestro…"
-                : filtrando
-                  ? "Ningún funcionario coincide con el filtro."
-                  : "No hay funcionarios activos. Registre el primero."
-            }
-          />
-
-          {coincidentes.length > 0 && (
-            <Paginacion
-              page={pagina0.pagina}
-              pageSize={tamanio}
-              total={pagina0.total}
-              onPage={setPagina}
-              onPageSize={setTamanio}
-              etiqueta="funcionarios"
-            />
-          )}
-        </div>
-      </div>
-
-      {/* COBERTURA POR TURNOS · SOLO INSTRUCCIÓN: se monta si quien entró gestiona esa área. */}
-      {areasQueGestiona.includes("INSTRUCCION" as AreaPersonal) && (
-        <MatrizCobertura onZonaCambiada={() => void cargar()} />
-      )}
-
-      {/* EL CAJÓN, compartido por el ALTA (dos pasos) y la EDICIÓN (directo en la ficha). */}
-      <DrawerFlujoAlta
-        abierto={eligiendoDeAuth || editando !== null}
-        proposito={PARA_FICHA}
-        filas={directorio}
-        disponible={directorioDisponible}
-        motivo={motivoDirectorio}
-        cargando={cargandoDirectorio}
-        onActualizar={() => void cargarDirectorio()}
-        onCerrar={cerrarCajon}
-        areasQueGestiona={areasQueGestiona}
-        zonales={zonales}
-        onGuardar={guardarDesdeDrawer}
-        edicion={editando !== null}
-        valoresEdicion={valoresEdicion}
+  const filtrosMaestro = (
+    <>
+      <input
+        type="search"
+        className="input input-bordered input-sm min-w-[320px]"
+        placeholder="Buscar por cédula, nombre o cargo…"
+        aria-label="Buscar en el maestro"
+        value={filtros.busqueda ?? ""}
+        onChange={(evento) => cambiarFiltro({ busqueda: evento.target.value })}
       />
 
-      {enAusencias && (
-        <PanelAusencias
-          funcionario={enAusencias}
-          ausencias={ausenciasDe ?? []}
-          cargando={ausenciasDe === null}
-          guardando={procesando}
-          hoy={hoy}
-          aviso={avisoAusencia}
-          onRegistrar={registrarAusencia}
-          onRetirar={(periodoId) => void retirarAusencia(periodoId)}
-          onCerrar={() => {
-            setEnAusencias(null);
-            setAusenciasDe(null);
+      <select
+        className="select select-bordered select-sm"
+        aria-label="Filtrar por área"
+        value={filtros.area ?? ""}
+        onChange={(evento) =>
+          cambiarFiltro({ area: evento.target.value as AreaPersonal | "" })
+        }
+      >
+        <option value="">Todas las áreas</option>
+        {areasPresentes.map((area) => (
+          <option
+            key={area}
+            value={area}
+          >
+            {NOMBRE_AREA[area]}
+          </option>
+        ))}
+      </select>
+
+      <select
+        className="select select-bordered select-sm"
+        aria-label="Filtrar por jornada laboral"
+        value={filtros.jornada ?? ""}
+        onChange={(evento) => cambiarFiltro({ jornada: evento.target.value })}
+      >
+        <option value="">Toda jornada</option>
+        <option value={FILTRO_SIN_JORNADA}>Sin jornada</option>
+        {jornadas.map((jornada) => (
+          <option
+            key={jornada.id}
+            value={String(jornada.id)}
+          >
+            {jornada.nombre}
+          </option>
+        ))}
+      </select>
+
+      <SelectorSegmentado
+        id="filtro-estado"
+        etiqueta="Estado"
+        etiquetaOculta
+        opciones={OPCIONES_ESTADO}
+        valor={filtros.estado ?? ""}
+        onCambiar={(valor) =>
+          cambiarFiltro({ estado: valor as "" | "activos" | "inactivos" })
+        }
+      />
+
+      {/* «Limpiar filtros» solo con filtros distintos de los iniciales. */}
+      {filtrando && (
+        <Boton
+          variante="enlace"
+          tamano="sm"
+          onClick={() => {
+            setFiltros(FILTROS_INICIALES);
+            setPagina(0);
           }}
+        >
+          Limpiar filtros
+        </Boton>
+      )}
+    </>
+  );
+
+  const contenidoMaestro = (
+    <>
+      <TablaPersonal
+        personal={pagina0.filas}
+        zonales={zonales}
+        ausencias={ausenciaPorFicha}
+        seleccionadoId={enAusencias?.id ?? null}
+        resaltadoId={resaltadoId}
+        onAusencias={(funcionario) => void abrirAusencias(funcionario)}
+        onEditar={(funcionario) => setEditando(funcionario)}
+        onDarDeBaja={setPorDarDeBaja}
+        onReactivar={setPorReactivar}
+        puedeAdministrar={puedeAdministrar}
+        mensajeVacio={
+          cargando
+            ? "Cargando el maestro…"
+            : filtrando
+              ? "Ningún funcionario coincide con el filtro."
+              : "No hay funcionarios activos. Registre el primero."
+        }
+        // Los enlaces a la cobertura, solo con su pestaña.
+        onVerTurnos={gestionaInstruccion ? (funcionario) => verEnCobertura(funcionario) : undefined}
+        onVerAusenciaEnCobertura={gestionaInstruccion ? verAusenciaEnCobertura : undefined}
+      />
+
+      {coincidentes.length > 0 && (
+        <Paginacion
+          page={pagina0.pagina}
+          pageSize={tamanio}
+          total={pagina0.total}
+          onPage={setPagina}
+          onPageSize={setTamanio}
+          etiqueta="funcionarios"
         />
       )}
+    </>
+  );
 
-      {/* La baja exige un motivo. `key` por ficha remonta el modal limpio en cada apertura. */}
-      <ModalBajaConMotivo
-        key={porDarDeBaja?.id ?? "baja"}
-        abierto={porDarDeBaja !== null}
-        funcionario={porDarDeBaja}
-        onConfirmar={darDeBaja}
-        onCancelar={() => setPorDarDeBaja(null)}
-      />
+  /**
+   * LA PÁGINA, con o sin la cobertura. `partes` llega de la matriz (solo para quien gestiona
+   * Instrucción); sin ella, o si el servidor dijo 404, no hay pestañas y la cabecera dice
+   * «Maestro de personal», como siempre.
+   */
+  const pintar = (partes: PartesCobertura | null) => {
+    const conCobertura = Boolean(partes?.disponible);
+    const activa: PestanaPersonal =
+      conCobertura && params.get("tab") === "cobertura" ? "cobertura" : "maestro";
+    const enCobertura = activa === "cobertura" && partes !== null;
 
-      {/*
-        Reactivar vuelve a ofrecer a la persona en los desplegables de TODOS los formularios: un
-        clic suelto en la fila no debería bastar para eso (2026-10-08). Advertencia, no peligro.
-      */}
-      <MensajeModal
-        abierto={porReactivar !== null}
-        variante="advertencia"
-        titulo={porReactivar ? `¿Activar a ${nombreCompleto(porReactivar)}?` : ""}
-        mensaje="Volverá a aparecer para asignar a operativos, con su historial intacto."
-        textoPrincipal="Activar"
-        tituloError="No se pudo activar"
-        onPrincipal={reactivar}
-        onSecundario={() => setPorReactivar(null)}
-      />
-    </section>
+    return (
+      <section className="app-page-shell">
+        <EncabezadoPagina
+          modulo="Administración"
+          titulo="Personal y disponibilidad"
+          subtitulo={SUBTITULO[activa]}
+          chips={enCobertura ? partes.estadoMes : undefined}
+          contexto={enCobertura ? partes.selectorMes : undefined}
+        />
+
+        {aviso && (
+          <AvisoEnLinea
+            variante={aviso.variante}
+            titulo="No se pudo cargar el maestro"
+            accion={
+              <Boton tamano="sm" onClick={() => void cargar()}>
+                Reintentar
+              </Boton>
+            }
+          >
+            {aviso.texto}
+          </AvisoEnLinea>
+        )}
+
+        <PanelTabla
+          titulo={conCobertura ? undefined : "Maestro de personal"}
+          cabecera={
+            conCobertura ? (
+              <Pestanas
+                etiqueta="Personal y disponibilidad"
+                pestanas={PESTANAS}
+                activa={activa}
+                onElegir={elegirPestana}
+                sobreBarra
+              />
+            ) : undefined
+          }
+          acciones={
+            enCobertura
+              ? partes.acciones
+              : puedeAdministrar && (
+                  <Boton
+                    variante="primario"
+                    onClick={abrirDirectorio}
+                  >
+                    + Nuevo funcionario
+                  </Boton>
+                )
+          }
+          filtros={enCobertura ? partes.filtros : filtrosMaestro}
+          nota={enCobertura ? partes.nota : undefined}
+          cuerpo={
+            conCobertura
+              ? { id: `panel-${activa}`, role: "tabpanel", "aria-labelledby": `pestana-${activa}` }
+              : undefined
+          }
+        >
+          {enCobertura ? partes.contenido : contenidoMaestro}
+        </PanelTabla>
+
+        {/* EL CAJÓN, compartido por el ALTA (dos pasos) y la EDICIÓN (directo en la ficha). */}
+        <DrawerFlujoAlta
+          abierto={eligiendoDeAuth || editando !== null}
+          proposito={PARA_FICHA}
+          filas={directorio}
+          disponible={directorioDisponible}
+          motivo={motivoDirectorio}
+          cargando={cargandoDirectorio}
+          onActualizar={() => void cargarDirectorio()}
+          onCerrar={cerrarCajon}
+          areasQueGestiona={areasQueGestiona}
+          zonales={zonales}
+          onGuardar={guardarDesdeDrawer}
+          edicion={editando !== null}
+          valoresEdicion={valoresEdicion}
+        />
+
+        {enAusencias && (
+          <PanelAusencias
+            funcionario={enAusencias}
+            ausencias={ausenciasDe ?? []}
+            cargando={ausenciasDe === null}
+            guardando={procesando}
+            hoy={hoy}
+            aviso={avisoAusencia}
+            onRegistrar={registrarAusencia}
+            onRetirar={(periodoId) => void retirarAusencia(periodoId)}
+            onCerrar={() => {
+              setEnAusencias(null);
+              setAusenciasDe(null);
+            }}
+          />
+        )}
+
+        {/* La baja exige un motivo. `key` por ficha remonta el modal limpio en cada apertura. */}
+        <ModalBajaConMotivo
+          key={porDarDeBaja?.id ?? "baja"}
+          abierto={porDarDeBaja !== null}
+          funcionario={porDarDeBaja}
+          onConfirmar={darDeBaja}
+          onCancelar={() => setPorDarDeBaja(null)}
+        />
+
+        {/*
+          Reactivar vuelve a ofrecer a la persona en los desplegables de TODOS los formularios: un
+          clic suelto en la fila no debería bastar para eso (2026-10-08). Advertencia, no peligro.
+        */}
+        <MensajeModal
+          abierto={porReactivar !== null}
+          variante="advertencia"
+          titulo={porReactivar ? `¿Reactivar a ${nombreCompleto(porReactivar)}?` : ""}
+          mensaje="Volverá a aparecer para asignar a operativos, con su historial intacto."
+          textoPrincipal="Reactivar"
+          tituloError="No se pudo activar"
+          onPrincipal={reactivar}
+          onSecundario={() => setPorReactivar(null)}
+        />
+      </section>
+    );
+  };
+
+  // COBERTURA POR TURNOS · SOLO INSTRUCCIÓN: la matriz se monta (y queda montada en la pestaña
+  // Maestro, con su estado) y entrega sus piezas; sin ese alcance, la página va sola.
+  return gestionaInstruccion ? (
+    <MatrizCobertura
+      onZonaCambiada={() => void cargar()}
+      marco={pintar}
+      enfoque={enfoque}
+      onVerAusencias={verAusenciasDe}
+      recarga={recargaCobertura}
+    />
+  ) : (
+    pintar(null)
   );
 };
 

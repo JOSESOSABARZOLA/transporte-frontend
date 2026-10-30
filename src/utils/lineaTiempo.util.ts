@@ -227,7 +227,12 @@ export interface SegmentoTraslado {
 
 /**
  * Los traslados entre tramos SEGUIDOS de un conductor: el hueco entre el fin de uno y el inicio del
- * siguiente. «No llega» si se cruzan, o si el hueco es menor que el traslado de la tabla.
+ * siguiente. «No llega» si se cruzan, o si el hueco es menor que el traslado de la tabla (con hueco
+ * IGUAL sí llega, como en el servidor).
+ *
+ * MISMA VARA QUE EL SERVIDOR (2026-10-20): el dejar y el retirar de un MISMO operativo no piden
+ * traslado entre sí —la asignación no lo exige—, así que entre ellos no se marca «no llega» por la
+ * tabla (`requerido: null`). Si no se sabe dónde está alguno de los dos, tampoco (`null`).
  */
 export const trasladosDe = (
   tramos: readonly TramoPlanificado[],
@@ -242,11 +247,15 @@ export const trasladosDe = (
     const anterior = ordenados[i - 1];
     const siguiente = ordenados[i];
     const hueco = siguiente.f.inicio - anterior.f.fin;
-    const requerido = minutosTraslado(
-      anterior.t.zonalDestino ?? anterior.t.zonalOrigen,
-      siguiente.t.zonalOrigen,
-      tabla,
-    );
+    const mismoOperativo =
+      anterior.t.operativoId !== null && anterior.t.operativoId === siguiente.t.operativoId;
+    const requerido = mismoOperativo
+      ? null
+      : minutosTraslado(
+          anterior.t.zonalDestino ?? anterior.t.zonalOrigen,
+          siguiente.t.zonalOrigen,
+          tabla,
+        );
     segmentos.push({
       desde: anterior.f.fin,
       hasta: Math.max(siguiente.f.inicio, anterior.f.fin),

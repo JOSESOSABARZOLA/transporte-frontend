@@ -36,6 +36,9 @@ vi.mock("../../services/flota.service.ts", () => ({
   },
 }));
 vi.mock("../../services/planificacion.service.ts", () => ({ PlanificacionService: {} }));
+vi.mock("../../services/transporte.service.ts", () => ({
+  TransporteService: { listarMantenimientos: vi.fn(() => new Promise(() => {})) },
+}));
 vi.mock("../../services/cobertura.service.ts", () => ({ CoberturaService: {} }));
 vi.mock("../../services/personal.service.ts", () => ({
   PersonalService: { operativosDe: vi.fn(() => new Promise(() => {})) },
@@ -54,10 +57,9 @@ import VisorPdfMemorando from "../ordenes/VisorPdfMemorando.tsx";
 import DrawerFlujoAlta from "../personal/DrawerFlujoAlta.tsx";
 import PanelAusencias from "../personal/PanelAusencias.tsx";
 import { PARA_FICHA } from "../personal/propositoDirectorio.ts";
-import ModalAplicarPatron from "../personal/cobertura/ModalAplicarPatron.tsx";
+import DrawerAsignarTurnos from "../personal/cobertura/DrawerAsignarTurnos.tsx";
 import ModalCambiarZona from "../personal/cobertura/ModalCambiarZona.tsx";
-import ModalContinuarRotacion from "../personal/cobertura/ModalContinuarRotacion.tsx";
-import type { ServicioMatriz } from "../personal/cobertura/configMatriz.ts";
+import { CONFIG_INSTRUCCION, type ServicioMatriz } from "../personal/cobertura/configMatriz.ts";
 import ModalPropuestaMes from "../personal/cobertura/ModalPropuestaMes.tsx";
 import DrawerOperacionVehiculo from "../transporte/linea/DrawerOperacionVehiculo.tsx";
 import CompletarConductor from "../transporte/planificar/CompletarConductor.tsx";
@@ -102,7 +104,7 @@ const CONDUCTOR: Conductor = {
   activo: true,
   sector: null,
   parqueaderoAutorizado: false,
-  tipoContrato: "NOMBRAMIENTO",
+  jornadaLaboralId: 1,
 };
 
 const GARAJE: UbicacionFlota = {
@@ -123,7 +125,7 @@ const FUNCIONARIO: Funcionario = {
   correoPersonal: null,
   cargo: null,
   area: "TECNICO",
-  tipoContrato: "OCASIONAL",
+  jornadaLaboralId: 2,
   direccion: "DMIP_INSPECCIONES",
   activo: true,
 };
@@ -259,14 +261,10 @@ describe("estructura de cada cajón migrado (instantánea)", () => {
   it("Programar mantenimiento", () => {
     render(
       <DrawerMantenimiento
-        abierto
-        vehiculo={null}
-        guardando={false}
-        aviso={null}
-        vehiculos={[{ id: 3, placa: "PMA-3370", descripcion: null, utilizable: true, motivo: null }]}
+        vehiculo={{ id: 3, placa: "PMA-3370", descripcion: null, activo: true, tipo: "Camioneta", asientos: 2 }}
         desdeInicial="2026-10-15"
-        onGuardar={nada}
-        onCancelar={nada}
+        onCambio={nada}
+        onCerrar={nada}
       />,
     );
     expect(resumen()).toMatchSnapshot();
@@ -325,33 +323,23 @@ describe("estructura de cada cajón migrado (instantánea)", () => {
     expect(resumen()).toMatchSnapshot("ausencias");
   });
 
-  it("los cuatro de Turnos del mes", () => {
-    const { unmount: quitarPatron } = render(
-      <ModalAplicarPatron
-        abierto
+  it("los tres de Turnos del mes", () => {
+    const { unmount: quitarAsignar } = render(
+      <DrawerAsignarTurnos
+        mes="2026-10"
         dias={["2026-10-01", "2026-10-02"]}
         personas={[PERSONA]}
-        indicesDias={[0, 1]}
-        descripcionAlcance="las 1 personas visibles"
+        marcadasIniciales={[PERSONA.funcionarioId]}
+        config={{
+          ...CONFIG_INSTRUCCION,
+          servicio: { proponerRotacion: pendiente } as unknown as ServicioMatriz,
+        }}
         onAplicar={nada}
         onCerrar={nada}
       />,
     );
-    expect(resumen()).toMatchSnapshot("aplicar patrón");
-    quitarPatron();
-
-    const { unmount: quitarRotacion } = render(
-      <ModalContinuarRotacion
-        abierto
-        mes="2026-10"
-        personas={[PERSONA]}
-        servicio={{ proponerRotacion: pendiente } as unknown as ServicioMatriz}
-        onAplicar={nada}
-        onCerrar={nada}
-      />,
-    );
-    expect(resumen()).toMatchSnapshot("continuar rotación");
-    quitarRotacion();
+    expect(resumen()).toMatchSnapshot("asignar turnos");
+    quitarAsignar();
 
     const { unmount: quitarPropuesta } = render(
       <MemoryRouter>

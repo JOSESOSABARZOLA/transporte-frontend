@@ -11,33 +11,40 @@
  * (`CONFIG_CONDUCTORES`): rotación por clic, rango y teclado, patrones, continuar rotación,
  * deshacer, publicar y exportar se comportan igual que en Instrucción. Permiso
  * `flota:administrar`, el mismo en la ruta y en el menú (regla 4).
+ *
+ * PLANTILLA VISUAL (2026-10-24): el encabezado es `EncabezadoPagina`. El estado del mes y el
+ * selector ‹ mes › los tiene la matriz, así que ella entrega sus piezas (`marco`) y la página las
+ * coloca: chips y contexto a la derecha, y debajo el panel de siempre.
  */
 
 import type { FC } from "react";
 
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import MatrizCobertura from "../components/personal/MatrizCobertura.tsx";
 import { CONFIG_CONDUCTORES } from "../components/flota/configTurnosConductores.ts";
 import { useFechaDaf } from "../context/FechaDafContext.tsx";
-import { ANTETITULO_DAF } from "../utils/daf.util.ts";
 
 const TurnosConductoresPage: FC = () => {
   // Abre en el mes de la fecha de trabajo de la DAF (2026-10-06): viene de «Planificar el día».
   const { fecha } = useFechaDaf();
   return (
   <section className="app-page-shell">
-    <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-      <div className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          {ANTETITULO_DAF}
-        </p>
-        <h1 className="page-heading-title">Turnos de conductores</h1>
-        <p className="page-heading-subtitle text-sm">
-          Turno de cada conductor, día por día. La asignación de transporte lo lee.
-        </p>
-      </div>
-    </header>
-
-    <MatrizCobertura config={CONFIG_CONDUCTORES} mesInicial={fecha.slice(0, 7)} />
+    <MatrizCobertura
+      config={CONFIG_CONDUCTORES}
+      mesInicial={fecha.slice(0, 7)}
+      marco={({ estadoMes, selectorMes, panel }) => (
+        <>
+          <EncabezadoPagina
+            modulo="Transporte · DAF"
+            titulo="Turnos de conductores"
+            subtitulo="Turno de cada conductor, día por día. La asignación de transporte lo lee."
+            chips={estadoMes}
+            contexto={selectorMes}
+          />
+          {panel}
+        </>
+      )}
+    />
   </section>
   );
 };

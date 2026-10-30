@@ -39,7 +39,7 @@ const ventana = (parcial: Partial<VentanaCarga> = {}): VentanaCarga => ({
   ...parcial,
 });
 
-const pintar = (parcial: Partial<VentanaCarga> = {}) => {
+const pintar = (parcial: Partial<VentanaCarga> = {}, mensajeInicial?: string) => {
   const onGuardar = vi.fn();
   const onCancelar = vi.fn();
   render(
@@ -49,6 +49,7 @@ const pintar = (parcial: Partial<VentanaCarga> = {}) => {
       aviso={null}
       onGuardar={onGuardar}
       onCancelar={onCancelar}
+      mensajeInicial={mensajeInicial}
     />,
   );
   return { onGuardar, onCancelar };
@@ -132,17 +133,37 @@ describe("«Editar ventana de carga» · lo que verá el funcionario", () => {
     ).toBeInTheDocument();
   });
 
-  it("ya no avisa de horas fijas ni ofrece «Usar {cierre}» (2026-10-08)", () => {
+  // Volvió el 2026-10-24 (rediseño): una hora escrita a mano que no es la de la ventana se avisa y
+  // se ofrece el mensaje sugerido, con marcadores en lugar de horas.
+  it("avisa de una hora fija que no coincide y ofrece el mensaje sugerido", async () => {
     pintar({ mensajeCierre: "La carga cerró a las 18H25. Vuelve a abrirse mañana." });
 
-    expect(screen.queryByRole("button", { name: /Usar/ })).toBeNull();
-    expect(screen.queryByText(/El mensaje dice/)).toBeNull();
-    // La vista previa sigue mostrando el texto tal como lo leerá el funcionario.
+    expect(screen.getByText(/El mensaje no coincide con el horario/)).toBeInTheDocument();
+    expect(screen.getByText(/Dice «18H25»/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Usar mensaje sugerido" }));
+
+    expect(screen.getByRole("textbox")).toHaveValue(
+      "La ventana de carga de su departamento cerró a las {cierre}. Vuelve a abrirse mañana a las {apertura}.",
+    );
+    expect(screen.queryByText(/El mensaje no coincide con el horario/)).toBeNull();
+    // La vista previa ya reemplaza los marcadores.
     expect(
-      screen.getByText("La carga cerró a las 18H25. Vuelve a abrirse mañana.", {
-        selector: "span",
-      }),
+      screen.getByText(
+        "La ventana de carga de su departamento cerró a las 19H25. Vuelve a abrirse mañana a las 00H00.",
+        { selector: "span" },
+      ),
     ).toBeInTheDocument();
+  });
+
+  it("con un mensaje inicial (de la tabla) abre ya con él escrito y sin guardar", async () => {
+    pintar(
+      { mensajeCierre: "La carga cerró a las 18H25." },
+      "Cerró a las {cierre}. Vuelve a abrirse mañana a las {apertura}.",
+    );
+    expect(await screen.findByRole("textbox")).toHaveValue(
+      "Cerró a las {cierre}. Vuelve a abrirse mañana a las {apertura}.",
+    );
+    expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
   });
 
   it("la ayuda de las horas dice el horario real, o qué significa la apertura vacía", async () => {

@@ -182,7 +182,8 @@ import { PersonalService } from "../../services/personal.service.ts";
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
   id: 1,
   identificador: "OCPMO-004-31-JUL-2026",
-  grupoRegistro: null,
+  grupoRegistro: "registro-suelto",
+  esLote: false,
   secuencial: 4,
   cuadroFecha: "2026-07-31",
   esAdicional: false,

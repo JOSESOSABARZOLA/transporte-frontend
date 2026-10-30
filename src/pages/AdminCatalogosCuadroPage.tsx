@@ -40,6 +40,12 @@
  * `GET :codigo` (con los desactivados y sus usos), `GET :codigo/zonales` y
  * `GET :codigo/zonas-disponibles` (las zonas de la ciudad que una zonal nueva puede tomar).
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina` con el selector del formulario BAJO el título
+ * (`debajo`) y sus áreas de personal en la misma línea; `PanelTabla` con las pestañas EN la
+ * cabecera azul (`Pestanas sobreBarra`, sin el número de activos), las altas de la pestaña a su
+ * derecha («+ Nuevo punto de encuentro» pasa de `acento` a `secundario`), la barra blanca de
+ * filtros (`BarraCatalogo`) y la nota de eliminar al pie. Se retiraron los contadores («N zonales con puntos · X de Y puntos activos», «X de Y»).
  */
 
 import {
@@ -64,8 +70,9 @@ import SelectorFormularioCabecera from "../components/catalogos/SelectorFormular
 import TablaValoresCatalogo from "../components/catalogos/TablaValoresCatalogo.tsx";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
-import Iconos from "../components/common/Iconos.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import MensajeModal from "../components/common/MensajeModal.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
 import Pestanas from "../components/common/Pestanas.tsx";
 import { useCatalogosFormulario } from "../hooks/useCatalogosFormulario.ts";
 import { useFormulariosPermitidos } from "../hooks/useFormulariosPermitidos.ts";
@@ -80,7 +87,6 @@ import type {
 import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
 import {
   clave,
-  contadorPuntos,
   estaActivo,
   formularioPedido,
   leerPedidoCatalogos,
@@ -480,12 +486,6 @@ const AdminCatalogosCuadroPage = () => {
     [formulario, recargarFormularios],
   );
 
-  const activos: Record<Pestana, number> = {
-    puntos: puntos.filter(estaActivo).length,
-    tipos: tiposControl.filter(estaActivo).length,
-    instituciones: instituciones.filter(estaActivo).length,
-  };
-
   const busqueda = busquedas[pestana];
   const filtro = filtros[pestana];
   const termino = clave(busqueda);
@@ -502,13 +502,6 @@ const AdminCatalogosCuadroPage = () => {
         clave(`${inst.sigla} ${inst.nombre}`).includes(clave(busquedas.instituciones))),
   );
 
-  const contador =
-    pestana === "puntos"
-      ? contadorPuntos(zonalesListadas.length, puntos, soloConPuntos)
-      : pestana === "tipos"
-        ? `${tiposVisibles.length} de ${tiposControl.length}`
-        : `${institucionesVisibles.length} de ${instituciones.length}`;
-
   const resaltadoZonas: Resaltado =
     resaltado && (resaltado.tipo === "zonal" || resaltado.tipo === "punto")
       ? { tipo: resaltado.tipo, id: resaltado.id }
@@ -522,21 +515,31 @@ const AdminCatalogosCuadroPage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-col gap-1">
-          <p className="page-heading-kicker font-semibold uppercase">Administración</p>
-          <h1 className="page-heading-title">Catálogos del cuadro</h1>
-          <p className="page-heading-subtitle text-sm">
-            Opciones que verá el registro de operativos de cada formulario.
-          </p>
-        </div>
-        <SelectorFormularioCabecera
-          formularios={formularios}
-          seleccionado={codigo}
-          onSeleccionar={pedirFormulario}
-          deshabilitado={procesando}
-        />
-      </header>
+      <EncabezadoPagina
+        modulo="Administración"
+        titulo="Catálogos del cuadro"
+        subtitulo="Opciones que verá el registro de operativos. Cada formulario tiene las suyas."
+        // El formulario que se configura gobierna toda la pantalla: va junto al título (2026-10-24),
+        // con sus áreas de personal en la misma línea.
+        debajo={
+          <div className="flex flex-wrap items-start gap-6">
+            <SelectorFormularioCabecera
+              formularios={formularios}
+              seleccionado={codigo}
+              onSeleccionar={pedirFormulario}
+              deshabilitado={procesando}
+            />
+            <PanelAreasFormulario
+              areas={formulario?.areas ?? []}
+              cargando={cargando}
+              procesando={procesando}
+              onGuardar={(areas) => void guardarAreas(areas)}
+              onCambiosPendientes={setAreasSucias}
+              desplegadoInicial={pedido.areasAbiertas}
+            />
+          </div>
+        }
+      />
 
       {catalogos.error && (
         <AvisoEnLinea
@@ -566,76 +569,23 @@ const AdminCatalogosCuadroPage = () => {
         </AvisoEnLinea>
       )}
 
-      <PanelAreasFormulario
-        areas={formulario?.areas ?? []}
-        cargando={cargando}
-        procesando={procesando}
-        onGuardar={(areas) => void guardarAreas(areas)}
-        onCambiosPendientes={setAreasSucias}
-        desplegadoInicial={pedido.areasAbiertas}
-      />
-
-      <section
-        aria-label="Catálogos del formulario"
-        className="app-shell-surface flex flex-col gap-4 rounded-3xl border border-base-300 bg-base-100 px-4 pt-2 pb-4 shadow-[0_12px_32px_rgba(15,23,42,0.12)] md:px-6"
-      >
-        <Pestanas
-          etiqueta="Catálogo"
-          pestanas={PESTANAS.map((p) => ({
-            id: p.id,
-            titulo: p.titulo,
-            cuenta: activos[p.id],
-            etiquetaCuenta: "activos",
-          }))}
-          activa={pestana}
-          onElegir={setPestana}
-        />
-
-        <div
-          id={`panel-${pestana}`}
-          role="tabpanel"
-          aria-labelledby={`pestana-${pestana}`}
-          className="flex flex-col gap-4"
-        >
-          <BarraCatalogo
-            id={pestana}
-            marcador={MARCADORES[pestana]}
-            busqueda={busqueda}
-            onBuscar={(texto) => setBusquedas((antes) => ({ ...antes, [pestana]: texto }))}
-            filtro={filtro}
-            onFiltro={(valor) => setFiltros((antes) => ({ ...antes, [pestana]: valor }))}
-            contador={contador}
-            complemento={
-              pestana === "puntos" && (
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="toggle toggle-sm"
-                    checked={soloConPuntos}
-                    onChange={(evento) => setSoloConPuntos(evento.target.checked)}
-                  />
-                  <span className="text-app-label max-w-56 text-sm leading-tight">
-                    Solo zonales con puntos en este formulario
-                  </span>
-                </label>
-              )
-            }
-          >
+      <PanelTabla
+        etiqueta="Catálogos del formulario"
+        cabecera={
+          <Pestanas
+            etiqueta="Catálogo"
+            sobreBarra
+            pestanas={PESTANAS.map((p) => ({ id: p.id, titulo: p.titulo }))}
+            activa={pestana}
+            onElegir={setPestana}
+          />
+        }
+        acciones={
+          <>
             {pestana === "puntos" && (
               <>
                 <Boton
-                  onClick={() =>
-                    setAbiertas(
-                      todasAbiertas
-                        ? new Set()
-                        : new Set(zonalesListadas.map((zonal) => zonal.id)),
-                    )
-                  }
-                >
-                  {todasAbiertas ? "Contraer todo" : "Expandir todo"}
-                </Boton>
-                <Boton
-                  variante="acento"
+                  variante="secundario"
                   deshabilitado={procesando || !formulario}
                   onClick={() => abrir({ tipo: "punto", fila: null })}
                 >
@@ -673,130 +623,168 @@ const AdminCatalogosCuadroPage = () => {
                 + Nueva institución
               </Boton>
             )}
-          </BarraCatalogo>
-
-          {cargando && !catalogos.catalogos ? (
-            <div
-              className="flex justify-center py-8"
-              role="status"
-            >
-              <span
-                className="loading loading-spinner loading-md"
-                aria-hidden="true"
-              />
-              <span className="sr-only">Cargando catálogos…</span>
-            </div>
-          ) : pestana === "puntos" ? (
-            <div className="flex flex-col gap-2">
-              {cuantasSinPuntos > 0 && (
-                <AvisoEnLinea variante="info">
-                  <span>
-                    {textoSinPuntos(cuantasSinPuntos, soloConPuntos)}
-                    {" · "}
-                    <Boton
-                      variante="enlace"
-                      tamano="sm"
-                      onClick={() => setSoloConPuntos(!soloConPuntos)}
-                    >
-                      {soloConPuntos ? "Ver todas" : "Ocultarlas"}
-                    </Boton>
+          </>
+        }
+        filtros={
+          <BarraCatalogo
+            id={pestana}
+            marcador={MARCADORES[pestana]}
+            busqueda={busqueda}
+            onBuscar={(texto) => setBusquedas((antes) => ({ ...antes, [pestana]: texto }))}
+            filtro={filtro}
+            onFiltro={(valor) => setFiltros((antes) => ({ ...antes, [pestana]: valor }))}
+          >
+            {pestana === "puntos" && (
+              <>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-sm"
+                    checked={soloConPuntos}
+                    onChange={(evento) => setSoloConPuntos(evento.target.checked)}
+                  />
+                  <span className="text-app-label max-w-56 text-sm leading-tight">
+                    Solo zonales con puntos en este formulario
                   </span>
-                </AvisoEnLinea>
-              )}
-              <AcordeonZonales
-                zonales={zonalesListadas}
-                puntos={puntos}
-                busqueda={busqueda}
-                filtro={filtro}
-                abiertas={abiertasEfectivas}
-                onAlternar={alternarZonal}
-                resaltado={resaltadoZonas}
-                procesando={procesando}
-                onAgregarPunto={(zonalId) => abrir({ tipo: "punto", fila: null }, zonalId)}
-                onEditarZonal={(zonal) => abrir({ tipo: "zonal", fila: zonal })}
-                onDesactivarZonal={(zonal) =>
-                  setBaja({
-                    tipo: "zonal",
-                    id: zonal.id,
-                    nombre: zonal.nombre,
-                    puntosActivos: zonal.puntosActivos,
-                  })
-                }
-                onActivarZonal={(zonal) => void activar("zonal", zonal.id, zonal.nombre)}
-                onEliminarZonal={(zonal) =>
-                  setEliminacion({ tipo: "zonal", id: zonal.id, nombre: zonal.nombre })
-                }
-                onEditarPunto={(punto: PuntoEncuentro) => abrir({ tipo: "punto", fila: punto })}
-                onDesactivarPunto={(punto) =>
-                  setBaja({ tipo: "punto", id: punto.id, nombre: punto.nombre })
-                }
-                onActivarPunto={(punto) => void activar("punto", punto.id, punto.nombre)}
-                onEliminarPunto={(punto) =>
-                  setEliminacion({ tipo: "punto", id: punto.id, nombre: punto.nombre })
-                }
-              />
-            </div>
-          ) : pestana === "tipos" ? (
-            <TablaValoresCatalogo<TipoControl>
-              etiqueta="Tipos de control"
-              filas={tiposVisibles}
-              columnas={[{ titulo: "Nombre", valor: (tipo) => tipo.nombre, fuerte: true }]}
-              nombreDe={(tipo) => tipo.nombre}
-              mensajeVacio={
-                termino
-                  ? `Ningún tipo de control coincide con «${busqueda.trim()}».`
-                  : "Este formulario no tiene tipos de control con este filtro."
-              }
-              resaltadoId={resaltado?.tipo === "tipoControl" ? resaltado.id : null}
-              procesando={procesando}
-              onEditar={(tipo) => abrir({ tipo: "tipoControl", fila: tipo })}
-              onDesactivar={(tipo) =>
-                setBaja({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
-              }
-              onActivar={(tipo) => void activar("tipoControl", tipo.id, tipo.nombre)}
-              onEliminar={(tipo) =>
-                setEliminacion({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
-              }
+                </label>
+                <Boton
+                  onClick={() =>
+                    setAbiertas(
+                      todasAbiertas
+                        ? new Set()
+                        : new Set(zonalesListadas.map((zonal) => zonal.id)),
+                    )
+                  }
+                >
+                  {todasAbiertas ? "Contraer todo" : "Expandir todo"}
+                </Boton>
+              </>
+            )}
+          </BarraCatalogo>
+        }
+        nota={NOTA_ELIMINAR}
+        cuerpo={{
+          id: `panel-${pestana}`,
+          role: "tabpanel",
+          "aria-labelledby": `pestana-${pestana}`,
+        }}
+      >
+        {cargando && !catalogos.catalogos ? (
+          <div
+            className="flex justify-center py-8"
+            role="status"
+          >
+            <span
+              className="loading loading-spinner loading-md"
+              aria-hidden="true"
             />
-          ) : (
-            <TablaValoresCatalogo<Institucion>
-              etiqueta="Instituciones participantes"
-              filas={institucionesVisibles}
-              columnas={[
-                { titulo: "Sigla", valor: (inst) => inst.sigla, fuerte: true },
-                { titulo: "Denominación", valor: (inst) => inst.nombre },
-              ]}
-              nombreDe={(inst) => inst.sigla}
-              mensajeVacio={
-                termino
-                  ? `Ninguna institución coincide con «${busqueda.trim()}».`
-                  : "Este formulario no tiene instituciones con este filtro."
-              }
-              resaltadoId={resaltado?.tipo === "institucion" ? resaltado.id : null}
+            <span className="sr-only">Cargando catálogos…</span>
+          </div>
+        ) : pestana === "puntos" ? (
+          <div className="flex flex-col gap-2">
+            {cuantasSinPuntos > 0 && (
+              <AvisoEnLinea variante="info">
+                <span>
+                  {textoSinPuntos(cuantasSinPuntos, soloConPuntos)}
+                  {" · "}
+                  <Boton
+                    variante="enlace"
+                    tamano="sm"
+                    onClick={() => setSoloConPuntos(!soloConPuntos)}
+                  >
+                    {soloConPuntos ? "Ver todas" : "Ocultarlas"}
+                  </Boton>
+                </span>
+              </AvisoEnLinea>
+            )}
+            <AcordeonZonales
+              zonales={zonalesListadas}
+              puntos={puntos}
+              busqueda={busqueda}
+              filtro={filtro}
+              abiertas={abiertasEfectivas}
+              onAlternar={alternarZonal}
+              resaltado={resaltadoZonas}
               procesando={procesando}
-              onEditar={(inst) => abrir({ tipo: "institucion", fila: inst })}
-              onDesactivar={(inst) =>
-                setBaja({ tipo: "institucion", id: inst.id, nombre: `${inst.sigla} · ${inst.nombre}` })
-              }
-              onActivar={(inst) =>
-                void activar("institucion", inst.id, `${inst.sigla} · ${inst.nombre}`)
-              }
-              onEliminar={(inst) =>
-                setEliminacion({
-                  tipo: "institucion",
-                  id: inst.id,
-                  nombre: `${inst.sigla} · ${inst.nombre}`,
+              onAgregarPunto={(zonalId) => abrir({ tipo: "punto", fila: null }, zonalId)}
+              onEditarZonal={(zonal) => abrir({ tipo: "zonal", fila: zonal })}
+              onDesactivarZonal={(zonal) =>
+                setBaja({
+                  tipo: "zonal",
+                  id: zonal.id,
+                  nombre: zonal.nombre,
+                  puntosActivos: zonal.puntosActivos,
                 })
               }
+              onActivarZonal={(zonal) => void activar("zonal", zonal.id, zonal.nombre)}
+              onEliminarZonal={(zonal) =>
+                setEliminacion({ tipo: "zonal", id: zonal.id, nombre: zonal.nombre })
+              }
+              onEditarPunto={(punto: PuntoEncuentro) => abrir({ tipo: "punto", fila: punto })}
+              onDesactivarPunto={(punto) =>
+                setBaja({ tipo: "punto", id: punto.id, nombre: punto.nombre })
+              }
+              onActivarPunto={(punto) => void activar("punto", punto.id, punto.nombre)}
+              onEliminarPunto={(punto) =>
+                setEliminacion({ tipo: "punto", id: punto.id, nombre: punto.nombre })
+              }
             />
-          )}
-
-          <p className="text-app-muted flex items-start gap-2 text-xs">
-            <Iconos nombre="informacion" />
-            <span>{NOTA_ELIMINAR}</span>
-          </p>
-        </div>
-      </section>
+          </div>
+        ) : pestana === "tipos" ? (
+          <TablaValoresCatalogo<TipoControl>
+            etiqueta="Tipos de control"
+            filas={tiposVisibles}
+            columnas={[{ titulo: "Nombre", valor: (tipo) => tipo.nombre, fuerte: true }]}
+            nombreDe={(tipo) => tipo.nombre}
+            mensajeVacio={
+              termino
+                ? `Ningún tipo de control coincide con «${busqueda.trim()}».`
+                : "Este formulario no tiene tipos de control con este filtro."
+            }
+            resaltadoId={resaltado?.tipo === "tipoControl" ? resaltado.id : null}
+            procesando={procesando}
+            onEditar={(tipo) => abrir({ tipo: "tipoControl", fila: tipo })}
+            onDesactivar={(tipo) =>
+              setBaja({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
+            }
+            onActivar={(tipo) => void activar("tipoControl", tipo.id, tipo.nombre)}
+            onEliminar={(tipo) =>
+              setEliminacion({ tipo: "tipoControl", id: tipo.id, nombre: tipo.nombre })
+            }
+          />
+        ) : (
+          <TablaValoresCatalogo<Institucion>
+            etiqueta="Instituciones participantes"
+            filas={institucionesVisibles}
+            columnas={[
+              { titulo: "Sigla", valor: (inst) => inst.sigla, fuerte: true },
+              { titulo: "Denominación", valor: (inst) => inst.nombre },
+            ]}
+            nombreDe={(inst) => inst.sigla}
+            mensajeVacio={
+              termino
+                ? `Ninguna institución coincide con «${busqueda.trim()}».`
+                : "Este formulario no tiene instituciones con este filtro."
+            }
+            resaltadoId={resaltado?.tipo === "institucion" ? resaltado.id : null}
+            procesando={procesando}
+            onEditar={(inst) => abrir({ tipo: "institucion", fila: inst })}
+            onDesactivar={(inst) =>
+              setBaja({ tipo: "institucion", id: inst.id, nombre: `${inst.sigla} · ${inst.nombre}` })
+            }
+            onActivar={(inst) =>
+              void activar("institucion", inst.id, `${inst.sigla} · ${inst.nombre}`)
+            }
+            onEliminar={(inst) =>
+              setEliminacion({
+                tipo: "institucion",
+                id: inst.id,
+                nombre: `${inst.sigla} · ${inst.nombre}`,
+              })
+            }
+          />
+        )}
+      </PanelTabla>
 
       <DrawerValorCatalogo
         edicion={edicion}

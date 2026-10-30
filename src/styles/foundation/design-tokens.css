@@ -366,8 +366,24 @@
   --app-nota-compartida-bg: #eef3ff;
   --app-nota-compartida-borde: #c7d6fb;
   --app-nota-compartida-filete: #2458d6;
+  /* Nota INFORMATIVA de composición (2026-10-22): gris pizarra, distinta de la escrita y la compartida. */
+  --app-nota-informativa-bg: #f1f5f9;
+  --app-nota-informativa-borde: #cbd5e1;
+  --app-nota-informativa-filete: #64748b;
   /* Destello de la fila a la que lleva «Comparte con X» (2026-10-19, plan «notas-jornada-matriz»). */
   --app-fila-destello: #fde68a;
+}
+
+/*
+  Escala de la matriz de traslados (2026-10-20, plan de traslados): corto verde, medio turquesa,
+  largo naranja. Van en el borde de la celda y en la leyenda, siempre con su texto (regla 6).
+*/
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  --app-traslado-corto: var(--color-success);
+  --app-traslado-medio: #0d9488;
+  --app-traslado-largo: #ea580c;
 }
 
 [data-theme="dark"] {
@@ -377,5 +393,41 @@
   --app-nota-compartida-bg: color-mix(in srgb, #2458d6 22%, var(--color-base-100));
   --app-nota-compartida-borde: color-mix(in srgb, #2458d6 45%, var(--color-base-100));
   --app-nota-compartida-filete: #7f9cf5;
+  --app-nota-informativa-bg: color-mix(in srgb, #64748b 18%, var(--color-base-100));
+  --app-nota-informativa-borde: color-mix(in srgb, #64748b 45%, var(--color-base-100));
+  --app-nota-informativa-filete: #94a3b8;
   --app-fila-destello: color-mix(in srgb, #e5b93a 45%, var(--color-base-100));
+}
+
+/*
+  FICHA DE SOLO LECTURA DEL OPERATIVO. Añadidos el 2026-10-28 (`DetalleOperativoLectura`).
+
+  El cuerpo del cajón es gris claro y cada sección, una tarjeta blanca con borde suave y título
+  azul de marca. «Sin asignar» (conductor y placa) va en ámbar oscuro. Los valores claros son los
+  que fijó el negocio; en oscuro el fondo baja bajo `base-100` para que la tarjeta se distinga.
+
+    token                  claro      oscuro                                uso
+    detalle-fondo          #f5f7fb    negro 25 % + base-100                  cuerpo del cajón
+    detalle-tarjeta        #ffffff    base-100                               cada sección
+    detalle-borde          #e6e9f0    base-content 14 % + base-100           borde de la tarjeta
+    detalle-titulo         #1e2e78    #a5b8ff                                título de la sección
+    detalle-pendiente      #b45309    #fdba8c                                «Sin asignar»
+
+  CONTRASTE (WCAG 2.x, texto): título 11,9 : 1 sobre blanco; «Sin asignar» 5,0 : 1 sobre blanco.
+*/
+:root,
+[data-theme="light"] {
+  --app-detalle-fondo: #f5f7fb;
+  --app-detalle-tarjeta: #ffffff;
+  --app-detalle-borde: #e6e9f0;
+  --app-detalle-titulo: #1e2e78;
+  --app-detalle-pendiente: #b45309;
+}
+
+[data-theme="dark"] {
+  --app-detalle-fondo: color-mix(in srgb, black 25%, var(--color-base-100));
+  --app-detalle-tarjeta: var(--color-base-100);
+  --app-detalle-borde: color-mix(in srgb, var(--color-base-content) 14%, var(--color-base-100));
+  --app-detalle-titulo: #a5b8ff;
+  --app-detalle-pendiente: #fdba8c;
 }

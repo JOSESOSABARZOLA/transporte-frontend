@@ -39,10 +39,15 @@ vi.mock("../../services/operativo.service.ts", () => ({
     obtener: vi.fn(),
     asignarPersonal: vi.fn(),
     retirarPersonal: vi.fn(),
+    guardarPersonal: vi.fn(),
   },
 }));
 vi.mock("../../services/personal.service.ts", () => ({
   PersonalService: { consultarElegibles: vi.fn() },
+}));
+// Los catálogos solo aportan el prefijo de cada área (patrulla): aquí no responden.
+vi.mock("../../services/catalogoCuadro.service", () => ({
+  CatalogoCuadroService: { obtenerCatalogos: vi.fn(() => new Promise(() => {})) },
 }));
 
 /**
@@ -62,7 +67,19 @@ const OPERATIVO = {
   zonales: [],
   instituciones: [],
   alertas: [],
-  formulario: { codigo: "ECU", numero: 4, nombre: "PATRULLA ECU DIURNA" },
+  esLote: false,
+  creadoPorRol: "DMIP_OPERATIVOS",
+  formulario: {
+    codigo: "ECU",
+    numero: 4,
+    nombre: "PATRULLA ECU DIURNA",
+    esPatrulla: true,
+    rolDueno: "DMIP_OPERATIVOS",
+    roles: [
+      { rol: "DMIP_OPERATIVOS", acceso: "ESCRITURA" },
+      { rol: "DMIT_INSTRUCTOR", acceso: "APORTA" },
+    ],
+  },
 } as unknown as Awaited<ReturnType<typeof OperativoService.obtener>>;
 
 /** Una instructora elegible: es lo que el DMIT aporta a la ECU. */
@@ -85,6 +102,7 @@ const FILA = {
   horario: "08H00 A 12H00",
   personal: [],
   areasPendientesDelRol: [],
+  composicionPorInformar: [],
   alertas: [],
 } as unknown as FilaJornada;
 
@@ -106,6 +124,8 @@ const abrirPanel = () => {
       fila={FILA}
       seccion={SECCION}
       fecha="2026-09-02"
+      roles={["DMIT_INSTRUCTOR"]}
+      motivoBloqueo={null}
       onCerrar={vi.fn()}
       onCambio={vi.fn()}
     />,
@@ -116,51 +136,134 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("P-13 · asignar personal lo dice", () => {
-  it("tras asignar, confirma y nombra a la persona y al operativo", async () => {
-    vi.mocked(OperativoService.asignarPersonal).mockResolvedValue(OPERATIVO);
+/** El cajón abierto, ya con el operativo cargado. */
+const cajonAbierto = () =>
+  screen.findByRole("dialog", { name: "Personal de OCECU-001-02-SEP-2026" });
 
+/**
+ * Agrega a la candidata con su «+ Agregar». Desde el 2026-10-29 la Jornada usa la misma lista
+ * compacta que el resto de cajones de aporte, con el horario de cada persona en línea.
+ */
+const agregarCandidata = async () =>
+  userEvent.click(await screen.findByRole("button", { name: "+ Agregar" }));
+
+/**
+ * «GUARDAR CAMBIOS» (2026-10-28). Agregar y quitar ya no viajan solos: tocan el borrador y el lote va
+ * en una llamada. La confirmación sigue hablando, pero al guardar; y un rechazo no guarda nada.
+ */
+describe("P-13 · el personal se confirma con «Guardar cambios» (2026-10-28)", () => {
+  it("agregar NO llama al servidor: marca «Nuevo» y el pie cuenta el cambio", async () => {
     abrirPanel();
+    const cajon = await cajonAbierto();
 
-    const boton = await screen.findByRole("button", {
-      name: /YUNDA JESSICA/,
-    });
-    await userEvent.click(boton);
+    await agregarCandidata();
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          "Se agregó a YUNDA JESSICA al operativo OCECU-001-02-SEP-2026",
-        ),
-      ).toBeInTheDocument(),
+    expect(OperativoService.asignarPersonal).not.toHaveBeenCalled();
+    expect(OperativoService.guardarPersonal).not.toHaveBeenCalled();
+    expect(within(cajon).getByText("Nuevo")).toBeInTheDocument();
+    expect(within(cajon).getByText("1 cambio sin guardar · +1 persona")).toBeInTheDocument();
+  });
+
+  it("sin cambios, «Guardar cambios» está apagado", async () => {
+    abrirPanel();
+    const cajon = await cajonAbierto();
+
+    expect(within(cajon).getByText("Sin cambios pendientes")).toBeInTheDocument();
+    expect(within(cajon).getByRole("button", { name: "Guardar cambios" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
     );
   });
 
-  it("y si el servidor rechaza, muestra su motivo y ninguna confirmación", async () => {
-    vi.mocked(OperativoService.asignarPersonal).mockRejectedValue({
+  it("«Guardar cambios» envía el conjunto completo en UNA llamada y lo confirma", async () => {
+    vi.mocked(OperativoService.guardarPersonal).mockResolvedValue({
+      ...OPERATIVO,
+      personal: [{ funcionarioId: 41, nombre: "YUNDA JESSICA" }],
+    } as never);
+    const onCambio = vi.fn();
+    const onCerrar = vi.fn();
+    vi.mocked(OperativoService.obtener).mockResolvedValue(OPERATIVO);
+    vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([CANDIDATA]);
+    render(
+      <PanelPersonalJornada
+        fila={FILA}
+        seccion={SECCION}
+        fecha="2026-09-02"
+        roles={["DMIT_INSTRUCTOR"]}
+        motivoBloqueo={null}
+        onCerrar={onCerrar}
+        onCambio={onCambio}
+      />,
+    );
+    const cajon = await cajonAbierto();
+
+    await agregarCandidata();
+    await userEvent.click(within(cajon).getByRole("button", { name: "Guardar cambios" }));
+
+    await waitFor(() => expect(onCerrar).toHaveBeenCalledTimes(1));
+    expect(OperativoService.guardarPersonal).toHaveBeenCalledTimes(1);
+    expect(OperativoService.guardarPersonal).toHaveBeenCalledWith(
+      7,
+      [{ funcionarioId: 41, horaInicio: "08:00", horaFin: "12:00" }],
+      false,
+    );
+    expect(onCambio).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("Personal guardado: 1 persona en OCECU-001-02-SEP-2026"),
+    ).toBeInTheDocument();
+  });
+
+  it("si el servidor rechaza, no se guarda nada: el motivo nombra a la persona y el borrador queda", async () => {
+    vi.mocked(OperativoService.guardarPersonal).mockRejectedValue({
       status: 409,
       originalError: {
         response: {
           data: {
             codigo: "CUPO_COMPARTIDO_SUPERADO",
             mensaje: "Su departamento ya asignó las 2 personas de su cupo.",
+            detalles: { funcionarioId: 41 },
           },
         },
       },
     });
 
     abrirPanel();
+    const cajon = await cajonAbierto();
+    await agregarCandidata();
+    await userEvent.click(within(cajon).getByRole("button", { name: "Guardar cambios" }));
 
-    const boton = await screen.findByRole("button", {
-      name: /YUNDA JESSICA/,
-    });
-    await userEvent.click(boton);
-
-    // El motivo del servidor se muestra tal cual (regla 7).
-    await waitFor(() =>
-      expect(screen.getByText(/ya asignó las 2 personas/)).toBeInTheDocument(),
+    // El motivo del servidor se muestra tal cual (regla 7), en la fila de esa persona.
+    const motivo = await within(cajon).findByText(
+      "Su departamento ya asignó las 2 personas de su cupo.",
     );
-    expect(screen.queryByText(/Se agregó a/)).toBeNull();
+    expect(motivo.closest("li")).toHaveTextContent("YUNDA JESSICA");
+    expect(screen.queryByText(/Personal guardado/)).toBeNull();
+    // El borrador sigue: la persona y su «Nuevo».
+    expect(within(cajon).getByText("Nuevo")).toBeInTheDocument();
+  });
+
+  it("cerrar con cambios pide confirmación; sin cambios cierra directo", async () => {
+    const onCerrar = vi.fn();
+    vi.mocked(OperativoService.obtener).mockResolvedValue(OPERATIVO);
+    vi.mocked(PersonalService.consultarElegibles).mockResolvedValue([CANDIDATA]);
+    render(
+      <PanelPersonalJornada
+        fila={FILA}
+        seccion={SECCION}
+        fecha="2026-09-02"
+        roles={["DMIT_INSTRUCTOR"]}
+        motivoBloqueo={null}
+        onCerrar={onCerrar}
+        onCambio={vi.fn()}
+      />,
+    );
+    const cajon = await cajonAbierto();
+    await agregarCandidata();
+
+    await userEvent.click(within(cajon).getByRole("button", { name: "Cancelar" }));
+
+    expect(await screen.findByText("¿Descartar cambios?")).toBeInTheDocument();
+    expect(onCerrar).not.toHaveBeenCalled();
   });
 });
 
@@ -170,16 +273,19 @@ describe("P-13 · asignar personal lo dice", () => {
  * de él, como una vista: no hay un segundo diálogo que pueda quedar debajo.
  */
 describe("P-13 · cajón estándar y reparto de carga (H7)", () => {
-  it("es un cajón de consulta: [Cerrar], sin «Guardar»", async () => {
+  it("es un cajón estándar con [Cancelar] [Guardar cambios] (2026-10-28)", async () => {
     abrirPanel();
 
     const cajon = await screen.findByRole("dialog", {
       name: "Personal de OCECU-001-02-SEP-2026",
     });
-    expect(within(cajon).queryByRole("button", { name: "Guardar" })).toBeNull();
-    expect(within(cajon).getAllByRole("button", { name: "Cerrar" }).length).toBeGreaterThan(0);
+    expect(within(cajon).getByRole("button", { name: "Guardar cambios" })).toBeInTheDocument();
+    expect(within(cajon).getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+    // El texto común del aporte (2026-10-29), el mismo que en Mis operativos y Registro.
     expect(
-      screen.getByText("Este formulario no es de su departamento: aporta personal dentro de su cupo."),
+      screen.getByText(
+        "Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura.",
+      ),
     ).toBeInTheDocument();
     // La estructura del cajón estándar (R10): ancho, cabecera, secciones y pie.
     expect(resumenCajon(cajon)).toMatchSnapshot();
@@ -195,6 +301,8 @@ describe("P-13 · cajón estándar y reparto de carga (H7)", () => {
         fila={FILA}
         seccion={SECCION}
         fecha="2026-09-02"
+        roles={["DMIT_INSTRUCTOR"]}
+        motivoBloqueo={null}
         onCerrar={vi.fn()}
         onCambio={vi.fn()}
       />,

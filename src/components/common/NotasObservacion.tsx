@@ -21,6 +21,9 @@
  *     tampoco se pulsa y solo dice su texto.
  *   · Se ven como mucho `max` (2): «+ N notas más» despliega todas y «Ver menos» las recoge. Sin
  *     notas, «—» en gris.
+ *   · INFORMATIVA (2026-10-22): «ℹ Sin Inspector Técnico - DMIP. Puede agregarlo si corresponde.»,
+ *     tarjeta gris (`app-nota-informativa`) que va primero y no cuenta para `max`. No es una nota
+ *     escrita: la arma la pantalla con la composición del registro, y no se pulsa.
  *   · SOLO LECTURA (`modo="lectura"`): las notas se escriben y corrigen en el cajón del operativo
  *     (`ObservacionesOperativo`). Un modo de edición aquí no tendría quien lo usara.
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -53,6 +56,8 @@ type NotasObservacionProps = {
   esVisible?: (operativoId: number) => boolean;
   /** Nombre accesible de la lista: «Observaciones de OCPMO-002…». */
   etiqueta?: string;
+  /** Mensajes informativos que van antes de las notas (composición del registro, 2026-10-22). */
+  informativas?: string[];
 };
 
 /** «Autor · dd/mm HHhMM», con lo que haya: un servidor anterior no manda ni autor ni fecha. */
@@ -128,10 +133,13 @@ const NotasObservacion: FC<NotasObservacionProps> = ({
   onIrA,
   esVisible,
   etiqueta,
+  informativas = [],
 }) => {
   const [todas, setTodas] = useState(false);
 
-  if (notas.length === 0) return <span className="text-app-muted">—</span>;
+  if (notas.length === 0 && informativas.length === 0) {
+    return <span className="text-app-muted">—</span>;
+  }
 
   const visibles = todas ? notas : notas.slice(0, max);
   const ocultas = notas.length - max;
@@ -139,6 +147,15 @@ const NotasObservacion: FC<NotasObservacionProps> = ({
   return (
     <span className="flex flex-col items-start gap-1">
       <ul className="flex w-full flex-col gap-1" aria-label={etiqueta}>
+        {informativas.map((texto) => (
+          <li key={texto}>
+            <span className="app-nota app-nota-informativa text-app-strong">
+              <span aria-hidden="true">ℹ </span>
+              <span className="sr-only">Información: </span>
+              {texto}
+            </span>
+          </li>
+        ))}
         {visibles.map((nota) => (
           <li key={nota.id}>
             {nota.tipo === "COMPARTIDA" ? (

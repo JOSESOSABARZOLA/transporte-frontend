@@ -24,22 +24,25 @@
  * parte» salen de `clasificarReparto`. Solo el ANCHO de la barra va en `style` inline (dato).
  *
  * AGREGAR/QUITAR NO DECIDE AQUÍ el modo de guardado: llama a `onAgregar`/`onQuitar`, que la pantalla
- * conecta a su estado (borrador en el alta, diferido en la edición, inmediato en el aporte). El
+ * conecta a su estado (borrador en el alta, diferido en la edición y en el aporte). El
  * `modo` solo cambia los textos (franja informativa, rótulo del botón y de los grupos).
+ *
+ * TAMBIÉN LOS CONDUCTORES DE LA DAF (2026-10-30). Las filas son `FilaReparto` (`personal.util.ts`),
+ * no la persona del registro: el cajón de candidatos de «Planificar el día» arma las suyas con
+ * `filaDeCandidato` (`planificarDia.util.ts`) y
+ * usa el modo «consulta», sin «Agregar/Quitar», porque allí se asigna desde la fila del candidato
+ * (con su placa). El personal las arma con `filaDePersona`; para él nada cambia.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { useMemo, type FC } from "react";
 
 import {
-  nombreDePersona,
-  type PersonaElegible,
-} from "../../interfaces/Personal.ts";
-import {
   clasificarReparto,
   NOMBRE_AREA,
   TONO_CARGA,
   type ClaseReparto,
+  type FilaReparto,
 } from "../../utils/personal.util.ts";
 import type { NivelFatiga } from "../../interfaces/Personal.ts";
 import Boton from "../common/Boton.tsx";
@@ -48,21 +51,32 @@ import EtiquetaCarga from "../common/EtiquetaCarga.tsx";
 /**
  * Cómo se guarda lo que se agrega/quita, SOLO para el texto (las acciones las resuelve la pantalla):
  *   · borrador  (P-01 alta): pasa al formulario y se registra con «Registrar operativo».
- *   · diferido  (edición P-01/P-02): se aplica al «Guardar cambios».
- *   · inmediato (aporte): se guarda al instante.
+ *   · diferido  (edición P-01/P-02 y aporte): se aplica al «Guardar cambios». Desde el 2026-10-29
+ *     el aporte ya no guarda al instante: el modo «inmediato» se retiró.
+ *   · consulta  (DAF, 2026-10-30): solo se mira; se asigna desde la lista de conductores sugeridos.
  */
-export type ModoReparto = "borrador" | "diferido" | "inmediato";
+export type ModoReparto = "borrador" | "diferido" | "consulta";
 
 type RepartoCargaProps = {
   /** Mismo listado que alimenta el selector; se leen sus señales ya calculadas. */
-  personas: PersonaElegible[];
+  personas: readonly FilaReparto[];
   /** Cuota justa del grupo (la misma para todos). */
   cuota: number | undefined;
   /** Ids ya agregados/asignados a este operativo. */
   idsAgregados: number[];
-  onAgregar: (id: number) => void;
-  onQuitar: (id: number) => void;
+  /** Sin manejadores (modo «consulta») las filas no llevan botón. */
+  onAgregar?: (id: number) => void;
+  onQuitar?: (id: number) => void;
   modo: ModoReparto;
+};
+
+/** La franja informativa de arriba, según cómo se guarda lo que se hace aquí. */
+const FRANJA_MODO: Record<ModoReparto, string> = {
+  borrador:
+    "Lo que agregue aquí pasa al formulario y se registra con «Registrar operativo».",
+  diferido: "Los cambios se aplican al pulsar «Guardar cambios».",
+  consulta:
+    "Solo consulta: asigne al conductor desde la lista de conductores sugeridos.",
 };
 
 /** «+3.3» / «−6.4» / «0»: el signo hace ver de un lado quién sobra y quién falta de su parte. */
@@ -81,7 +95,7 @@ const textoOperativos = (cantidad: number): string =>
   `${cantidad} ${cantidad === 1 ? "operativo" : "operativos"}`;
 
 /** El estado de equidad en palabras, con el número de desviación cuando corresponde. */
-const textoEquidad = (persona: PersonaElegible, clase: ClaseReparto): string => {
+const textoEquidad = (persona: FilaReparto, clase: ClaseReparto): string => {
   if (clase === "en") return "en su parte";
   const lado = clase === "bajo" ? "bajo su parte" : "sobre su parte";
   return persona.desviacionCarga !== undefined
@@ -93,7 +107,7 @@ const textoEquidad = (persona: PersonaElegible, clase: ClaseReparto): string => 
  * Renglón de texto bajo la barra: «Índice 25 · +11.5 sobre su parte». La fatiga YA NO va aquí —vive
  * en el badge «Carga X» de la izquierda—; aquí solo el índice y la posición frente a la cuota.
  */
-const detalleDeCarga = (persona: PersonaElegible, clase: ClaseReparto): string => {
+const detalleDeCarga = (persona: FilaReparto, clase: ClaseReparto): string => {
   const equidad = textoEquidad(persona, clase);
   return equidad
     ? `Índice ${persona.indiceCarga} · ${equidad}`
@@ -102,11 +116,11 @@ const detalleDeCarga = (persona: PersonaElegible, clase: ClaseReparto): string =
 
 /** Tooltip completo: «<nombre> · fatiga <x> · índice <n> · cuota <c> · <desviación>». */
 const tooltipDeCarga = (
-  persona: PersonaElegible,
+  persona: FilaReparto,
   clase: ClaseReparto,
   cuota: number | undefined,
 ): string => {
-  const partes = [nombreDePersona(persona)];
+  const partes = [persona.nombre];
   if (persona.nivelFatiga)
     partes.push(`fatiga ${PALABRA_FATIGA[persona.nivelFatiga]}`);
   partes.push(`índice ${persona.indiceCarga}`);
@@ -125,6 +139,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
   modo,
 }) => {
   const esBorrador = modo === "borrador";
+  const esConsulta = modo === "consulta";
   const rotuloAgregar = esBorrador ? "+ Agregar" : "+ Asignar";
   const rotuloChipAgregado = esBorrador ? "Agregado" : "Asignado aquí";
 
@@ -200,7 +215,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
 
   /** Una fila de persona: nombre + chips a la izquierda, barra al centro, acción a la derecha. */
   const Fila = (
-    persona: PersonaElegible,
+    persona: FilaReparto,
     variante: "disponible" | "agregado" | "noDisponible",
   ) => {
     const indice = persona.indiceCarga ?? 0;
@@ -217,7 +232,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
       >
         {/* IZQUIERDA (~210px): nombre (hasta 2 líneas, sin ellipsis), operativos y chips. */}
         <div className="w-full min-w-0 sm:w-52 sm:shrink-0">
-          <p className="break-words font-medium">{nombreDePersona(persona)}</p>
+          <p className="break-words font-medium">{persona.nombre}</p>
           <p className="text-xs text-app-muted">
             {textoOperativos(persona.operativosAsignados ?? 0)}
             {!unidadUnica && persona.area
@@ -274,19 +289,21 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
           )}
         </div>
 
-        {/* DERECHA: agregar/quitar (outline); los no disponibles no tienen botón. */}
-        <div className="flex w-full justify-end sm:w-24 sm:shrink-0">
-          {variante === "disponible" && (
-            <Boton variante="acento" tamano="sm" onClick={() => onAgregar(persona.id)}>
-              {rotuloAgregar}
-            </Boton>
-          )}
-          {variante === "agregado" && (
-            <Boton variante="peligro" tamano="sm" onClick={() => onQuitar(persona.id)}>
-              Quitar
-            </Boton>
-          )}
-        </div>
+        {/* DERECHA: agregar/quitar (outline); los no disponibles —y la consulta— no tienen botón. */}
+        {!esConsulta && (
+          <div className="flex w-full justify-end sm:w-24 sm:shrink-0">
+            {variante === "disponible" && onAgregar && (
+              <Boton variante="acento" tamano="sm" onClick={() => onAgregar(persona.id)}>
+                {rotuloAgregar}
+              </Boton>
+            )}
+            {variante === "agregado" && onQuitar && (
+              <Boton variante="peligro" tamano="sm" onClick={() => onQuitar(persona.id)}>
+                Quitar
+              </Boton>
+            )}
+          </div>
+        )}
       </li>
     );
   };
@@ -298,13 +315,7 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
         className="rounded-box border border-base-300 bg-base-200 px-3 py-2"
         role="status"
       >
-        <span className="text-xs">
-          {modo === "borrador"
-            ? "Lo que agregue aquí pasa al formulario y se registra con «Registrar operativo»."
-            : modo === "diferido"
-              ? "Los cambios se aplican al pulsar «Guardar cambios»."
-              : "Se guarda al instante."}
-        </span>
+        <span className="text-xs">{FRANJA_MODO[modo]}</span>
       </div>
 
       {/* 4 TARJETAS DE RESUMEN: los tres conteos suman el total de personas con carga. */}

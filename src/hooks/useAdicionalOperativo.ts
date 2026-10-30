@@ -34,7 +34,7 @@ import { nombreDePersona, type PersonaElegible } from "../interfaces/Personal.ts
 import { OperativoService } from "../services/operativo.service.ts";
 import { macroSegunTipo } from "../utils/tipoTransporte.util.ts";
 import { avisoDeFallo, type AvisoTexto } from "../utils/errorApi.util.ts";
-import { turnoDePrimera } from "../utils/personal.util.ts";
+import { conPersonaReemplazada, turnoDePrimera } from "../utils/personal.util.ts";
 import {
   OPCION_ADICIONALES,
   type ValoresOperativo,
@@ -93,6 +93,8 @@ export const useAdicionalOperativo = ({ ventanaAbierta, alRegistrar }: Opciones)
               // RN-34: el teléfono lo resuelve el servidor al asignar. Aquí todavía no se
               // conoce, y **no se inventa**.
               telefono: null,
+              // El área fija el «Tipo de personal» del 8 (2026-10-28).
+              area: persona.area,
               // DEFAULT-FROM-FIRST (RN-66): el horario arranca copiando el de la primera
               // persona; la primera queda vacía y hay que llenarla.
               ...turnoDePrimera(actuales),
@@ -106,6 +108,16 @@ export const useAdicionalOperativo = ({ ventanaAbierta, alRegistrar }: Opciones)
       actuales.filter((agregada) => agregada.funcionarioId !== funcionarioId),
     );
   }, []);
+
+  /** «Reemplazar» del formulario de una sola persona (2026-10-28): conserva el horario. */
+  const reemplazarPersona = useCallback(
+    (salienteId: number, entrante: PersonaElegible) => {
+      setPersonal((actuales) =>
+        conPersonaReemplazada(actuales, salienteId, entrante),
+      );
+    },
+    [],
+  );
 
   /** El horario propio de una persona (RN-66). Obligatorio: el adicional no tiene horario propio. */
   const cambiarHorarioPersona = useCallback(
@@ -221,6 +233,7 @@ export const useAdicionalOperativo = ({ ventanaAbierta, alRegistrar }: Opciones)
       personalAgregado: personal,
       onAgregarPersona: agregarPersona,
       onRetirarPersona: retirarPersona,
+      onReemplazarPersona: reemplazarPersona,
       onCambiarHorarioPersona: cambiarHorarioPersona,
       onCambiarTramitePersona: cambiarTramitePersona,
       guardando,

@@ -45,7 +45,8 @@ export type BanderaFormulario =
   | "puntoManual"
   | "filtraPersonalPorRol"
   | "variosPorPersona"
-  | "cantidadPorPersona";
+  | "cantidadPorPersona"
+  | "elegirUnaArea";
 
 /** Cómo se presenta la política de vehículo: tres opciones (ver la cabecera). */
 export type OpcionPolitica = "NO_APLICA" | "CONDICIONAL" | "SIEMPRE";
@@ -62,6 +63,8 @@ export type ValoresFormularioAdmin = {
   rolDueno: string;
   politica: OpcionPolitica;
   tipoTransportePorDefecto: TipoTransporte;
+  /** Tope de personas por operativo como texto: «» es sin tope (2026-10-28). */
+  maxPersonas: string;
 } & Record<BanderaFormulario, boolean>;
 
 /** Las secciones del cajón, en su orden; solo las tres primeras pueden quedar pendientes. */
@@ -250,6 +253,8 @@ export const valoresIniciales = (
   filtraPersonalPorRol: fila?.filtraPersonalPorRol ?? true,
   variosPorPersona: fila?.variosPorPersona ?? false,
   cantidadPorPersona: fila?.cantidadPorPersona ?? false,
+  elegirUnaArea: fila?.elegirUnaArea ?? false,
+  maxPersonas: fila?.maxPersonas == null ? "" : String(fila.maxPersonas),
 });
 
 const BANDERAS: BanderaFormulario[] = [
@@ -262,7 +267,12 @@ const BANDERAS: BanderaFormulario[] = [
   "filtraPersonalPorRol",
   "variosPorPersona",
   "cantidadPorPersona",
+  "elegirUnaArea",
 ];
+
+/** El tope de personas del cajón como lo guarda el servidor: «» es `null` (sin tope). */
+const maxPersonasAGuardar = (texto: string): number | null =>
+  texto.trim() === "" ? null : Number(texto);
 
 /** El cuerpo del alta. Sin áreas: el formulario nace sin ellas. */
 export const cuerpoDeAlta = (valores: ValoresFormularioAdmin): CrearFormulario => ({
@@ -276,6 +286,7 @@ export const cuerpoDeAlta = (valores: ValoresFormularioAdmin): CrearFormulario =
   prefijo: enMayusculas(valores.prefijo.trim()),
   politicaVehiculo: politicaAGuardar(valores.politica, null),
   tipoTransportePorDefecto: valores.tipoTransportePorDefecto,
+  maxPersonas: maxPersonasAGuardar(valores.maxPersonas),
   ...Object.fromEntries(BANDERAS.map((bandera) => [bandera, valores[bandera]])),
 }) as CrearFormulario;
 
@@ -307,8 +318,10 @@ export const cambiosDeEdicion = (
     cambios.tipoTransportePorDefecto = valores.tipoTransportePorDefecto;
   }
   for (const bandera of BANDERAS) {
-    if (valores[bandera] !== fila[bandera]) cambios[bandera] = valores[bandera];
+    if (valores[bandera] !== Boolean(fila[bandera])) cambios[bandera] = valores[bandera];
   }
+  const maxPersonas = maxPersonasAGuardar(valores.maxPersonas);
+  if (maxPersonas !== (fila.maxPersonas ?? null)) cambios.maxPersonas = maxPersonas;
   return cambios;
 };
 

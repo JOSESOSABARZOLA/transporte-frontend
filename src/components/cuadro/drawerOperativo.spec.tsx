@@ -38,12 +38,16 @@ import type { Operativo } from "../../interfaces/Operativo.ts";
 import type { PersonaAgregada } from "./SelectorPersonal.tsx";
 import { resumenCajon } from "../../pruebas/resumenCajon.ts";
 
+// La sesión: el chip «Perfil» del encabezado sale de ella (plantilla visual, 2026-10-24).
+vi.mock("../../hooks/useUser.ts", () => ({
+  useUser: () => ({ user: { rolCodes: ["DIRECTOR"], rolName: "Dirección", displayName: "Prueba" } }),
+}));
 vi.mock("../../services/documento.service.ts", () => ({
   DocumentoService: {
     consultarMatriz: vi.fn(),
     emitirOrdenes: vi.fn(),
     consultarOrdenesDeOperativo: vi.fn(),
-    obtenerPlantilla: vi.fn(() => new Promise(() => {})),
+    listarPlantillas: vi.fn(() => new Promise(() => {})),
   },
 }));
 vi.mock("../ordenes/EditorPlantillaOrden.tsx", () => ({ default: () => null }));
@@ -60,7 +64,8 @@ const origen = (parcial: Partial<Operativo> = {}): Operativo =>
   ({
     id: 1,
     identificador: "OCPMO-001-09-OCT-2026",
-    grupoRegistro: null,
+    grupoRegistro: "registro-suelto",
+    esLote: false,
     secuencial: 1,
     cuadroFecha: "2026-10-09",
     esAdicional: false,
@@ -309,7 +314,10 @@ describe("en Órdenes de servicio el adicional abre el cajón", () => {
     cabecera: {
       estado: "CERRADO",
       ordenTrabajo: "AMC-2026-10-09",
+      fecha: "2026-10-09",
       fechaNatural: "viernes 9 de octubre de 2026",
+      nroSemana: 41,
+      anioSemana: 2026,
     },
     secciones: [
       {
@@ -328,7 +336,8 @@ describe("en Órdenes de servicio el adicional abre el cajón", () => {
           {
             id: 1,
             identificador: "OCPMO-001-09-OCT-2026",
-            grupoRegistro: null,
+            grupoRegistro: "registro-suelto",
+            esLote: false,
             esAdicional: false,
             origen: null,
             horario: "09H00 A 18H00",
@@ -362,11 +371,10 @@ describe("en Órdenes de servicio el adicional abre el cajón", () => {
   it("«+ Adicional» abre el cajón sin mover la tabla, y al cerrar el foco vuelve al botón", async () => {
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
-    const boton = await screen.findByRole("button", { name: "Adicional" });
-    expect(boton).toHaveAttribute(
-      "title",
-      "Registrar un operativo adicional a partir de OCPMO-001-09-OCT-2026",
-    );
+    // Botón de icono (plantilla visual, 2026-10-24): el nombre dice la acción y el operativo.
+    const boton = await screen.findByRole("button", {
+      name: "Agregar adicional OCPMO-001-09-OCT-2026",
+    });
     const tabla = screen.getByRole("table");
 
     await userEvent.click(boton);
@@ -391,14 +399,16 @@ describe("en Órdenes de servicio el adicional abre el cajón", () => {
     await userEvent.click(aspa);
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("button", { name: "Adicional" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Agregar adicional OCPMO-001-09-OCT-2026" }),
+    ).toHaveFocus();
   });
 });
 
 /*
   ═══════════════════════════════════════════════════════════════════════════════
   MODO «EDITAR» (2026-10-08). El MISMO componente que el adicional: solo cambia el contenido.
-  Se prueban sus decisiones propias —título, pie, solo lectura, aviso de la DAF, descarte— y que
+  Se prueban sus decisiones propias —título, pie, bloqueo, aviso de la DAF, descarte— y que
   no es otro marcado: el atributo `data-drawer-operativo` lo dice en las dos.
   ═══════════════════════════════════════════════════════════════════════════════
 */
@@ -421,7 +431,6 @@ const pintarEdicion = (
   render(
     <DrawerOperativo
       modo="editar"
-      soloLectura={false}
       personalPendiente={false}
       horarioCambiado={false}
       operativo={origen({ personal: [PERSONA] })}
@@ -436,7 +445,6 @@ const pintarEdicion = (
       onCambiarHorarioPersona={vi.fn()}
       avisoPersonal={null}
       bloqueado={false}
-      personalInmediato={false}
       guardando={false}
       onGuardar={onGuardar}
       onCerrar={onCerrar}
@@ -473,14 +481,22 @@ describe("el modo «editar» del cajón único", () => {
     expect(resumenCajon(cajon)).toMatchSnapshot();
   });
 
-  it("con la ventana cerrada se abre en solo lectura: sin «Guardar cambios» y con «Cerrar»", () => {
-    pintarEdicion({ soloLectura: true, bloqueado: true });
+  /*
+    CONSULTAR YA NO ES ESTE CAJÓN (2026-10-27): «Ver detalle» abre `DetalleOperativoLectura`. Si la
+    ventana o el cuadro se cierran con la edición abierta, el cajón sigue siendo «Editar operativo»
+    y «Guardar cambios» queda apagado con su motivo.
+  */
+  it("con la ventana cerrada «Guardar cambios» queda apagado con su motivo", () => {
+    pintarEdicion({ bloqueado: true });
 
     const cajon = cajonEdicion();
-    expect(
-      within(cajon).queryByRole("button", { name: "Guardar cambios" }),
-    ).toBeNull();
-    expect(within(cajon).getByText(/Solo lectura/)).toBeInTheDocument();
+    const guardar = within(cajon).getByRole("button", { name: "Guardar cambios" });
+    expect(guardar).toHaveAttribute("aria-disabled", "true");
+    expect(guardar).toHaveAttribute(
+      "title",
+      "No se puede guardar: el cuadro o la ventana de carga están cerrados.",
+    );
+    expect(within(cajon).queryByText(/Solo lectura/)).toBeNull();
   });
 
   it("con personal sin aplicar, cerrar pregunta «¿Descartar los cambios?»", async () => {

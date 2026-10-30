@@ -56,6 +56,8 @@ const PERMISO_ROLES: Record<string, RolDepartamental[]> = {
   "permisos:administrar": ["ADMINISTRADOR"],
   // Versión consolidada de la DAF (2026-10-06): la carga inicial, solo el administrador general.
   "carga-inicial:administrar": ["ADMINISTRADOR"],
+  // Jornadas laborales (2026-10-23): quienes fijaban las horas del nombramiento.
+  "jornadas:administrar": ["ADMINISTRADOR_DMIP", "ADMINISTRADOR"],
 };
 
 /** Los permisos efectivos (unión) de un conjunto de roles, como los daría el servidor. */

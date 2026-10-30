@@ -26,9 +26,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import JornadaDiaPage from "../../pages/JornadaDiaPage.tsx";
 import TablaJornada from "./TablaJornada.tsx";
+import { columnasDeCabecera, ocupacionPorFila } from "../../pruebas/rejillaTabla.ts";
 import type { FilaJornada, SeccionJornada } from "../../interfaces/Jornada.ts";
 import { JornadaService } from "../../services/jornada.service.ts";
 
+// La sesión: el chip «Perfil» del encabezado sale de ella (plantilla visual, 2026-10-24).
+vi.mock("../../hooks/useUser.ts", () => ({
+  useUser: () => ({ user: { rolCodes: ["DMIT_INSTRUCTOR"], rolName: "DMIT Instrucción", displayName: "Prueba" } }),
+}));
 vi.mock("../../services/jornada.service.ts", () => ({
   JornadaService: { consultarJornada: vi.fn() },
 }));
@@ -48,7 +53,8 @@ vi.mock("../../hooks/useVentanaCarga.ts", () => ({
 const fila = (parcial: Partial<FilaJornada> = {}): FilaJornada => ({
   id: 1,
   identificador: "ICNECU-001-26-AGO-2026",
-  grupoRegistro: null,
+  grupoRegistro: `registro-${parcial.id ?? 1}`,
+  esLote: false,
   esAdicional: false,
   origen: null,
   horario: "18H00 A 23H30",
@@ -57,6 +63,7 @@ const fila = (parcial: Partial<FilaJornada> = {}): FilaJornada => ({
       funcionarioId: 1,
       nombre: "YUNDA JESSICA",
       telefono: "97 969 0786",
+      cargo: null,
       esResponsable: true,
       // Ventana efectiva: heredan el horario del operativo (el caso normal).
       horaInicio: "18:00",
@@ -67,6 +74,7 @@ const fila = (parcial: Partial<FilaJornada> = {}): FilaJornada => ({
       funcionarioId: 2,
       nombre: "CAMPAÑA JUAN",
       telefono: null,
+      cargo: null,
       esResponsable: false,
       horaInicio: "18:00",
       horaFin: "23:30",
@@ -82,6 +90,7 @@ const fila = (parcial: Partial<FilaJornada> = {}): FilaJornada => ({
   estadoTransporte: "PENDIENTE",
   esNocturno: true,
   areasPendientesDelRol: [],
+  composicionPorInformar: [],
   alertas: [],
   ...parcial,
 });
@@ -124,14 +133,14 @@ describe("la jornada distingue lo editable de lo que solo se mira", () => {
     tabla([seccion({ acceso: "APORTA" })]);
 
     expect(
-      screen.getByRole("button", { name: "Agregar personal" }),
+      screen.getByRole("button", { name: /^Agregar personal\b/ }),
     ).toBeInTheDocument();
   });
 
   it("donde no participa, la fila no ofrece nada", () => {
     tabla([seccion({ acceso: "LECTURA", puedeEditarPersonal: false })]);
 
-    expect(screen.queryByRole("button", { name: "Agregar personal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Agregar personal\b/ })).toBeNull();
   });
 
   /**
@@ -151,7 +160,7 @@ describe("la jornada distingue lo editable de lo que solo se mira", () => {
   it("con ESCRITURA pero sin el camino, tampoco ofrece nada", () => {
     tabla([seccion({ acceso: "ESCRITURA", puedeEditarPersonal: false })]);
 
-    expect(screen.queryByRole("button", { name: "Agregar personal" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Agregar personal\b/ })).toBeNull();
   });
 
   /**
@@ -171,7 +180,39 @@ describe("la jornada distingue lo editable de lo que solo se mira", () => {
       }),
     ]);
 
-    expect(screen.getAllByRole("button", { name: "Agregar personal" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^Agregar personal\b/ })).toHaveLength(1);
+  });
+
+  /**
+   * PLANTILLA VISUAL (2026-10-24): si NINGUNA sección de las que se muestran concede el camino, la
+   * columna Acciones sobra —era una columna entera vacía para quien solo consulta— y no se pinta.
+   * Con una sola que lo conceda, la columna está para todas (las demás, con su celda vacía).
+   */
+  it("si nadie puede agregar personal, la columna Acciones no se pinta", () => {
+    const { container } = tabla([
+      seccion({ acceso: "ESCRITURA", puedeEditarPersonal: false }),
+    ]);
+
+    expect(screen.queryByRole("columnheader", { name: "Acciones" })).toBeNull();
+    expect(screen.getAllByRole("columnheader")).toHaveLength(12);
+    // El banner de la sección sigue abarcando la tabla entera.
+    expect(container.querySelector("[colspan]")).toHaveAttribute("colspan", "12");
+  });
+
+  it("con una sección que lo concede, la columna Acciones está", () => {
+    tabla([
+      seccion({ numero: 6, codigo: "ICNECU", acceso: "APORTA" }),
+      seccion({
+        numero: 1,
+        codigo: "FIJOS",
+        acceso: "LECTURA",
+        puedeEditarPersonal: false,
+        filas: [fila({ id: 2, identificador: "OCF-001-26-AGO-2026" })],
+      }),
+    ]);
+
+    expect(screen.getByRole("columnheader", { name: "Acciones" })).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader")).toHaveLength(13);
   });
 
   it("el bloqueo apaga el botón y dice por qué, no lo esconde", () => {
@@ -179,9 +220,10 @@ describe("la jornada distingue lo editable de lo que solo se mira", () => {
     // sistema existe para reemplazar.
     tabla([seccion({ acceso: "ESCRITURA" })], true);
 
-    const boton = screen.getByRole("button", { name: "Agregar personal" });
+    const boton = screen.getByRole("button", { name: /^Agregar personal\b/ });
     expect(boton).toHaveAttribute("aria-disabled", "true");
-    expect(boton).toHaveAttribute("title", "El cuadro del día ya fue cerrado.");
+    // Botón de icono (plantilla visual, 2026-10-24): el motivo va en su tooltip.
+    expect(boton).toHaveAccessibleDescription("El cuadro del día ya fue cerrado.");
   });
 });
 
@@ -211,11 +253,13 @@ describe("las copias del formulario 8 se agrupan en un solo bloque", () => {
       fila({
         id,
         identificador,
-        grupoRegistro: null,
+        grupoRegistro: "registro-suelto",
+        esLote: false,
         horario: "08H00 A 16H30",
         esNocturno: false,
         observaciones: ["Pruebas tecnicas"],
         areasPendientesDelRol: [],
+        composicionPorInformar: [],
         zonales: ["DMQ"],
         puntoEncuentro: "HCAM",
         tipoControl: "CONTROL",
@@ -228,6 +272,7 @@ describe("las copias del formulario 8 se agrupan en un solo bloque", () => {
             funcionarioId: 1,
             nombre: "GUAYAQUIL",
             telefono: null,
+            cargo: null,
             esResponsable: false,
             horaInicio: "08:00",
             horaFin: "16:30",
@@ -425,7 +470,7 @@ describe("la jornada agrupa la fila por persona", () => {
   it("y la acción sigue siendo una sola, abarcando los dos renglones", () => {
     tabla([seccion({ acceso: "APORTA" })]);
 
-    const boton = screen.getByRole("button", { name: "Agregar personal" });
+    const boton = screen.getByRole("button", { name: /^Agregar personal\b/ });
 
     expect(boton.closest("td")).toHaveAttribute("rowspan", "2");
   });
@@ -435,7 +480,7 @@ describe("la jornada agrupa la fila por persona", () => {
 
     expect(screen.getByText("ICNECU-001-26-AGO-2026")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Agregar personal" }),
+      screen.getByRole("button", { name: /^Agregar personal\b/ }),
     ).toBeInTheDocument();
   });
 
@@ -450,6 +495,7 @@ describe("la jornada agrupa la fila por persona", () => {
                 funcionarioId: 1,
                 nombre: "YUNDA JESSICA",
                 telefono: "97 969 0786",
+                cargo: null,
                 esResponsable: true,
                 horaInicio: "18:00",
                 horaFin: "23:30",
@@ -579,6 +625,47 @@ describe("P-13 no hereda lo que es de la Dirección", () => {
     );
   });
 
+  it("una patrulla de tres códigos se cuenta una vez (2026-10-22)", async () => {
+    vi.mocked(JornadaService.consultarJornada).mockResolvedValue({
+      ...jornada,
+      secciones: [
+        seccion({
+          acceso: "APORTA",
+          filas: [
+            fila({ id: 10, grupoRegistro: "P1", esLote: true, areasPendientesDelRol: ["INSTRUCCION"] }),
+            fila({ id: 11, grupoRegistro: "P1", esLote: true, areasPendientesDelRol: ["INSTRUCCION"] }),
+            fila({ id: 12, grupoRegistro: "P1", esLote: true, areasPendientesDelRol: ["INSTRUCCION"] }),
+          ],
+        }),
+      ],
+    });
+    render(<JornadaDiaPage />);
+    await screen.findAllByText("AMC-2026-AGO-26");
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "1 operativo espera personal que a su departamento le toca asignar: Personal de Instrucción.",
+    );
+  });
+
+  it("lo que le falta al registro de quien registra va en Observaciones, como información", async () => {
+    vi.mocked(JornadaService.consultarJornada).mockResolvedValue({
+      ...jornada,
+      secciones: [
+        seccion({
+          filas: [fila({ id: 10, composicionPorInformar: ["TECNICO"] })],
+        }),
+      ],
+    });
+    render(<JornadaDiaPage />);
+    await screen.findAllByText("AMC-2026-AGO-26");
+
+    expect(
+      screen.getByText("Sin Inspector Técnico - DMIP. Puede agregarlo si corresponde."),
+    ).toBeInTheDocument();
+    // Y no entra en el aviso de arriba: no es un pendiente.
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("sin nada pendiente no aparece ningún recuento", async () => {
     // Un aviso permanente deja de ser un aviso. Si no falta personal, no se dice nada.
     await montar();
@@ -620,6 +707,7 @@ describe("la patrulla del Form 6 se agrupa como un solo operativo", () => {
       id,
       identificador,
       grupoRegistro: "lote-6",
+      esLote: true,
       horario: "08H30 A 16H30",
       esNocturno: true,
       zonales: ["DMQ"],
@@ -636,6 +724,7 @@ describe("la patrulla del Form 6 se agrupa como un solo operativo", () => {
           funcionarioId: id,
           nombre,
           telefono: null,
+          cargo: null,
           esResponsable: false,
           horaInicio: "08:30",
           horaFin: "16:30",
@@ -655,7 +744,7 @@ describe("la patrulla del Form 6 se agrupa como un solo operativo", () => {
     ]);
 
     // Un solo operativo: el horario compartido se fusiona y aparece UNA vez, no tres.
-    expect(screen.getAllByText("08H30 A 16H30")).toHaveLength(1);
+    expect(screen.getAllByText("08H30 a 16H30")).toHaveLength(1);
     // Los tres códigos siguen visibles, cada uno en su fila.
     expect(screen.getByText("IGNECU-001")).toBeInTheDocument();
     expect(screen.getByText("INECU-001")).toBeInTheDocument();
@@ -714,6 +803,7 @@ describe("el registro del Form 8 agrupa el personal por persona con su total", (
       id,
       identificador,
       grupoRegistro: "lote-8",
+      esLote: true,
       horario: "08H00 A 12H30",
       esNocturno: false,
       areasPendientesDelRol: [],
@@ -722,6 +812,7 @@ describe("el registro del Form 8 agrupa el personal por persona con su total", (
           funcionarioId,
           nombre,
           telefono: null,
+          cargo: null,
           esResponsable: false,
           horaInicio: "08:00",
           horaFin: "12:30",
@@ -752,7 +843,7 @@ describe("el registro del Form 8 agrupa el personal por persona con su total", (
     expect(screen.getByText("IG-001")).toBeInTheDocument();
     expect(screen.getByText("IT-002")).toBeInTheDocument();
     // El horario compartido se fusiona: aparece UNA vez para todo el bloque.
-    expect(screen.getAllByText("08H00 A 12H30")).toHaveLength(1);
+    expect(screen.getAllByText("08H00 a 12H30")).toHaveLength(1);
   });
 });
 
@@ -784,5 +875,294 @@ describe("el personal recortado se explica con palabras", () => {
     tabla([seccion({ acceso: "APORTA", filas: [fila({ personal: [] })] })]);
 
     expect(screen.queryByText("No se publica")).toBeNull();
+  });
+});
+
+/*
+  CÓDIGOS INTERCALADOS (2026-10-26). El servidor puede entregar IG-001 (Caiza), IT-001 (Aguirre),
+  IG-002 (Caiza). Las filas de una persona se pintan SEGUIDAS y cada fila suma las columnas de la
+  cabecera: sin celdas fuera de la tabla ni huecos.
+*/
+describe("patrulla con los códigos de una persona intercalados", () => {
+  const persona = (funcionarioId: number, nombre: string) => ({
+    funcionarioId,
+    nombre,
+    telefono: null,
+    cargo: null,
+    esResponsable: false,
+    horaInicio: "08:00",
+    horaFin: "12:30",
+  });
+  const codigo = (id: number, identificador: string, funcionarioId: number, nombre: string) =>
+    fila({
+      id,
+      identificador,
+      grupoRegistro: "lote-mezclado",
+      esLote: true,
+      horario: "08H00 A 12H30",
+      esNocturno: false,
+      areasPendientesDelRol: [],
+      personal: [persona(funcionarioId, nombre)],
+    });
+
+  const pintar = () =>
+    tabla([
+      seccion({
+        numero: 8,
+        codigo: "IGECU",
+        totalOperativos: 3,
+        filas: [
+          codigo(1, "IG-001", 1, "CAIZA"),
+          codigo(2, "IT-001", 2, "AGUIRRE"),
+          codigo(3, "IG-002", 1, "CAIZA"),
+        ],
+      }),
+    ]);
+
+  it("A, B, A se pinta como A, A, B, y el nombre dice «(2)» y abarca sus dos filas", () => {
+    pintar();
+
+    const orden = screen.getAllByText(/^I[GT]-00\d$/).map((celda) => celda.textContent);
+    expect(orden).toEqual(["IG-001", "IG-002", "IT-001"]);
+    expect(screen.getByText("CAIZA (2)").closest("td")).toHaveAttribute("rowspan", "2");
+    expect(screen.getByText("AGUIRRE").closest("td")).not.toHaveAttribute("rowspan");
+  });
+
+  it("cada fila del grupo suma exactamente las columnas de la cabecera", () => {
+    const { container } = pintar();
+    const tablaHtml = container.querySelector("table") as HTMLTableElement;
+    const esperadas = columnasDeCabecera(tablaHtml);
+
+    const delGrupo = ocupacionPorFila(tablaHtml).filter((fila) => /I[GT]-00\d/.test(fila.texto));
+    expect(delGrupo).toHaveLength(3);
+    for (const fila of delGrupo) expect(fila.columnas).toBe(esperadas);
+  });
+
+  it("el identificador va en una línea y Personal arriba a la izquierda", () => {
+    pintar();
+
+    expect(screen.getByText("IG-001").closest("td")).toHaveClass("whitespace-nowrap", "min-w-[170px]");
+    const personal = screen.getByText("CAIZA (2)").closest("td");
+    expect(personal).toHaveClass("align-top");
+    expect(personal).not.toHaveClass("text-center");
+  });
+});
+
+/* CONDUCTOR Y PLACA SIN ASIGNAR (2026-10-26): «Sin asignar»; el motivo, en el texto emergente. */
+describe("la celda de alerta de Conductor dice «Sin asignar»", () => {
+  it("con el motivo completo solo en el title", () => {
+    const motivo = "La DAF todavía no ha asignado conductor a este operativo.";
+    const { container } = tabla([
+      seccion({
+        filas: [
+          fila({
+            conductor: null,
+            alertas: [{ codigo: "ALV-02", campo: "conductor", mensaje: motivo, critica: false }],
+          }),
+        ],
+      }),
+    ]);
+
+    const celda = Array.from(container.querySelectorAll<HTMLElement>("td")).find(
+      (td) => td.getAttribute("title") === motivo,
+    );
+    expect(celda).toBeDefined();
+    expect(within(celda as HTMLElement).getByText("Sin asignar")).toBeInTheDocument();
+    expect(screen.queryByText(motivo)).toBeNull();
+  });
+});
+
+/*
+  TODOS TIENEN ID DE REGISTRO (2026-10-27). Lo que agrupa es `esLote`, no el id: dos operativos de
+  un formulario de un operativo nunca se funden en un bloque de patrulla, aunque compartan id.
+*/
+describe("un operativo que no es lote va suelto aunque tenga id de registro", () => {
+  it("cada uno en su fila, sin celdas fusionadas", () => {
+    const persona = (funcionarioId: number, nombre: string) => ({
+      funcionarioId,
+      nombre,
+      telefono: null,
+      cargo: null,
+      esResponsable: false,
+      horaInicio: "08:00",
+      horaFin: "12:00",
+    });
+    const { container } = tabla([
+      seccion({
+        totalOperativos: 2,
+        filas: [
+          fila({
+            id: 1,
+            identificador: "OCF-001",
+            grupoRegistro: "mismo-id",
+            esLote: false,
+            personal: [persona(1, "ABAD VERONICA")],
+          }),
+          fila({
+            id: 2,
+            identificador: "OCF-002",
+            grupoRegistro: "mismo-id",
+            esLote: false,
+            personal: [persona(2, "AGUIRRE FLAVIO")],
+          }),
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText("OCF-001").closest("tr")).not.toBe(
+      screen.getByText("OCF-002").closest("tr"),
+    );
+    expect(container.querySelectorAll("td[rowspan]")).toHaveLength(0);
+  });
+});
+
+/*
+  CARGO DEL MAESTRO BAJO EL NOMBRE (2026-10-27), con la misma pieza de Mis operativos
+  (`nombreConCargo`): 11 px, gris secundario, sin negrita; sin cargo no hay segunda línea.
+*/
+describe("la celda Personal de la Jornada muestra el cargo del Maestro", () => {
+  const persona = (
+    funcionarioId: number,
+    nombre: string,
+    cargo: string | null,
+    esResponsable = false,
+  ) => ({
+    funcionarioId,
+    nombre,
+    telefono: `09${funcionarioId}`,
+    cargo,
+    esResponsable,
+    horaInicio: "08:00",
+    horaFin: "12:30",
+  });
+  const celdaDe = (texto: string) => screen.getByText(texto).closest("td") as HTMLElement;
+  const unaFila = (personal: ReturnType<typeof persona>[]) =>
+    tabla([seccion({ filas: [fila({ personal })] })]);
+
+  it("con cargo, dos líneas; el «(R)» sigue en la primera", () => {
+    unaFila([persona(1, "ABAD VERONICA", "Agente de control", true)]);
+
+    expect(screen.getByText("ABAD VERONICA (R)")).toHaveClass("block");
+    expect(within(celdaDe("ABAD VERONICA (R)")).getByText("Agente de control")).toHaveClass(
+      "block",
+      "text-[0.6875rem]",
+      "font-normal",
+      "text-app-muted",
+    );
+  });
+
+  it("sin cargo (null o vacío), solo el nombre y sin «—»", () => {
+    unaFila([persona(1, "ABAD VERONICA", null), persona(2, "AGUIRRE FLAVIO", " ")]);
+
+    expect(celdaDe("ABAD VERONICA").textContent).toBe("ABAD VERONICA");
+    expect(celdaDe("AGUIRRE FLAVIO").textContent).toBe("AGUIRRE FLAVIO");
+  });
+
+  it("en un operativo de varias personas (Form 4), cada una con su cargo y su teléfono en su fila", () => {
+    unaFila([persona(1, "ABAD VERONICA", "Agente"), persona(2, "AGUIRRE FLAVIO", "Instructor")]);
+
+    const filaAbad = celdaDe("ABAD VERONICA").closest("tr") as HTMLElement;
+    const filaAguirre = celdaDe("AGUIRRE FLAVIO").closest("tr") as HTMLElement;
+    expect(within(filaAbad).getByText("Agente")).toBeInTheDocument();
+    expect(within(filaAbad).getByText("091")).toBeInTheDocument();
+    expect(within(filaAguirre).getByText("Instructor")).toBeInTheDocument();
+    expect(within(filaAguirre).getByText("092")).toBeInTheDocument();
+  });
+
+  it("en una patrulla de 4 personas cada una lleva su cargo y las filas siguen alineadas", () => {
+    const codigo = (id: number, identificador: string, nombre: string, cargo: string) =>
+      fila({
+        id,
+        identificador,
+        grupoRegistro: "patrulla-4",
+        esLote: true,
+        areasPendientesDelRol: [],
+        personal: [persona(id, nombre, cargo)],
+      });
+    const personas = [
+      ["BENAVIDES FERNANDO", "Inspector general"],
+      ["CAMPAÑA JUAN", "Inspector general 2"],
+      ["DIAZ ANA", "Inspector técnico"],
+      ["ESPINOZA MARIAM", "Instructora"],
+    ];
+    const codigos = ["IGNECU-001", "IGNECU-002", "ITNECU-001", "INECU-001"];
+    const { container } = tabla([
+      seccion({
+        totalOperativos: 4,
+        filas: personas.map(([nombre, cargo], i) => codigo(i + 1, codigos[i], nombre, cargo)),
+      }),
+    ]);
+
+    for (const [nombre, cargo] of personas) {
+      expect(within(celdaDe(nombre)).getByText(cargo)).toBeInTheDocument();
+    }
+    const tablaHtml = container.querySelector("table") as HTMLTableElement;
+    const delGrupo = ocupacionPorFila(tablaHtml).filter((f) => /I[GTN]*ECU-00\d/.test(f.texto));
+    expect(delGrupo).toHaveLength(4);
+    for (const filaDelGrupo of delGrupo) {
+      expect(filaDelGrupo.columnas).toBe(columnasDeCabecera(tablaHtml));
+    }
+  });
+});
+
+/*
+  REGISTRO POR ZONAS DEL 8 (2026-10-28). NICOLE atiende La Delicia (IG-030 a IG-032) y Calderón
+  (IG-043, su zonal del Maestro: la principal). Es UN bloque, con una línea por zona, la principal
+  primero, y el conductor una sola vez.
+*/
+describe("registro por zonas del formulario 8", () => {
+  const nicole = {
+    funcionarioId: 9,
+    nombre: "SALTOS NICOLE",
+    telefono: null,
+    cargo: null,
+    esResponsable: false,
+    horaInicio: "08:00",
+    horaFin: "16:30",
+  };
+  const codigo = (id: number, identificador: string, zonal: string, esZonaPrincipal: boolean) =>
+    fila({
+      id,
+      identificador,
+      grupoRegistro: "registro-nicole",
+      esLote: true,
+      esZonaPrincipal,
+      horario: "08H00 A 16H30",
+      esNocturno: false,
+      areasPendientesDelRol: [],
+      zonales: [zonal],
+      puntoEncuentro: `AMC ${zonal}`,
+      tipoControl: "CCF / ITCC",
+      conductor: "PÉREZ JUAN",
+      placa: "PEA-1234",
+      personal: [nicole],
+    });
+
+  it("sale como UN bloque, con la zona principal primero y una línea por zona con su rango", () => {
+    tabla([
+      seccion({
+        numero: 8,
+        totalOperativos: 4,
+        filas: [
+          codigo(1, "IG-030", "La Delicia", false),
+          codigo(2, "IG-031", "La Delicia", false),
+          codigo(3, "IG-032", "La Delicia", false),
+          codigo(4, "IG-043", "Calderón", true),
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText("SALTOS NICOLE (4)")).toBeInTheDocument();
+    const zonas = within(screen.getByRole("list", { name: "Zonas del registro" }))
+      .getAllByRole("listitem")
+      .map((linea) => linea.textContent);
+    expect(zonas).toEqual([
+      "Calderón · AMC Calderón · CCF / ITCC · IG-043",
+      "La Delicia · AMC La Delicia · CCF / ITCC · IG-030 a IG-032",
+    ]);
+    // La principal arriba también en los identificadores; el conductor, una sola vez.
+    const orden = screen.getAllByText(/^IG-0\d\d$/).map((celda) => celda.textContent);
+    expect(orden).toEqual(["IG-043", "IG-030", "IG-031", "IG-032"]);
+    expect(screen.getAllByText("PÉREZ JUAN")).toHaveLength(1);
   });
 });

@@ -39,6 +39,7 @@ import CamposDeLaOrden from "./CamposDeLaOrden.tsx";
 import VisorPdfMemorando from "./VisorPdfMemorando.tsx";
 import type { Faltante, OrdenServicio } from "../../interfaces/Documento.ts";
 import { DatetimeUtil } from "../../utils/datetime.util.ts";
+import { textoFormato } from "../../utils/ordenes.util.ts";
 
 /**
  * La asignación de transporte está incompleta si falta conductor o placa. Son los dos campos de la
@@ -114,15 +115,21 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
                 NÚMERO OFICIAL AMC-OS (G): se asigna solo al quedar Vigente; en Borrador aún no hay.
                 El `codigo` interno (OS-...) sigue siendo la llave, pero no se muestra.
               */}
-              {orden.numeroOrden ? (
-                <span className="font-mono text-xs font-semibold">
-                  {orden.numeroOrden}
-                </span>
-              ) : (
+              <div className="flex min-w-0 flex-col">
+                {orden.numeroOrden ? (
+                  <span className="font-mono text-xs font-semibold">
+                    {orden.numeroOrden}
+                  </span>
+                ) : (
+                  <span className="text-xs text-app-muted">
+                    Sin número · se asigna al quedar vigente
+                  </span>
+                )}
+                {/* El formato con que se generó (2026-10-27): el del departamento de su área. */}
                 <span className="text-xs text-app-muted">
-                  Sin número · se asigna al quedar vigente
+                  {textoFormato(orden.formato)}
                 </span>
-              )}
+              </div>
               {/*
                 ESTADO ÚNICO (A): la MISMA fuente que la tabla/panel/visor. Borrador = vigente con
                 datos obligatorios sin completar; Reemplazada = no vigente; Vigente = completa.
@@ -208,6 +215,7 @@ const VistaPreviaOrden: FC<VistaPreviaOrdenProps> = ({
           numeroOrden={ordenViendo.numeroOrden}
           estado={ordenViendo.estado}
           funcionario={ordenViendo.datoAislado.funcionario}
+          formato={textoFormato(ordenViendo.formato)}
           vigente={ordenViendo.vigente}
           // D13: la lista real de datos sin completar llega del backend en `faltantes`, cada uno con
           // su origen, para agrupar el aviso de borrador (E21).

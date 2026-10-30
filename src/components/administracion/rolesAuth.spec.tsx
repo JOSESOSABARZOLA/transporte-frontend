@@ -13,13 +13,13 @@
  *      lo dice, el administrador no se entera de que ese perfil no puede entrar hasta
  *      que alguien se queja.
  *   2. El estado no depende solo del color (regla 6 de CLAUDE.md): «Vigente» y
- *      «Retirada» son palabras, no matices.
+ *      «Desactivada» son palabras, no matices.
  *   3. El identificador de Auth NO se puede editar en una fila existente. Cambiarlo no
  *      sería corregirla, sería apuntar a otro rol distinto.
  *   4. El mensaje del servidor se muestra tal cual (regla 7), sin reescribirlo.
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -138,10 +138,34 @@ describe("Roles de Auth central", () => {
       );
 
       expect(screen.getByText("Vigente")).toBeInTheDocument();
-      expect(screen.getByText("Retirada")).toBeInTheDocument();
+      expect(screen.getByText("Desactivada")).toBeInTheDocument();
+      // Plantilla visual (2026-10-24): `EtiquetaEstado`, verde y gris.
+      expect(screen.getByText("Vigente")).toHaveClass("badge-success", "rounded-full");
+      expect(screen.getByText("Desactivada")).toHaveClass("badge-ghost", "rounded-full");
     });
 
-    it("no ofrece retirar lo que ya está retirado", () => {
+    it("la fila vigente ofrece «Desactivar» (antes «Retirar») con su rótulo (modo texto, 2026-10-24)", async () => {
+      const desactivar = vi.fn();
+      render(
+        <TablaRolesAuth
+          nombreDe={(rol) => rol}
+          roles={[OPERATIVOS]}
+          cargando={false}
+          procesando={false}
+          onEditar={vi.fn()}
+          onDesactivar={desactivar}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /^Retirar/ })).toBeNull();
+      const boton = screen.getByRole("button", { name: "Desactivar el rol 53" });
+      expect(boton.textContent).toBe("Desactivar");
+      expect(screen.getByRole("button", { name: "Editar el rol 53" }).textContent).toBe("Editar");
+      await userEvent.click(boton);
+      expect(desactivar).toHaveBeenCalledWith(OPERATIVOS);
+    });
+
+    it("no ofrece desactivar lo que ya está retirado", () => {
       render(
         <TablaRolesAuth
         nombreDe={(rol) => rol}
@@ -154,6 +178,7 @@ describe("Roles de Auth central", () => {
       );
 
       expect(screen.queryByRole("button", { name: /^Retirar/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /^Desactivar/ })).toBeNull();
     });
   });
 
@@ -236,6 +261,24 @@ describe("Roles de Auth central", () => {
       expect(screen.queryByText(/Sin rol en Auth central/)).toBeNull();
     });
 
+    it("plantilla visual: «Correspondencias» sin contador, «+ Nuevo rol» en la cabecera y la ayuda al pie", async () => {
+      vi.mocked(RolesAuthService.consultar).mockResolvedValue({
+        correspondencias: [OPERATIVOS],
+        sinCorrespondencia: [],
+      });
+
+      const { container } = render(<AdminRolesAuthPage />);
+
+      await screen.findByText("Transporte - Operativos");
+      const cabecera = container.querySelector(".app-section-header") as HTMLElement;
+      expect(within(cabecera).getByText("Correspondencias")).toBeInTheDocument();
+      expect(within(cabecera).getByRole("button", { name: "+ Nuevo rol" })).toBeInTheDocument();
+      expect(screen.queryByText(/registradas/)).toBeNull();
+      expect(container.querySelector("[data-nota-panel]")).toHaveTextContent(
+        /^Desactivar una correspondencia no la borra/,
+      );
+    });
+
     /** El servidor distingue si era la última vía de ese rol; el texto es suyo. */
     it("muestra el aviso de la baja tal como lo redacta el servidor", async () => {
       const delServidor =
@@ -253,7 +296,7 @@ describe("Roles de Auth central", () => {
 
       render(<AdminRolesAuthPage />);
 
-      await userEvent.click(await screen.findByRole("button", { name: /^Retirar/ }));
+      await userEvent.click(await screen.findByRole("button", { name: /^Desactivar/ }));
       await userEvent.click(await screen.findByRole("button", { name: /Sí|Confirmar|Aceptar/ }));
 
       // El aviso breve parte la frase: la primera oración es el título y el resto va debajo. El

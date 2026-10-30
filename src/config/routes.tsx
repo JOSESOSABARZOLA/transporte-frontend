@@ -33,6 +33,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, type RouteObject } from "react-router-dom";
 
 import InicioSegunRol from "../components/common/InicioSegunRol.tsx";
+import { ROLES_QUE_EMITEN_ORDENES } from "./ordenesServicio.ts";
 import Loading from "../components/common/Loading";
 import RutaConSesion from "../components/common/RutaConSesion";
 import RutaProtegida from "../components/common/RutaProtegida";
@@ -108,11 +109,6 @@ const CargaInicialPage = lazy(() => import("../pages/CargaInicialPage.tsx"));
 
 
 
-// P-16 · mantenimiento de vehiculos (2026-08-31). RN-DAF-05: hasta hoy parar un vehiculo
-// era un INSERT a mano en la base.
-const MantenimientoFlotaPage = lazy(
-  () => import("../pages/MantenimientoFlotaPage.tsx"),
-);
 
 /**
  * Las pantallas, con los PERMISOS atómicos que las abren (RBAC). Basta tener UNO.
@@ -183,8 +179,9 @@ export const pantallas = [
     path: "administracion/ventanas",
     titulo: "Ventanas y parámetros",
     modulo: "M-29",
-    // El DMIT entra por los parámetros de turno; la administración general por las ventanas.
-    permisos: ["ventanas:administrar", "parametros:administrar"],
+    // El DMIT entra por los parámetros de turno; la administración general por las ventanas; y
+    // desde el 2026-10-24 la pestaña «Jornadas laborales» tiene su propio permiso.
+    permisos: ["ventanas:administrar", "parametros:administrar", "jornadas:administrar"],
   },
   {
     path: "administracion/roles-auth",
@@ -203,12 +200,6 @@ export const pantallas = [
     titulo: "Permisos por rol",
     modulo: "M-36",
     permisos: ["permisos:administrar"],
-  },
-  {
-    path: "administracion/mantenimiento",
-    titulo: "Mantenimiento de vehículos",
-    modulo: "M-34",
-    permisos: ["flota:mantenimiento"],
   },
   {
     path: "administracion/flota",
@@ -255,7 +246,7 @@ export type Ruta = (typeof pantallas)[number]["path"];
  * (`requiredRoles`) y `InicioSegunRol` lo respeta.
  */
 export const ROLES_REQUERIDOS: Partial<Record<Ruta, readonly string[]>> = {
-  "cuadro/ordenes": ["DIRECTOR"],
+  "cuadro/ordenes": ROLES_QUE_EMITEN_ORDENES,
 };
 
 const CONSTRUIDAS: Record<Ruta, ReactNode> = {
@@ -272,7 +263,6 @@ const CONSTRUIDAS: Record<Ruta, ReactNode> = {
   "administracion/roles-auth": <AdminRolesAuthPage />,
   "administracion/usuarios": <AdminUsuariosPage />,
   "administracion/permisos": <AdminPermisosPage />,
-  "administracion/mantenimiento": <MantenimientoFlotaPage />,
   "administracion/flota": <AdminFlotaPage />,
   "administracion/traslados": <AdminTrasladosPage />,
   "administracion/turnos-conductores": <TurnosConductoresPage />,
@@ -363,6 +353,16 @@ export const routes: RouteObject[] = [
         element: <RedireccionDaf vista="tabla" />,
       },
       { path: "cuadro/capacidad", element: <RedireccionDaf /> },
+      /*
+       * P-16 «Mantenimiento de vehículos» SE RETIRÓ el 2026-10-20 (plan «flota-mantenimiento-baja»):
+       * la parada se programa desde la pestaña Vehículos de Flota, que abre aquí en su calendario
+       * semanal. La protección la pone la ruta de destino (`flota:administrar`); el permiso
+       * `flota:mantenimiento` sigue decidiendo quién programa dentro de la pestaña.
+       */
+      {
+        path: "administracion/mantenimiento",
+        element: <Navigate to="/home/administracion/flota?tab=vehiculos&vista=calendario" replace />,
+      },
       // Una ruta desconocida bajo /home vuelve al inicio del área, no a una página en
       // blanco. `RutaProtegida` ya redirige aquí cuando el rol no corresponde.
       { path: "*", element: <Navigate to="/home" replace /> },

@@ -169,7 +169,6 @@ const LineaConductores: FC<LineaConductoresProps> = ({
                       ? (plan.ventanasTurno?.[conductor.turno] ?? null)
                       : null
                   }
-                  ventanaNombramiento={plan.ventanaNombramiento ?? null}
                   tabla={tabla}
                   soloLectura={soloLectura}
                   onTramo={onTramo}

@@ -296,3 +296,17 @@ describe("«Operativos de este formulario» · la intención de compartir va en 
     expect(insignia.closest("[title]")).toHaveAttribute("title", "Traslado de equipo pesado");
   });
 });
+
+describe("«Operativos de este formulario» · vehículo de otra institución (2026-10-23)", () => {
+  it("va en estilo neutro, como Propios medios", () => {
+    render(<TablaOperativos operativos={[operativo({ tipoTransporte: "OTRA_INSTITUCION" })]} />);
+
+    const etiqueta = screen.getByText("Vehículo de otra institución", {
+      selector: ".app-etiqueta-transporte-neutra",
+    });
+    expect(etiqueta).toHaveAttribute(
+      "title",
+      "No se solicita vehículo a la DAF: el personal va en el vehículo de otra institución.",
+    );
+  });
+});

@@ -18,9 +18,9 @@
  *
  * Tres ayudas, todas con los MISMOS textos (`tipoTransporte.util.ts`):
  *   a) la de la opción activa del combo (ratón y teclado);
- *   b) «ⓘ» junto a la etiqueta: un panel con las cinco opciones y la actual resaltada, que se abre con
+ *   b) «ⓘ» junto a la etiqueta: un panel con las seis opciones y la actual resaltada, que se abre con
  *      ratón, teclado o toque y se cierra con Esc o tocando fuera;
- *   c) una línea fija bajo el combo con la explicación de lo elegido (Propios medios, en neutro).
+ *   c) una línea fija bajo el combo con la explicación de lo elegido (las que no piden vehículo, en neutro).
  *
  * La lista y el panel flotan en un portal (`usePanelFlotante`): no tapan los campos de abajo al abrirse
  * dentro del cajón, ni la propia etiqueta. Sin clases nuevas.
@@ -202,7 +202,9 @@ const SelectorTipoTransporte: FC<SelectorTipoTransporteProps> = ({
   };
 
   const sugerencia = textoSugerencia(valor, sugerido);
-  const esPropiosMedios = elegida.valor === "PROPIOS_MEDIOS";
+  // Propios medios y vehículo de otra institución (2026-10-23): no piden vehículo, en neutro.
+  const sinVehiculoDaf =
+    elegida.valor === "PROPIOS_MEDIOS" || elegida.valor === "OTRA_INSTITUCION";
 
   return (
     <div className="flex flex-col">
@@ -255,10 +257,10 @@ const SelectorTipoTransporte: FC<SelectorTipoTransporteProps> = ({
       {junto}
       </div>
 
-      {/* (c) La explicación de lo elegido, siempre visible. Propios medios, en neutro. */}
+      {/* (c) La explicación de lo elegido, siempre visible. Sin vehículo de la DAF, en neutro. */}
       <p
         id={idLinea}
-        className={`mt-1 text-xs ${esPropiosMedios ? "text-app-muted" : "text-base-content"}`}
+        className={`mt-1 text-xs ${sinVehiculoDaf ? "text-app-muted" : "text-base-content"}`}
       >
         {elegida.descripcion}
       </p>

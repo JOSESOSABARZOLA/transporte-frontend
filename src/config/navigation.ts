@@ -13,6 +13,7 @@
  */
 
 import type { NombreIcono } from "../components/common/Iconos.tsx";
+import { ROLES_QUE_EMITEN_ORDENES } from "./ordenesServicio.ts";
 
 export type NavigationItem = {
   id: string;
@@ -91,7 +92,7 @@ export const shellNavigationItems: NavigationItem[] = [
         path: "cuadro/ordenes",
         icon: "ordenes",
         requiredPermissions: ["ordenes:gestionar"],
-        requiredRoles: ["DIRECTOR"],
+        requiredRoles: [...ROLES_QUE_EMITEN_ORDENES],
       },
     ],
   },
@@ -121,13 +122,6 @@ export const shellNavigationItems: NavigationItem[] = [
         path: "administracion/turnos-conductores",
         icon: "turnosConductores",
         requiredPermissions: ["flota:administrar"],
-      },
-      {
-        id: "administracion-mantenimiento",
-        label: "Mantenimiento",
-        path: "administracion/mantenimiento",
-        icon: "mantenimiento",
-        requiredPermissions: ["flota:mantenimiento"],
       },
       {
         id: "administracion-flota",
@@ -182,8 +176,9 @@ export const shellNavigationItems: NavigationItem[] = [
         label: "Ventanas y parámetros",
         path: "administracion/ventanas",
         icon: "ventanas",
-        // El DMIT entra por los parámetros de turno; la administración general por las ventanas.
-        requiredPermissions: ["ventanas:administrar", "parametros:administrar"],
+        // El DMIT entra por los parámetros de turno; la administración general por las ventanas;
+        // las jornadas laborales, con su propio permiso (2026-10-24).
+        requiredPermissions: ["ventanas:administrar", "parametros:administrar", "jornadas:administrar"],
       },
       {
         id: "administracion-roles-auth",

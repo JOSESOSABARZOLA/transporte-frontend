@@ -20,18 +20,23 @@ import { describe, expect, it, vi } from "vitest";
 
 import RepartoCarga from "./RepartoCarga.tsx";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
-import { clasificarReparto } from "../../utils/personal.util.ts";
+import {
+  clasificarReparto,
+  filaDePersona,
+  type FilaReparto,
+} from "../../utils/personal.util.ts";
 
-const persona = (parcial: Partial<PersonaElegible>): PersonaElegible => ({
-  id: 1,
-  apellidos: "PEREZ",
-  nombres: "JUAN",
-  area: "OPERATIVOS",
-  cargo: null,
-  elegible: true,
-  motivo: null,
-  ...parcial,
-});
+const persona = (parcial: Partial<PersonaElegible>): FilaReparto =>
+  filaDePersona({
+    id: 1,
+    apellidos: "PEREZ",
+    nombres: "JUAN",
+    area: "OPERATIVOS",
+    cargo: null,
+    elegible: true,
+    motivo: null,
+    ...parcial,
+  });
 
 describe("RepartoCarga · contenido compartido", () => {
   it("ordena a los disponibles de menor a mayor carga (mejores candidatos arriba)", () => {
@@ -321,6 +326,33 @@ describe("RepartoCarga · contenido compartido", () => {
 
     // Con unidades distintas, cada fila nombra su unidad.
     expect(screen.getByText(/· Unidad de Operativos/)).toBeInTheDocument();
+  });
+
+  it("modo consulta (DAF, 2026-10-30): filas de conductores sin unidad y sin botones, y lo dice", () => {
+    render(
+      <RepartoCarga
+        personas={[
+          { id: 7, nombre: "Kevin Escaleras", elegible: true, motivo: null, indiceCarga: 4 },
+          {
+            id: 8,
+            nombre: "Marco Toapanta",
+            elegible: false,
+            motivo: "Ocupado 07H00–10H00 con OCFIJ-001",
+            indiceCarga: 12,
+            nivelFatiga: "ROJO",
+          },
+        ]}
+        cuota={4}
+        idsAgregados={[]}
+        modo="consulta"
+      />,
+    );
+
+    expect(screen.getByText(/Solo consulta: asigne al conductor/)).toBeInTheDocument();
+    expect(screen.getByText("Kevin Escaleras")).toBeInTheDocument();
+    expect(screen.getByText("Carga Alta")).toBeInTheDocument();
+    expect(screen.getByText(/No disponible: Ocupado 07H00–10H00/)).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
 

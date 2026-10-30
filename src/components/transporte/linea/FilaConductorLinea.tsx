@@ -72,7 +72,6 @@ type FilaConductorLineaProps = {
   exclusivos?: ReadonlySet<number>;
   inicioJornada: string;
   ventanaTurno: FranjaLinea | null;
-  ventanaNombramiento: FranjaLinea | null;
   tabla: TablaTraslados | null;
   soloLectura: boolean;
   onTramo: (tramo: TramoPlanificado) => void;
@@ -99,7 +98,6 @@ const FilaConductorLinea: FC<FilaConductorLineaProps> = ({
   exclusivos,
   inicioJornada,
   ventanaTurno,
-  ventanaNombramiento,
   tabla,
   soloLectura,
   onTramo,
@@ -249,12 +247,12 @@ const FilaConductorLinea: FC<FilaConductorLineaProps> = ({
             data-testid="banda-hueco"
           />
         ))}
-        {/* Límite del nombramiento: después de esta línea no se le asigna. */}
-        {conductor.tipoContrato === "NOMBRAMIENTO" && ventanaNombramiento && (
+        {/* Límite de su jornada laboral (2026-10-23): después de esta línea no se le asigna. */}
+        {conductor.jornada?.ventana && (
           <div
             className="absolute inset-y-0 border-l border-warning"
-            style={{ left: `${porcentajeEnEje(ventanaNombramiento.fin, eje)}%` }}
-            title={`Límite del nombramiento · ${horaDeMinuto(ventanaNombramiento.fin, inicioJornada)}`}
+            style={{ left: `${porcentajeEnEje(conductor.jornada.ventana.fin, eje)}%` }}
+            title={`Límite de la jornada «${conductor.jornada.nombre}» · ${horaDeMinuto(conductor.jornada.ventana.fin, inicioJornada)}`}
           />
         )}
 

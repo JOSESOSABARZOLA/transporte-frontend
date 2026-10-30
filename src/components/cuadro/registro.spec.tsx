@@ -1645,10 +1645,28 @@ describe("caso 12 · los campos calculados son distintivos, no campos", () => {
     );
 
     expect(screen.getByText("AMC-2026-JUL-31")).toBeInTheDocument();
-    expect(screen.getByText("2026-07-31")).toBeInTheDocument();
+    // La fecha en palabras (plantilla visual, 2026-10-24), no el AAAA-MM-DD del servidor.
+    expect(screen.getByText("Viernes 31 de julio de 2026")).toBeInTheDocument();
+    expect(screen.queryByText("2026-07-31")).not.toBeInTheDocument();
     expect(screen.getByText("Semana 31 de 2026")).toBeInTheDocument();
     // El estado lleva color y **también** texto.
     expect(screen.getByText("Aprobado")).toBeInTheDocument();
+  });
+
+  it("los chips van en el orden de todas las pantallas: código · fecha · semana · estado", () => {
+    const { container } = render(
+      <CamposCalculados
+        cuadro={cuadro}
+        cargando={false}
+      />,
+    );
+
+    expect(Array.from(container.querySelectorAll(".badge"), (chip) => chip.textContent)).toEqual([
+      "AMC-2026-JUL-31",
+      "Viernes 31 de julio de 2026",
+      "Semana 31 de 2026",
+      "Aprobado",
+    ]);
   });
 
   it("sin jornada abierta lo dice, en lugar de mostrar valores vacíos", () => {

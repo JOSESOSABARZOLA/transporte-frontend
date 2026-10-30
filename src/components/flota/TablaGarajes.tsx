@@ -19,13 +19,15 @@
  *
  * «Vigente» = activo y autorizado. Un garaje sin zonal no se sugiere al planificar el día, y se
  * dice en la celda. «Vehículos que lo usan» es la última vez que cada uno quedó ahí. Las acciones
- * van como botones visibles bajo «Acciones» (2026-10-15).
+ * van con icono y tooltip bajo «Acciones» (`AccionesFila modo="icono"`, 2026-10-20); «De baja» dice en su
+ * tooltip cuándo y quién (`EstadoRegistroFlota`).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import type { FC } from "react";
 
 import AccionesFila from "../common/AccionesFila.tsx";
+import EstadoRegistroFlota from "./EstadoRegistroFlota.tsx";
 import Insignia from "../common/Insignia.tsx";
 import type { UbicacionFlota } from "../../interfaces/Transporte.ts";
 import { esGarajeVigente, normalizarPlaca, ultimaVez } from "../../utils/flota.util.ts";
@@ -62,16 +64,16 @@ const TablaGarajes: FC<TablaGarajesProps> = ({
   return (
     <div className="overflow-x-auto">
       <table
-        className="app-data-table table table-sm"
+        className="table table-sm table-zebra w-full text-sm"
         aria-label="Garajes autorizados"
       >
         <thead>
-          <tr>
+          <tr className="text-xs uppercase tracking-wider text-app-label">
             <th scope="col">Garaje</th>
             <th scope="col">Zonal</th>
             <th scope="col">Vehículos que lo usan</th>
             <th scope="col">Estado</th>
-            <th scope="col" className="w-[230px] text-right">
+            <th scope="col" className="w-[9.5rem] text-right">
               Acciones
             </th>
           </tr>
@@ -85,7 +87,7 @@ const TablaGarajes: FC<TablaGarajesProps> = ({
               <tr
                 key={garaje.id}
                 data-resaltado={resaltada || undefined}
-                className={`transition-colors ${resaltada ? "bg-success/10" : ""}`}
+                className={`transition-colors hover:bg-primary/5 ${resaltada ? "bg-success/10" : ""}`}
               >
                 <td>
                   <span className={`font-semibold ${vigente ? "text-app-strong" : "text-app-muted"}`}>
@@ -120,12 +122,11 @@ const TablaGarajes: FC<TablaGarajesProps> = ({
                   )}
                 </td>
                 <td>
-                  <Insignia variante={vigente ? "exito" : "neutro"}>
-                    {vigente ? "Vigente" : "De baja"}
-                  </Insignia>
+                  <EstadoRegistroFlota enUso={vigente} textoEnUso="Vigente" registro={garaje} />
                 </td>
-                <td className="text-right">
+                <td className="whitespace-nowrap text-right">
                   <AccionesFila
+                    modo="icono"
                     nombre={garaje.nombre}
                     procesando={procesando}
                     editar={{ onClick: () => onEditar(garaje) }}

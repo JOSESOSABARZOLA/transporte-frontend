@@ -15,6 +15,7 @@ import {
   cambiaronZonales,
   cambioDeHorario,
   hayCambiosDePersonal,
+  reemplazoDelBorrador,
 } from "./edicionOperativo.util.ts";
 
 const persona = (
@@ -51,5 +52,20 @@ describe("el borrador de una edición frente al servidor", () => {
     expect(cambiaronZonales([2, 1], [1, 2])).toBe(false);
     expect(cambiaronZonales([1], [1, 2])).toBe(true);
     expect(cambiaronZonales([1, 3], [1, 2])).toBe(true);
+  });
+});
+
+describe("reemplazoDelBorrador (2026-10-28)", () => {
+  it("una baja y un alta en un formulario de un solo tipo son un reemplazo", () => {
+    expect(reemplazoDelBorrador([{ id: 1 }], [{ id: 2 }], true)).toEqual({
+      saliente: { id: 1 },
+      entrante: { id: 2 },
+    });
+  });
+
+  it("en los demás formularios, o con más cambios, no lo son", () => {
+    expect(reemplazoDelBorrador([{ id: 1 }], [{ id: 2 }], false)).toBeNull();
+    expect(reemplazoDelBorrador([], [{ id: 2 }], true)).toBeNull();
+    expect(reemplazoDelBorrador([{ id: 1 }], [{ id: 2 }, { id: 3 }], true)).toBeNull();
   });
 });

@@ -20,11 +20,15 @@
  * olvidó cargar y que el siguiente administrador «completaría» sin saber qué pone.
  *
  * EL ESTADO LLEVA COLOR **Y** PALABRA, regla 6 de CLAUDE.md.
+ *
+ * PLANTILLA VISUAL (2026-10-24): el estado con `EtiquetaEstado`, las acciones en modo icono
+ * («Reactivar», antes «Activar»: misma acción) y el correo en `text-app-muted`, sin atenuar más.
  */
 
 import type { FC } from "react";
 
 import AccionesFila from "../common/AccionesFila.tsx";
+import EtiquetaEstado from "../common/EtiquetaEstado.tsx";
 import Paginacion from "../common/Paginacion.tsx";
 import { usePaginaLocal } from "../../hooks/usePaginaLocal.ts";
 import type { UsuarioCuadro } from "../../interfaces/UsuarioCuadro.ts";
@@ -62,7 +66,7 @@ const TablaUsuarios: FC<TablaUsuariosProps> = ({
   return (
     <div className="flex flex-col">
       <div className="overflow-x-auto">
-        <table className="table table-sm table-zebra">
+        <table className="table table-sm table-zebra w-full text-sm">
           <thead>
             <tr className="text-xs uppercase tracking-wider text-app-label">
               <th scope="col">Nombre</th>
@@ -153,13 +157,9 @@ const TablaUsuarios: FC<TablaUsuariosProps> = ({
                   </td>
 
                   <td className="px-3 py-2 align-top">
-                    <span
-                      className={`badge badge-sm ${
-                        usuario.activo ? "badge-success" : "badge-ghost"
-                      }`}
-                    >
+                    <EtiquetaEstado tono={usuario.activo ? "activo" : "inactivo"}>
                       {usuario.activo ? "Activa" : "Desactivada"}
-                    </span>
+                    </EtiquetaEstado>
                   </td>
 
                   <td className="px-3 py-2 align-top">
@@ -174,7 +174,7 @@ const TablaUsuarios: FC<TablaUsuariosProps> = ({
                               onClick: () => onDesactivar(usuario),
                             }
                           : {
-                              tipo: "activar",
+                              tipo: "reactivar",
                               onClick: () => onActivar(usuario),
                             }
                       }

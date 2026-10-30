@@ -36,14 +36,14 @@ export interface CrearConductor {
    */
   vehiculoHabitualId?: number;
   /**
-   * OMITIRLOS SIGNIFICA «NO CONSTA», y no es lo mismo que un valor por defecto: sin
-   * `tipoContrato` la regla que impide conducir de noche a quien es de nombramiento **no
-   * se aplica** a ese conductor.
+   * OMITIRLOS SIGNIFICA «NO CONSTA», y no es lo mismo que un valor por defecto. Sin
+   * `jornadaLaboralId` (2026-10-23, reemplaza al tipo de contrato) no se le asigna transporte.
    */
   sector?: "NORTE" | "SUR" | "CENTRO" | "VALLE";
   /** RN-DAF-04. Quien lo tiene se lleva el vehículo a casa y al día siguiente repite. */
   parqueaderoAutorizado?: boolean;
-  tipoContrato?: "NOMBRAMIENTO" | "OCASIONAL";
+  /** La jornada laboral (2026-10-23). `null` la retira: deja de asignársele transporte. */
+  jornadaLaboralId?: number | null;
   /** Acta de parqueadero (Art. 8): obligatoria si hay parqueadero autorizado. AAAA-MM-DD. */
   actaParqueaderoNumero?: string | null;
   actaParqueaderoDesde?: string | null;
@@ -104,6 +104,11 @@ export interface ImpactoBaja {
   primeraAsignacion: AsignacionVigente | null;
   /** Conductores activos que quedarían sin vehículo habitual. Vacío para un conductor. */
   conductoresHabituales: ConductorNombrado[];
+  /**
+   * Lo que impide la baja (2026-10-20, D2), con el MISMO texto que daría el 409; `null` si se
+   * puede. La pantalla ya no lo usa para bloquear: confirma y deja decidir al servidor.
+   */
+  motivo?: string | null;
 }
 
 /** Lo que devuelven `POST`/`PATCH` de conductores: solo dos campos. La pantalla relee. */
@@ -125,6 +130,8 @@ export interface ResumenFlota {
      */
     sinFechas: number;
     sinConductorHabitual: number;
+    /** Activos con una cita de taller que los cubre hoy y no está LISTO (2026-10-20). */
+    enTallerHoy?: number;
   };
   conductores: { activos: number; deBaja: number; incompletos: number };
   garajes: { vigentes: number; deBaja: number };
@@ -188,4 +195,49 @@ export interface TramoAfectado {
 /** Respuesta del `POST`: la ausencia registrada y los tramos que quedan por reasignar (A5). */
 export interface AusenciaConductorRegistrada extends AusenciaConductor {
   tramosAfectados: TramoAfectado[];
+}
+
+// ─────────────── Mantenimiento en la pestaña Vehículos (2026-10-20) ───────────────
+// Contrato: transporte-backend/docs/CONTRATO-flota-y-garajes.md §9.
+
+export type EstadoParada = "PROGRAMADO" | "EN_TALLER" | "LISTO";
+
+/** Una parada que toca la semana elegida. Fechas AAAA-MM-DD (regla 12). */
+export interface ParadaDeLaSemana {
+  id: number;
+  desde: string;
+  hasta: string;
+  motivo: string | null;
+  estado: EstadoParada;
+  taller: string | null;
+  hora: string | null;
+}
+
+export type Disponibilidad = "DISPONIBLE" | "EN_TALLER" | "DE_BAJA";
+
+/** Un vehículo en `GET /administracion/flota/vehiculos/disponibilidad?fecha=`. */
+export interface DisponibilidadDeVehiculo {
+  vehiculoId: number;
+  placa: string;
+  activo: boolean;
+  disponibilidad: Disponibilidad;
+  /** La parada que lo tiene en el taller en la fecha; `null` si no. LISTO ya no cuenta. */
+  enTaller: { hasta: string; motivo: string | null } | null;
+  paradas: ParadaDeLaSemana[];
+}
+
+export interface DisponibilidadFlota {
+  fecha: string;
+  /** `fecha` + 6. */
+  hasta: string;
+  vehiculos: DisponibilidadDeVehiculo[];
+}
+
+/** Un traslado ya asignado a la placa en el rango de la parada: el aviso antes de guardar (D4). */
+export interface TramoAfectadoPorParada {
+  operativoId: number;
+  identificador: string;
+  fecha: string;
+  horaInicio: string;
+  horaFin: string;
 }

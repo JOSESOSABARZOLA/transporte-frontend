@@ -32,10 +32,12 @@
  * no viene no se toca, y lo que viene nulo se limpia.
  */
 
-import { Formik } from "formik";
-import { useRef, type FC } from "react";
+import { Formik, useFormikContext } from "formik";
+import { useEffect, useRef, type FC } from "react";
 
 import AvisoVentanaCerrada from "../common/AvisoVentanaCerrada.tsx";
+import Boton from "../common/Boton.tsx";
+import Insignia from "../common/Insignia.tsx";
 import CampoDrawer from "../common/CampoDrawer.tsx";
 import DrawerLateral from "../common/DrawerLateral.tsx";
 import SeccionDrawer from "../common/SeccionDrawer.tsx";
@@ -49,6 +51,8 @@ import { esquemaVentana } from "../../config/validationSchemas.ts";
 import { useCatalogoRoles } from "../../hooks/useCatalogoRoles.ts";
 import {
   comoHoraInstitucional,
+  detectarHoraInconsistente,
+  mensajeSugerido,
   resolverMensajeVentana,
 } from "../../utils/mensajeVentana.util.ts";
 import {
@@ -86,6 +90,23 @@ type ModalVentanaProps = {
   aviso: string | null;
   onGuardar: (cambios: ActualizarVentana) => void;
   onCancelar: () => void;
+  /**
+   * Un mensaje para dejar escrito al abrir («Usar mensaje sugerido» de la tabla, 2026-10-24). Se
+   * escribe sobre el guardado, así el cajón abre con cambios sin guardar y no guarda solo.
+   */
+  mensajeInicial?: string;
+};
+
+/** Escribe `mensajeInicial` una sola vez, al montar, como si la persona lo hubiera tecleado. */
+const AplicarMensajeInicial: FC<{ mensaje?: string }> = ({ mensaje }) => {
+  const { setFieldValue } = useFormikContext<ValoresVentana>();
+  const aplicado = useRef(false);
+  useEffect(() => {
+    if (aplicado.current || mensaje === undefined) return;
+    aplicado.current = true;
+    void setFieldValue("mensajeCierre", mensaje);
+  }, [mensaje, setFieldValue]);
+  return null;
 };
 
 /** El tipo con que abre el selector: una ventana inactiva (o heredada) es «Sin restricción». */
@@ -119,6 +140,7 @@ const ModalVentana: FC<ModalVentanaProps> = ({
   aviso,
   onGuardar,
   onCancelar,
+  mensajeInicial,
 }) => {
   const { nombreDe } = useCatalogoRoles();
   /** El tipo que había antes de desmarcar «Ventana vigente», para devolverlo al marcarla. */
@@ -164,6 +186,14 @@ const ModalVentana: FC<ModalVentanaProps> = ({
           values.mensajeCierre !== iniciales.mensajeCierre &&
           errors.mensajeCierre;
 
+        const inconsistente = sinRestriccion
+          ? null
+          : detectarHoraInconsistente(
+              values.mensajeCierre,
+              values.horaApertura || null,
+              values.horaCierre || null,
+            );
+
         const vistaPrevia = resolverMensajeVentana(
           values.mensajeCierre.trim(),
           values.horaApertura || null,
@@ -205,6 +235,7 @@ const ModalVentana: FC<ModalVentanaProps> = ({
                 handleSubmit();
               }}
             >
+              <AplicarMensajeInicial mensaje={mensajeInicial} />
               <SeccionDrawer titulo="Horario" rejilla={false}>
                 {/* a) TIPO DE VENTANA · ayuda debajo según el tipo. */}
                 <CampoDrawer
@@ -311,6 +342,32 @@ const ModalVentana: FC<ModalVentanaProps> = ({
                     disabled={guardando || sinRestriccion}
                   />
                 </CampoDrawer>
+
+                {/* c2) HORA ESCRITA A MANO que no es la de la ventana (2026-10-24). */}
+                {inconsistente && (
+                  <div className="flex flex-col items-start gap-1" role="status">
+                    <Insignia variante="avisoSuave">
+                      ⚠ El mensaje no coincide con el horario
+                    </Insignia>
+                    <span className={CLASE_AYUDA}>
+                      Dice «{inconsistente.texto}», que no es ni la apertura ni el cierre. El
+                      funcionario verá el mensaje calculado con las horas reales.
+                    </span>
+                    <Boton
+                      variante="enlace"
+                      tamano="sm"
+                      deshabilitado={guardando}
+                      onClick={() =>
+                        void setFieldValue(
+                          "mensajeCierre",
+                          mensajeSugerido(ventana.rol, values.tipo),
+                        )
+                      }
+                    >
+                      Usar mensaje sugerido
+                    </Boton>
+                  </div>
+                )}
 
                 {/* d) ASÍ LO VERÁ EL FUNCIONARIO · el mismo aviso que ve en P-01. */}
                 <div className="flex flex-col gap-1.5">

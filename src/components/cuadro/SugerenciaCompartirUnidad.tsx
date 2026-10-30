@@ -35,7 +35,7 @@ import { useFormikContext } from "formik";
 
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 import { useCoincidenciasTransporte } from "../../hooks/useCoincidenciasTransporte.ts";
-import type { FiltroCoincidencias, TipoTransporte } from "../../interfaces/Operativo.ts";
+import type { FiltroCoincidencias } from "../../interfaces/Operativo.ts";
 import {
   MOTIVO_EXCLUSIVO_NO_COMPARTE,
   notaMismaUnidad,
@@ -43,6 +43,7 @@ import {
   textoNoCompartible,
 } from "../../utils/compartirUnidad.util.ts";
 import { envolventeDeHorarios } from "../../utils/horario.util.ts";
+import { pideVehiculo } from "../../utils/tipoTransporte.util.ts";
 import type { ValoresOperativo } from "../../utils/valoresOperativo.util.ts";
 
 type SugerenciaCompartirUnidadProps = {
@@ -81,14 +82,15 @@ const SugerenciaCompartirUnidad: FC<SugerenciaCompartirUnidadProps> = ({
 
   const filtro = useMemo<FiltroCoincidencias | null>(() => {
     if (!fecha || punto === null || zonalId === null || !ventanaInicio || !ventanaFin) return null;
-    if (tipo === "PROPIOS_MEDIOS") return null;
+    // Propios medios y vehículo de otra institución (2026-10-23): no hay unidad de la DAF que compartir.
+    if (!pideVehiculo(tipo)) return null;
     return {
       fecha,
       puntoEncuentroId: punto,
       zonalId,
       horaInicio: ventanaInicio,
       horaFin: ventanaFin,
-      tipoTransporte: tipo as Exclude<TipoTransporte, "PROPIOS_MEDIOS">,
+      tipoTransporte: tipo as FiltroCoincidencias["tipoTransporte"],
       ...(exclusivo ? { esMacrooperativo: true } : {}),
       ...(excluirOperativoId ? { excluirOperativoId } : {}),
     };
@@ -113,7 +115,7 @@ const SugerenciaCompartirUnidad: FC<SugerenciaCompartirUnidadProps> = ({
       (c) => c.operativoId === values.compartirConOperativoId && c.compatible,
     );
     if (sigue || (filtro && !cargado)) return;
-    if (tipo === "PROPIOS_MEDIOS") return;
+    if (!pideVehiculo(tipo)) return;
     setAvisoRetirada(
       `Ya no coincide con ${values.compartirConIdentificador ?? "el operativo elegido"}: se quitó la solicitud de compartir la unidad.`,
     );

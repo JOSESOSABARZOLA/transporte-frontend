@@ -23,7 +23,7 @@ import type {
 import {
   buscarDuplicado,
   clave,
-  contadorPuntos,
+
   formularioPedido,
   leerPedidoCatalogos,
   pasaEstado,
@@ -142,11 +142,8 @@ describe("resumenZonal · puntos activos de ESTE formulario y aviso «sin puntos
     expect(tienePuntos(9, EXISTENTES.puntos)).toBe(false);
   });
 
-  it("el contador de la pestaña, con y sin el interruptor", () => {
-    expect(contadorPuntos(11, EXISTENTES.puntos)).toBe("11 zonales · 1 de 2 puntos activos");
-    expect(contadorPuntos(2, EXISTENTES.puntos, true)).toBe(
-      "2 zonales con puntos · 1 de 2 puntos activos",
-    );
+  // Plantilla visual (2026-10-24): el contador de la pestaña se retiró; queda el resumen.
+  it("el resumen de las zonales sin puntos, con y sin el interruptor", () => {
     expect(textoSinPuntos(1, true)).toBe(
       "1 zonal no tiene puntos en este formulario y está oculta",
     );

@@ -46,7 +46,7 @@ describe("SelectorTipoTransporte · el combo", () => {
     expect(combo()).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
     const opciones = screen.getAllByRole("option");
-    expect(opciones).toHaveLength(5);
+    expect(opciones).toHaveLength(6);
     OPCIONES_TRANSPORTE.forEach((opcion, indice) => {
       expect(opciones[indice]).toHaveAccessibleDescription(opcion.descripcion);
     });
@@ -165,7 +165,7 @@ describe("SelectorTipoTransporte · la ayuda ⓘ", () => {
   const ayuda = () =>
     screen.getByRole("button", { name: "Qué significa cada opción de transporte" });
 
-  it("con el ratón abre las cinco opciones con la actual resaltada", async () => {
+  it("con el ratón abre las seis opciones con la actual resaltada", async () => {
     render(<ConEstado inicial="INICIO_Y_FIN" />);
 
     await userEvent.click(ayuda());

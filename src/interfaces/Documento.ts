@@ -22,14 +22,25 @@
 
 import type { Alerta } from "./Alerta";
 import type { EstadoCuadro } from "./CuadroDiario";
-import type { EstadoTransporte, NotaOperativo } from "./Operativo";
+import type {
+  EstadoTransporte,
+  NotaOperativo,
+  TipoTransporte,
+} from "./Operativo";
 
 /** Fila de la matriz: las nueve columnas más observaciones. */
 export interface FilaMatriz {
   id: number;
   identificador: string;
-  /** Lote del registro-patrulla (Form 5/6): agrupa los N en la matriz. Nulo en el resto. */
-  grupoRegistro: string | null;
+  /** Id único del registro (2026-10-27): siempre presente; lo comparten los operativos que nacen de él. */
+  grupoRegistro: string;
+  /**
+   * ¿Se agrupa con su registro (patrulla 5/6 u 8)? Lo decide el servidor (`esLoteDeRegistro`).
+   * Que tenga id NO lo dice: desde el 2026-10-27 todos lo tienen.
+   */
+  esLote: boolean;
+  /** Registro por zonas del 8 (2026-10-28): de la zona principal. `null` en los demás. */
+  esZonaPrincipal?: boolean | null;
   /**
    * Si nació como ADICIONAL, y de qué operativo. 2026-08-20.
    *
@@ -79,6 +90,11 @@ export interface FilaMatriz {
    */
   notas?: NotaOperativo[];
   estadoTransporte: EstadoTransporte;
+  /**
+   * Transporte pedido (2026-10-23). Con OTRA_INSTITUCION el distintivo no dice «Pendiente». Opcional:
+   * un servidor anterior no lo manda.
+   */
+  tipoTransporte?: TipoTransporte;
   esNocturno: boolean;
   alertas: Alerta[];
 }
@@ -173,7 +189,37 @@ export interface FirmanteOrden {
   fecha: string;
 }
 
-/** Respuesta de `POST /operativos/:id/ordenes-servicio` y `/ordenes-servicio/mias`. */
+/**
+ * Los tres FORMATOS de la orden, uno por departamento (2026-10-27). La orden de cada persona sale con
+ * el del departamento de SU ÁREA, no del formulario.
+ */
+export type DepartamentoFormato =
+  | "DMIT_INSTRUCTOR"
+  | "DMIP_OPERATIVOS"
+  | "DMIP_INSPECCIONES";
+
+/** El formato con que se generó una orden: su departamento y su nombre («DMIT · Instrucción»). */
+export interface FormatoOrden {
+  departamento: DepartamentoFormato;
+  nombre: string;
+}
+
+/** Una persona que no recibió orden porque el departamento de su área no tiene formato. */
+export interface SinFormatoOrden {
+  funcionarioId: number;
+  funcionario: string;
+  area: string;
+  /** «No hay formato de orden para <departamento>. Configúrelo en Editar plantilla.» */
+  mensaje: string;
+}
+
+/** Respuesta de `POST /operativos/:id/ordenes-servicio` (2026-10-27). */
+export interface ResultadoEmision {
+  ordenes: OrdenServicio[];
+  sinFormato: SinFormatoOrden[];
+}
+
+/** Una orden, en `GET /operativos/:id/ordenes-servicio`, `/ordenes-servicio/mias` y la emisión. */
 export interface OrdenServicio {
   codigo: string;
   emitidaEn: string;
@@ -203,6 +249,8 @@ export interface OrdenServicio {
   esPropia: boolean;
   /** Versión de la plantilla con la que se resuelve ESTA orden. */
   plantillaVersion: number | null;
+  /** El formato con que se generó; `null` en una orden de antes de los formatos (2026-10-27). */
+  formato: FormatoOrden | null;
 }
 
 /** Un operativo de la persona, como se lista en el apartado cuarto del memorando. */
@@ -255,7 +303,6 @@ export interface DatosGeneralesPlantilla {
   siglasUnidad: string;
 }
 
-/** La plantilla completa que viaja por `GET`/`PUT /plantilla-orden`: apartados + datos generales. */
 /**
  * Sugerencia del firmante a partir del Director EN SESIÓN (su ficha): nombre, cargo y la dependencia de
  * su dirección. Solo sirve para PRELLENAR los campos del firmante que vengan vacíos (2026-10-05).
@@ -266,18 +313,22 @@ export interface SugerenciaFirmante {
   dependencia: string;
 }
 
+/**
+ * Un FORMATO de la orden (2026-10-27), como viaja por `/plantillas-orden` y
+ * `/plantilla-orden/:departamento`: apartados + datos generales de ESE departamento.
+ */
 export interface Plantilla {
+  departamento: DepartamentoFormato;
+  /** «DMIT · Instrucción»: el nombre del formato. */
+  nombre: string;
+  /** `false` = aún no se ha guardado: no se emite con él hasta guardarlo. */
+  configurado: boolean;
   apartados: Apartado[];
   datosGenerales: DatosGeneralesPlantilla;
-  /** Solo en el GET; `null` si la sesión no tiene ficha de personal asociada. */
+  /** Solo en el GET de un formato; `null` si la sesión no tiene ficha de personal asociada. */
   sugerenciaFirmante?: SugerenciaFirmante | null;
-  /**
-   * Versión de la plantilla del Director en sesión (2026-10-05): sube en cada «Guardar plantilla».
-   * Opcional para no obligar a los dobles de prueba anteriores.
-   */
-  version?: number;
-  /** Director dueño de la plantilla (siempre el de la sesión). */
-  directorId?: number | null;
+  /** Versión del formato: sube en cada «Guardar plantilla». 0 = sin configurar. */
+  version: number;
 }
 
 /** Los datos base del memorando que el editor precarga (`GET …/memorando/datos`). */

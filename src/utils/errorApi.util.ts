@@ -255,3 +255,22 @@ export const motivosDelServidor = (error: unknown): string[] => {
     )
     .filter((mensaje): mensaje is string => typeof mensaje === "string");
 };
+
+/**
+ * Los rechazos POR CLAVE del guardado único de parámetros (2026-10-24): el 400 de `PUT /parametros`
+ * trae `detalles.errores: [{ clave, motivo }]` y no guardó ninguno. Se devuelven como mapa
+ * clave → motivo, para pintarlos bajo su fila. Sin errores por clave, mapa vacío.
+ */
+export const erroresPorClave = (error: unknown): Record<string, string> => {
+  const cuerpo = cuerpoDeError(error as HttpClientError);
+  if (!cuerpo || typeof cuerpo.detalles !== "object" || cuerpo.detalles === null) return {};
+  const errores = (cuerpo.detalles as { errores?: unknown }).errores;
+  if (!Array.isArray(errores)) return {};
+  const mapa: Record<string, string> = {};
+  for (const error of errores) {
+    if (typeof error !== "object" || error === null) continue;
+    const { clave, motivo } = error as { clave?: unknown; motivo?: unknown };
+    if (typeof clave === "string" && typeof motivo === "string") mapa[clave] = motivo;
+  }
+  return mapa;
+};

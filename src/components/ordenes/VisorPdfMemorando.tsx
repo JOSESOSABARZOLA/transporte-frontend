@@ -58,6 +58,8 @@ type VisorPdfMemorandoProps = {
   estado?: EstadoOrden;
   /** Dueño de la hoja; va en el título del cajón: «Orden de servicio · <funcionario>». */
   funcionario: string;
+  /** «Formato: <departamento>» (2026-10-27): va en el subtítulo, tras el estado. */
+  formato?: string;
   /** Vigente o Reemplazada (una reemitida deja la anterior no vigente). */
   vigente: boolean;
   /**
@@ -87,6 +89,7 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
   numeroOrden = null,
   estado,
   funcionario,
+  formato,
   vigente,
   datosFaltantes = [],
   onEditarPlantilla,
@@ -274,6 +277,7 @@ const VisorPdfMemorando: FC<VisorPdfMemorandoProps> = ({
                 ? "Borrador"
                 : "Vigente"}
           </Insignia>
+          {formato && <span>· {formato}</span>}
         </span>
       }
       onCerrar={onCerrar}

@@ -46,7 +46,7 @@ export const RESUMEN_REAL_HOJAS_EMITIDAS: ResumenJornadaDaf = {
         "clave": "CONDUCTORES",
         "estado": "OK",
         "titulo": "Datos de conductores completos",
-        "detalle": "Todos tienen sector, contrato y parqueadero.",
+        "detalle": "Todos tienen sector, jornada laboral y parqueadero.",
         "accion": null
       },
       {

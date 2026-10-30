@@ -9,7 +9,7 @@
  * Fecha: 2026-10-01
  */
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ import EditorPlantillaOrden from "./EditorPlantillaOrden.tsx";
 import type {
   Apartado,
   DatosGeneralesPlantilla,
+  Plantilla,
 } from "../../interfaces/Documento.ts";
 
 // El visor es react-pdf (pdf.js): se dobla para no montar el worker en jsdom.
@@ -68,21 +69,32 @@ const DATOS_GENERALES: DatosGeneralesPlantilla = {
   siglasUnidad: "DMI",
 };
 
+/** Un formato tal como lo devuelve el servidor (2026-10-27): por omisión, el de Instrucción. */
+const formato = (parcial: Partial<Plantilla>): Plantilla => ({
+  departamento: "DMIT_INSTRUCTOR",
+  nombre: "DMIT · Instrucción",
+  configurado: true,
+  version: 1,
+  apartados: [],
+  datosGenerales: { ...DATOS_GENERALES },
+  ...parcial,
+});
+
 const pintar = () => render(<EditorPlantillaOrden onVolver={vi.fn()} />);
 
 describe("EditorPlantillaOrden", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValue({
+    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValue(formato({
       apartados: PLANTILLA.map((a) => ({ ...a })),
       datosGenerales: { ...DATOS_GENERALES },
-    });
+    }));
     vi.mocked(DocumentoService.previsualizarPlantilla).mockResolvedValue(
       new Blob(["%PDF"], { type: "application/pdf" }),
     );
     vi.mocked(DocumentoService.guardarPlantilla).mockImplementation(
-      (apartados, datosGenerales) =>
-        Promise.resolve({ apartados, datosGenerales }),
+      (departamento, apartados, datosGenerales) =>
+        Promise.resolve(formato({ departamento, apartados, datosGenerales })),
     );
   });
 
@@ -193,15 +205,16 @@ describe("EditorPlantillaOrden", () => {
     // D17: la vista previa recibe solo la plantilla en borrador (apartados + datos generales).
     await waitFor(() =>
       expect(DocumentoService.previsualizarPlantilla).toHaveBeenCalledWith(
+        "DMIT_INSTRUCTOR",
         expect.any(Array),
         expect.objectContaining({ firmante: "DE LA GUERRA FRANKLIN" }),
         expect.any(AbortSignal),
       ),
     );
-    // Sin código de persona: plantilla en borrador + la señal para abortar la petición anterior.
+    // Sin código de persona: el formato, la plantilla en borrador y la señal para abortar.
     expect(
       vi.mocked(DocumentoService.previsualizarPlantilla).mock.calls[0],
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     // Y ya no existe el selector «con los datos de».
     expect(screen.queryByText("con los datos de")).toBeNull();
     expect(
@@ -262,7 +275,7 @@ describe("EditorPlantillaOrden", () => {
   });
 
   it("el chip evalúa SOLO los datos generales: no lista «Fecha de emisión» ni otros datos de la orden", async () => {
-    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce({
+    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce(formato({
       apartados: [
         {
           id: "a1",
@@ -272,7 +285,7 @@ describe("EditorPlantillaOrden", () => {
         },
       ],
       datosGenerales: { ...DATOS_GENERALES, numeroMemorando: "" },
-    });
+    }));
     pintar();
     await screen.findByText("Insertar dato");
 
@@ -358,6 +371,7 @@ describe("EditorPlantillaOrden", () => {
     );
 
     expect(DocumentoService.guardarPlantilla).toHaveBeenCalledWith(
+      "DMIT_INSTRUCTOR",
       expect.any(Array),
       expect.objectContaining({ numeroMemorando: "MEMO-NUEVO-1" }),
     );
@@ -396,6 +410,7 @@ describe("EditorPlantillaOrden", () => {
     );
 
     expect(DocumentoService.guardarPlantilla).toHaveBeenCalledWith(
+      "DMIT_INSTRUCTOR",
       expect.any(Array),
       expect.objectContaining({
         accion: "Elaborado por",
@@ -406,10 +421,10 @@ describe("EditorPlantillaOrden", () => {
   });
 
   it("sin quién elabora ni siglas, el chip los cuenta aunque la plantilla no los cite", async () => {
-    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce({
+    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce(formato({
       apartados: PLANTILLA.map((a) => ({ ...a })),
       datosGenerales: { ...DATOS_GENERALES, elaboradoPor: "", siglasUnidad: "" },
-    });
+    }));
     pintar();
     await screen.findByText("Insertar dato");
 
@@ -442,10 +457,10 @@ describe("EditorPlantillaOrden", () => {
 describe("EditorPlantillaOrden · regeneración estable de la vista previa (2026-10-05)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValue({
+    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValue(formato({
       apartados: PLANTILLA.map((a) => ({ ...a })),
       datosGenerales: { ...DATOS_GENERALES },
-    });
+    }));
     vi.mocked(DocumentoService.previsualizarPlantilla).mockResolvedValue(
       new Blob(["%PDF"], { type: "application/pdf" }),
     );
@@ -476,7 +491,7 @@ describe("EditorPlantillaOrden · regeneración estable de la vista previa (2026
 
     expect(llamadas()).toBe(2);
     expect(
-      vi.mocked(DocumentoService.previsualizarPlantilla).mock.calls[1][0][0]
+      vi.mocked(DocumentoService.previsualizarPlantilla).mock.calls[1][1][0]
         .titulo,
     ).toBe("APARTADO PRIMEROABCDE");
   });
@@ -494,7 +509,7 @@ describe("EditorPlantillaOrden · regeneración estable de la vista previa (2026
   });
 
   it("la sugerencia de la ficha del Director rellena firmante, cargo y dependencia vacíos como VALOR", async () => {
-    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce({
+    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce(formato({
       apartados: PLANTILLA.map((a) => ({ ...a })),
       datosGenerales: {
         ...DATOS_GENERALES,
@@ -508,7 +523,7 @@ describe("EditorPlantillaOrden · regeneración estable de la vista previa (2026
         cargo: "Funcionario Directivo 9",
         dependencia: "Dirección Metropolitana de Inspección",
       },
-    });
+    }));
     pintar();
     await screen.findByText("Insertar dato");
 
@@ -525,5 +540,120 @@ describe("EditorPlantillaOrden · regeneración estable de la vista previa (2026
     ).toBeInTheDocument();
     // La sugerencia es el punto de partida, no un cambio sin guardar.
     expect(screen.getByText("Sin cambios")).toBeInTheDocument();
+  });
+});
+
+/*
+  UN FORMATO POR DEPARTAMENTO (2026-10-27): pestañas, carga, vista previa y guardado del elegido.
+*/
+describe("EditorPlantillaOrden · los tres formatos", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(DocumentoService.obtenerPlantilla).mockImplementation(
+      (departamento) =>
+        Promise.resolve(
+          formato({
+            departamento,
+            apartados: PLANTILLA.map((a) => ({ ...a })),
+            datosGenerales: {
+              ...DATOS_GENERALES,
+              numeroMemorando: `MEMO-${departamento}`,
+            },
+          }),
+        ),
+    );
+    vi.mocked(DocumentoService.previsualizarPlantilla).mockResolvedValue(
+      new Blob(["%PDF"], { type: "application/pdf" }),
+    );
+    vi.mocked(DocumentoService.guardarPlantilla).mockImplementation(
+      (departamento, apartados, datosGenerales) =>
+        Promise.resolve(formato({ departamento, apartados, datosGenerales })),
+    );
+  });
+
+  it("muestra las tres pestañas y abre en DMIT · Instrucción", async () => {
+    pintar();
+    await screen.findByText("Insertar dato");
+
+    const pestanas = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(pestanas).toEqual([
+      "DMIT · Instrucción",
+      "DMIP · Unidad de Operativos",
+      "DMIP · Inspecciones Técnicas y Generales",
+    ]);
+    expect(DocumentoService.obtenerPlantilla).toHaveBeenCalledWith(
+      "DMIT_INSTRUCTOR",
+    );
+    expect(screen.queryByText(/Es TU plantilla/)).toBeNull();
+    expect(
+      screen.getByText(/Formato de DMIT · Instrucción: lo usan las órdenes/),
+    ).toBeInTheDocument();
+  });
+
+  it("al elegir otro formato carga SUS datos y la vista previa es la suya", async () => {
+    pintar();
+    await screen.findByDisplayValue("MEMO-DMIT_INSTRUCTOR");
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: "DMIP · Unidad de Operativos" }),
+    );
+
+    expect(
+      await screen.findByDisplayValue("MEMO-DMIP_OPERATIVOS"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(DocumentoService.previsualizarPlantilla).toHaveBeenCalledWith(
+        "DMIP_OPERATIVOS",
+        expect.any(Array),
+        expect.anything(),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  it("guardar envía SOLO el formato elegido", async () => {
+    pintar();
+    await screen.findByDisplayValue("MEMO-DMIT_INSTRUCTOR");
+    await userEvent.click(
+      screen.getByRole("tab", { name: "DMIP · Inspecciones Técnicas y Generales" }),
+    );
+    const memorando = await screen.findByDisplayValue("MEMO-DMIP_INSPECCIONES");
+    await userEvent.clear(memorando);
+    await userEvent.type(memorando, "MEMO-NUEVO");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Guardar plantilla" }),
+    );
+
+    expect(DocumentoService.guardarPlantilla).toHaveBeenCalledTimes(1);
+    expect(DocumentoService.guardarPlantilla).toHaveBeenCalledWith(
+      "DMIP_INSPECCIONES",
+      expect.any(Array),
+      expect.objectContaining({ numeroMemorando: "MEMO-NUEVO" }),
+    );
+  });
+
+  it("cambiar de formato con cambios sin guardar pregunta antes de descartarlos", async () => {
+    pintar();
+    const memorando = await screen.findByDisplayValue("MEMO-DMIT_INSTRUCTOR");
+    await userEvent.type(memorando, "-X");
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: "DMIP · Unidad de Operativos" }),
+    );
+
+    const dialogo = await screen.findByRole("alertdialog", {
+      name: "¿Descartar cambios?",
+    });
+    // Mientras no se confirma, sigue en Instrucción con lo editado.
+    expect(DocumentoService.obtenerPlantilla).not.toHaveBeenCalledWith(
+      "DMIP_OPERATIVOS",
+    );
+    await userEvent.click(
+      within(dialogo).getByRole("button", { name: "Descartar" }),
+    );
+    expect(
+      await screen.findByDisplayValue("MEMO-DMIP_OPERATIVOS"),
+    ).toBeInTheDocument();
   });
 });

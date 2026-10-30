@@ -20,6 +20,7 @@ import PanelOperativos from "../cuadro/PanelOperativos.tsx";
 import TablaOperativos from "../cuadro/TablaOperativos.tsx";
 import { useTablaOperativos } from "../../hooks/useTablaOperativos.ts";
 import type { NotaOperativo, Operativo } from "../../interfaces/Operativo.ts";
+import { notaDeComposicion } from "../../utils/notasDeTabla.util.ts";
 import {
   COLUMNAS_LISTADO,
   coincideConFiltros,
@@ -266,5 +267,55 @@ describe("columna Formulario compacta (P-02)", () => {
     expect(coincideConFiltros(operativo(), { formulario: "punto de mando" })).toBe(true);
     expect(coincideConFiltros(operativo(), { formulario: "2" })).toBe(true);
     expect(coincideConFiltros(operativo(), { formulario: "FIJOS" })).toBe(false);
+  });
+});
+
+/**
+ * LA COMPOSICIÓN DEL REGISTRO, COMO INFORMACIÓN (2026-10-22, decisión del negocio). Quien registra
+ * decide si agrega a esa persona: no es un pendiente ni una nota escrita.
+ */
+describe("nota informativa de composición", () => {
+  it("dice qué área falta y que quien registra decide", () => {
+    expect(notaDeComposicion(["TECNICO"])).toBe(
+      "Sin Inspector Técnico - DMIP. Puede agregarlo si corresponde.",
+    );
+    expect(notaDeComposicion(["TECNICO", "INSTRUCCION"])).toBe(
+      "Sin Inspector Técnico - DMIP, Personal de Instrucción. Puede agregarlos si corresponde.",
+    );
+    expect(notaDeComposicion([])).toBeNull();
+    expect(notaDeComposicion(undefined)).toBeNull();
+  });
+
+  it("sin notas escritas, la tarjeta informativa ocupa la celda en vez de «—»", () => {
+    render(<NotasObservacion notas={[]} informativas={["Sin Inspector Técnico - DMIP."]} />);
+
+    const tarjeta = screen.getByText("Sin Inspector Técnico - DMIP.").closest(".app-nota");
+    expect(tarjeta).toHaveClass("app-nota-informativa");
+    expect(screen.queryByText("—")).toBeNull();
+    // Regla 6: no se lee solo por el color.
+    expect(screen.getByText("Información:")).toHaveClass("sr-only");
+  });
+
+  it("en Mis operativos, la tabla la pinta con la composición del registro que manda el servidor", () => {
+    render(
+      <TablaOperativos
+        operativos={[
+          operativo({
+            composicion: { esPatrulla: false, completa: false, areasPendientes: ["TECNICO"] },
+          }),
+        ]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(
+      screen.getByText("Sin Inspector Técnico - DMIP. Puede agregarlo si corresponde."),
+    ).toBeInTheDocument();
+  });
+
+  it("con la composición completa, no hay tarjeta informativa", () => {
+    render(<TablaOperativos operativos={[operativo()]} columnas={COLUMNAS_LISTADO} />);
+
+    expect(screen.queryByText(/Puede agregarlo/)).toBeNull();
   });
 });

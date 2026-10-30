@@ -49,7 +49,8 @@ interface MatrizConductoresApi {
     conductorId: number;
     nombre: string;
     sector: string | null;
-    tipoContrato: string | null;
+    /** El nombre de su jornada laboral (2026-10-23), o `null` si aún no tiene. */
+    jornada: string | null;
     celdas: CeldaCobertura[];
   }[];
   totales: {
@@ -76,10 +77,6 @@ const SECTOR: Record<string, string> = {
   VALLE: "Valle",
 };
 
-const CONTRATO: Record<string, string> = {
-  NOMBRAMIENTO: "Nombramiento",
-  OCASIONAL: "Ocasional",
-};
 
 /** Adapta la respuesta del servidor a la matriz común: la fila es el conductor, el grupo su sector. */
 export const aMatrizComun = (api: MatrizConductoresApi): MatrizCobertura => ({
@@ -88,10 +85,8 @@ export const aMatrizComun = (api: MatrizConductoresApi): MatrizCobertura => ({
   personas: api.conductores.map((conductor) => ({
     funcionarioId: conductor.conductorId,
     nombre: conductor.nombre,
-    // El contrato se lee bajo el nombre (decide hasta qué hora trabaja: nombramiento 16H30).
-    cargo: conductor.tipoContrato
-      ? (CONTRATO[conductor.tipoContrato] ?? conductor.tipoContrato)
-      : null,
+    // La jornada laboral se lee bajo el nombre (decide en qué días y horas trabaja; 2026-10-23).
+    cargo: conductor.jornada,
     zonalId: null,
     zona: conductor.sector
       ? (SECTOR[conductor.sector] ?? conductor.sector)

@@ -17,10 +17,27 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 import MensajeHost from "../components/common/MensajeHost.tsx";
+import { olvidarJornadasLaborales } from "../hooks/useJornadasLaborales.ts";
 import { reiniciarMensajes } from "../utils/mensaje.ts";
+import { JORNADAS_DE_PRUEBA } from "./jornadasDePrueba.ts";
+
+/*
+  EL CATÁLOGO DE JORNADAS LABORALES (2026-10-23), EL MISMO EN TODAS LAS PRUEBAS. Personal, Flota y
+  sus cajones lo leen con `useJornadasLaborales`; sin esto, cada pantalla probada pediría al
+  servidor real. Son las dos que siembra la migración. Una prueba que necesite otras lo cambia con
+  `vi.mocked(JornadasLaboralesService.listar)`.
+*/
+vi.mock("../services/jornadasLaborales.service.ts", () => ({
+  JornadasLaboralesService: {
+    listar: vi.fn(() => Promise.resolve(JORNADAS_DE_PRUEBA)),
+    crear: vi.fn(),
+    actualizar: vi.fn(),
+    cambiarActivo: vi.fn(),
+  },
+}));
 
 beforeEach(() => {
   render(createElement(MensajeHost));
@@ -32,4 +49,5 @@ beforeEach(() => {
 afterEach(() => {
   act(() => reiniciarMensajes());
   cleanup();
+  olvidarJornadasLaborales();
 });

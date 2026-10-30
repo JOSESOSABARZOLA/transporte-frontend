@@ -15,6 +15,7 @@
 
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 /*
@@ -25,17 +26,13 @@ import { describe, expect, it, vi } from "vitest";
  * tradujera aquí estaría probando su propia traducción.
  */
 
-import TablaParametros from "./TablaParametros.tsx";
+import PanelParametros from "./PanelParametros.tsx";
 import TablaVentanas from "./TablaVentanas.tsx";
 import type {
   ParametroPolitica,
   VentanaCarga,
 } from "../../interfaces/Administracion.ts";
-import {
-  descripcionDeRango,
-  horarioDeVentana,
-  motivoDeRechazo,
-} from "../../utils/parametro.util.ts";
+import { descripcionDeRango, motivoDeRechazo } from "../../utils/parametro.util.ts";
 
 const jornada = (parcial: Partial<ParametroPolitica> = {}): ParametroPolitica => ({
   clave: "JORNADA_MAXIMA_HORAS",
@@ -46,7 +43,10 @@ const jornada = (parcial: Partial<ParametroPolitica> = {}): ParametroPolitica =>
   unidad: "horas",
   minimo: "8",
   maximo: "16",
+  valorSiembra: "12",
+  opciones: null,
   modificadoPor: null,
+  modificadoPorNombre: null,
   modificadoEn: "2026-08-05T12:00:00.000Z",
   ...parcial,
 });
@@ -67,7 +67,10 @@ const horaLimite = (): ParametroPolitica => ({
   unidad: null,
   minimo: null,
   maximo: null,
+  valorSiembra: "16:30",
+  opciones: null,
   modificadoPor: 4,
+  modificadoPorNombre: "Ana Pérez",
   modificadoEn: "2026-08-06T09:30:00.000Z",
 });
 
@@ -136,10 +139,14 @@ describe("parámetros de la DAF por día de la semana", () => {
   });
 
   it("DAF_PERMITE_NOCHE_A_DIA: SIN_CONFIGURAR, SI o NO", () => {
-    const nocheADia = minimos("DAF_PERMITE_NOCHE_A_DIA");
-    expect(descripcionDeRango(nocheADia)).toBe("SIN_CONFIGURAR · SI · NO");
+    // Las opciones las declara el servidor (2026-10-24): la pantalla no las escribe.
+    const nocheADia = {
+      ...minimos("DAF_PERMITE_NOCHE_A_DIA"),
+      opciones: ["SI", "NO", "SIN_CONFIGURAR"],
+    };
+    expect(descripcionDeRango(nocheADia)).toBe("SI · NO · SIN_CONFIGURAR");
     expect(motivoDeRechazo(nocheADia, "SI")).toBeNull();
-    expect(motivoDeRechazo(nocheADia, "QUIZA")).toContain("SIN_CONFIGURAR, SI, NO");
+    expect(motivoDeRechazo(nocheADia, "QUIZA")).toContain("SI, NO, SIN_CONFIGURAR");
   });
 });
 
@@ -169,6 +176,7 @@ describe("caso 1 · una hora se cambia sin desplegar código", () => {
       ...horaLimite(),
       clave: "PERIODO_COMPUTO_SALIDAS",
       valor: "MENSUAL",
+      opciones: ["SEMANAL", "QUINCENAL", "MENSUAL"],
     };
 
     expect(motivoDeRechazo(periodo, "QUINCENAL")).toBeNull();
@@ -176,7 +184,7 @@ describe("caso 1 · una hora se cambia sin desplegar código", () => {
   });
 });
 
-describe("caso 4 · cada parámetro muestra unidad, mínimo, máximo y descripción", () => {
+describe("caso 4 · cada parámetro muestra unidad, rango y descripción", () => {
   it("el rango se dice en palabras, con su unidad", () => {
     expect(descripcionDeRango(jornada())).toBe("Entre 8 y 16 horas");
   });
@@ -184,260 +192,294 @@ describe("caso 4 · cada parámetro muestra unidad, mínimo, máximo y descripci
   it("sin extremos numéricos se describe por su dominio", () => {
     expect(descripcionDeRango(horaLimite())).toBe("Hora en formato HH:MM");
   });
+});
 
-  it("la fila muestra clave, descripción, unidad y rango, todo a la vez", () => {
+/** Rediseño 2026-10-24 (CARGA3): secciones, buscador, filtros, Modificado y Restaurar. */
+describe("la pestaña Parámetros", () => {
+  const otro = (): ParametroPolitica => ({
+    ...jornada(),
+    clave: "CLAVE_NUEVA_SIN_CATALOGO",
+    descripcion: "Un parámetro que aún no está en el catálogo.",
+    valorSiembra: null,
+    unidad: null,
+    minimo: null,
+    maximo: null,
+    tipo: "TEXTO",
+    valor: "SIN_CONFIGURAR",
+  });
+
+  type Props = Parameters<typeof PanelParametros>[0];
+
+  const pintar = (parametros: ParametroPolitica[], extra: Partial<Props> = {}) => {
+    const props: Props = {
+      parametros,
+      cargando: false,
+      borrador: {},
+      onCambiar: vi.fn(),
+      erroresServidor: {},
+      errores: 0,
+      guardando: false,
+      resaltadas: new Set<string>(),
+      onGuardar: vi.fn(),
+      onDescartar: vi.fn(),
+      ...extra,
+    };
     render(
-      <TablaParametros
-        parametros={[jornada()]}
-        cargando={false}
-        guardando={null}
-        avisos={{}}
-        onGuardar={vi.fn()}
-      />,
+      <MemoryRouter>
+        <PanelParametros {...props} />
+      </MemoryRouter>,
     );
+    return props;
+  };
 
+  it("agrupa por sección; lo que no está en el catálogo cae en «Otros» con su descripción", async () => {
+    pintar([jornada(), otro()]);
+
+    // La primera sección abre sola, como el prototipo.
+    expect(
+      screen.getByRole("button", { name: /Cuadro de colores · Jornada y descanso/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Horas máximas por jornada · personal del cuadro")).toBeInTheDocument();
+    expect(screen.getByText("Afecta: Registro de operativo")).toBeInTheDocument();
+
+    const otros = screen.getByRole("button", { name: /Otros/ });
+    expect(otros).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(otros);
+    expect(screen.getByText("Un parámetro que aún no está en el catálogo.")).toBeInTheDocument();
+    expect(screen.getByText("CLAVE_NUEVA_SIN_CATALOGO")).toBeInTheDocument();
+  });
+
+  it("el buscador mira etiqueta, código y descripción, sin tildes", async () => {
+    pintar([jornada(), horaLimite(), otro()]);
+    const buscador = screen.getByRole("searchbox", { name: "Buscar parámetros" });
+
+    await userEvent.type(buscador, "maximas");
+    // Sin contador «N de M» (2026-10-24): se ve solo lo que coincide.
+    expect(screen.queryByText(/de 3$/)).toBeNull();
     expect(screen.getByText("JORNADA_MAXIMA_HORAS")).toBeInTheDocument();
-    expect(screen.getByText(/Horas máximas que una persona/)).toBeInTheDocument();
-    expect(screen.getByText("horas")).toBeInTheDocument();
-    // El rango está visible desde el principio, no solo al equivocarse.
-    expect(screen.getByText("Entre 8 y 16 horas")).toBeInTheDocument();
+    expect(screen.queryByText("HORA_LIMITE_CUADRO")).toBeNull();
+
+    await userEvent.clear(buscador);
+    await userEvent.type(buscador, "hora_limite");
+    expect(screen.getByText("HORA_LIMITE_CUADRO")).toBeInTheDocument();
+  });
+
+  it("los filtros Modificados y Sin configurar", async () => {
+    pintar([jornada({ valor: "16" }), horaLimite(), otro()]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Modificados" }));
+    expect(screen.getByRole("button", { name: "Modificados" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Sin contador «N de M» (2026-10-24): se ve solo lo que coincide.
+    expect(screen.queryByText(/de 3$/)).toBeNull();
+    expect(screen.getByText("JORNADA_MAXIMA_HORAS")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sin configurar" }));
+    expect(screen.getByText("CLAVE_NUEVA_SIN_CATALOGO")).toBeInTheDocument();
+    expect(screen.queryByText("JORNADA_MAXIMA_HORAS")).toBeNull();
+  });
+
+  it("Modificado si difiere de la siembra, y ↺ Restaurar la pone en el borrador sin guardar", async () => {
+    const props = pintar([jornada({ valor: "16" })]);
+    const fila = screen.getByText("JORNADA_MAXIMA_HORAS").closest("tr")!;
+
+    expect(within(fila).getByText("Modificado")).toBeInTheDocument();
+    const restaurar = within(fila).getByRole("button", { name: /Restaurar .* 12/ });
+    expect(restaurar).toHaveTextContent("↺ Restaurar a 12");
+    expect(restaurar).toHaveAccessibleDescription("Valor de siembra: 12");
+    await userEvent.click(restaurar);
+    expect(props.onCambiar).toHaveBeenCalledWith("JORNADA_MAXIMA_HORAS", "12");
+    expect(props.onGuardar).not.toHaveBeenCalled();
+  });
+
+  it("«Sin configurar» en ámbar y la última modificación con el nombre", async () => {
+    pintar([horaLimite(), otro()]);
+    expect(screen.getByText("Ana Pérez · 06/08/2026")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Expandir todo" }));
+    const fila = screen.getByText("CLAVE_NUEVA_SIN_CATALOGO").closest("tr")!;
+    expect(within(fila).getByText("Sin configurar")).toBeInTheDocument();
+    expect(within(fila).getByText("Valor de siembra")).toBeInTheDocument();
+  });
+
+  it("el control sigue al tipo: hora, lista y número con unidad", () => {
+    pintar([
+      jornada(),
+      horaLimite(),
+      {
+        ...horaLimite(),
+        clave: "PERIODO_COMPUTO_SALIDAS",
+        valor: "MENSUAL",
+        valorSiembra: "MENSUAL",
+        opciones: ["SEMANAL", "QUINCENAL", "MENSUAL"],
+      },
+    ]);
+    // La hora en 24 h del sistema, no el `type="time"` del navegador (2026-10-24).
+    const hora = screen.getByLabelText("Hora límite del cuadro");
+    expect(hora).toHaveAttribute("type", "text");
+    expect(hora).toHaveAttribute("placeholder", "HH:MM");
+    expect(within(hora.closest("td")!).getByText("16H30")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Período del tope de salidas" })).toHaveValue(
+      "MENSUAL",
+    );
+    const horas = screen.getByLabelText("Horas máximas por jornada · personal del cuadro");
+    expect(horas).toHaveAttribute("inputmode", "decimal");
+    expect(within(horas.closest("td")!).getByText("horas")).toBeInTheDocument();
+  });
+
+  it("un valor fuera de rango se marca en rojo bajo su control", () => {
+    pintar([jornada()], { borrador: { JORNADA_MAXIMA_HORAS: "30" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("no puede ser mayor que 16 horas");
+    expect(screen.getByText("Sin guardar")).toBeInTheDocument();
+  });
+
+  it("el rechazo del servidor queda bajo su fila", () => {
+    pintar([jornada()], {
+      borrador: { JORNADA_MAXIMA_HORAS: "10" },
+      erroresServidor: { JORNADA_MAXIMA_HORAS: "No se puede ahora." },
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("No se puede ahora.");
   });
 });
 
-describe("la edición en línea", () => {
-  it("no se puede guardar un valor fuera de rango, y el botón dice por qué", async () => {
-    const guardar = vi.fn();
-
+describe("la barra del guardado único", () => {
+  const pintar = (borrador: Record<string, string>, errores = 0) => {
+    const onGuardar = vi.fn();
+    const onDescartar = vi.fn();
     render(
-      <TablaParametros
-        parametros={[jornada()]}
-        cargando={false}
-        guardando={null}
-        avisos={{}}
-        onGuardar={guardar}
-      />,
+      <MemoryRouter>
+        <PanelParametros
+          parametros={[jornada(), horaLimite()]}
+          cargando={false}
+          borrador={borrador}
+          onCambiar={vi.fn()}
+          erroresServidor={{}}
+          errores={errores}
+          guardando={false}
+          resaltadas={new Set()}
+          onGuardar={onGuardar}
+          onDescartar={onDescartar}
+        />
+      </MemoryRouter>,
     );
+    return { onGuardar, onDescartar };
+  };
 
-    const campo = screen.getByLabelText("Valor de JORNADA_MAXIMA_HORAS");
-    await userEvent.clear(campo);
-    await userEvent.type(campo, "30");
-
-    const boton = screen.getByRole("button", { name: "Guardar" });
-
-    expect(boton).toHaveAttribute("aria-disabled", "true");
-    expect(boton).toHaveAttribute(
-      "title",
-      "JORNADA_MAXIMA_HORAS no puede ser mayor que 16 horas.",
-    );
-    expect(guardar).not.toHaveBeenCalled();
+  it("sin cambios no aparece", () => {
+    pintar({});
+    expect(screen.queryByRole("region", { name: "Cambios sin guardar" })).toBeNull();
   });
 
-  it("dentro de rango se guarda, con la clave y el valor", async () => {
-    const guardar = vi.fn();
-
-    render(
-      <TablaParametros
-        parametros={[jornada()]}
-        cargando={false}
-        guardando={null}
-        avisos={{}}
-        onGuardar={guardar}
-      />,
-    );
-
-    const campo = screen.getByLabelText("Valor de JORNADA_MAXIMA_HORAS");
-    await userEvent.clear(campo);
-    await userEvent.type(campo, "8");
-    await userEvent.click(screen.getByRole("button", { name: "Guardar" }));
-
-    expect(guardar).toHaveBeenCalledWith("JORNADA_MAXIMA_HORAS", "8");
+  it("dice cuántos cambios hay, guarda y descarta", async () => {
+    const { onGuardar, onDescartar } = pintar({
+      JORNADA_MAXIMA_HORAS: "10",
+      HORA_LIMITE_CUADRO: "17:00",
+    });
+    const barra = screen.getByRole("region", { name: "Cambios sin guardar" });
+    expect(within(barra).getByText(/2 cambios sin guardar/)).toBeInTheDocument();
+    expect(barra).toHaveClass("sticky", "bottom-0");
+    await userEvent.click(within(barra).getByRole("button", { name: "Guardar cambios" }));
+    expect(onGuardar).toHaveBeenCalled();
+    await userEvent.click(within(barra).getByRole("button", { name: "Descartar" }));
+    expect(onDescartar).toHaveBeenCalled();
   });
 
-  it("sin cambios: «Guardar» secundario apagado («Sin cambios») y sin «Descartar»; con cambios, primario, «Descartar» y la fila resaltada", async () => {
-    render(
-      <TablaParametros
-        parametros={[jornada()]}
-        cargando={false}
-        guardando={null}
-        avisos={{}}
-        onGuardar={vi.fn()}
-      />,
-    );
-
-    const guardar = screen.getByRole("button", { name: "Guardar" });
-    expect(guardar).toHaveAttribute("aria-disabled", "true");
-    expect(guardar).toHaveAttribute("title", "Sin cambios");
-    expect(guardar.className).toContain("app-accion-secundaria");
-    expect(screen.queryByRole("button", { name: "Descartar" })).toBeNull();
-
-    const campo = screen.getByLabelText("Valor de JORNADA_MAXIMA_HORAS");
-    await userEvent.clear(campo);
-    await userEvent.type(campo, "8");
-    expect(guardar).not.toHaveAttribute("aria-disabled");
-    expect(guardar.className).toContain("btn-primary");
-    expect(screen.getByText("Cambios sin guardar")).toBeInTheDocument();
-    expect(campo.closest("tr")).toHaveAttribute("data-cambiado", "true");
-
-    await userEvent.click(screen.getByRole("button", { name: "Descartar" }));
-    expect(campo).toHaveValue(jornada().valor);
-    expect(screen.queryByRole("button", { name: "Descartar" })).toBeNull();
-  });
-
-  it("el rechazo del servidor se muestra junto al campo, sin perder lo escrito", async () => {
-    render(
-      <TablaParametros
-        parametros={[jornada()]}
-        cargando={false}
-        guardando={null}
-        avisos={{
-          JORNADA_MAXIMA_HORAS:
-            "JORNADA_MAXIMA_HORAS no puede ser mayor que 16 horas.",
-        }}
-        onGuardar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByRole("alert")).toHaveTextContent("no puede ser mayor");
-    expect(screen.getByLabelText("Valor de JORNADA_MAXIMA_HORAS")).toHaveValue(
-      "12",
-    );
+  it("con valores fuera de rango, Guardar se apaga y dice cuántos revisar", async () => {
+    const { onGuardar } = pintar({ JORNADA_MAXIMA_HORAS: "30" }, 1);
+    const barra = screen.getByRole("region", { name: "Cambios sin guardar" });
+    expect(within(barra).getByText("Revise 1 valor fuera de rango")).toBeInTheDocument();
+    await userEvent.click(within(barra).getByRole("button", { name: "Guardar cambios" }));
+    expect(onGuardar).not.toHaveBeenCalled();
   });
 });
 
-describe("caso 5 · la última modificación se ve sin abrir la base", () => {
-  it("un valor tocado muestra quién y cuándo", () => {
-    render(
-      <TablaParametros
-        parametros={[horaLimite()]}
-        cargando={false}
-        guardando={null}
-        avisos={{}}
-        onGuardar={vi.fn()}
-      />,
-    );
+/** Rediseño 2026-10-24 (CARGA1): franja de 24 h, estado en vivo y mensaje inconsistente. */
+describe("las ventanas de carga", () => {
+  // Miércoles 21-OCT-2026, 14H10 en Quito (19H10 UTC).
+  const AHORA = new Date("2026-10-21T19:10:00Z");
 
-    expect(screen.getByText("Usuario 4")).toBeInTheDocument();
-    expect(screen.getByText("2026-08-06")).toBeInTheDocument();
-  });
-
-  it("un valor que nadie ha tocado lo dice, en lugar de fingir un autor", () => {
-    render(
-      <TablaParametros
-        parametros={[jornada()]}
-        cargando={false}
-        guardando={null}
-        avisos={{}}
-        onGuardar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Valor de siembra")).toBeInTheDocument();
-  });
-});
-
-describe("las ventanas · «sin restricción» no es «sin datos»", () => {
-  it("una hora de apertura nula se explica, no se muestra como hueco", () => {
-    expect(horarioDeVentana(ventana())).toBe(
-      "Hasta 15:00, sin hora de apertura",
-    );
-  });
-
-  it("una ventana desactivada dice que no restringe", () => {
-    expect(horarioDeVentana(ventana({ activo: false }))).toBe(
-      "Sin restricción horaria",
-    );
-  });
-
-  it("con las dos horas se lee como un intervalo", () => {
-    expect(
-      horarioDeVentana(ventana({ horaApertura: "15:00", horaCierre: "16:30" })),
-    ).toBe("De 15:00 a 16:30");
-  });
-
-  it("una ventana semanal nombra los días en palabras", () => {
-    expect(
-      horarioDeVentana(
-        ventana({
-          tipo: "SEMANAL",
-          diaApertura: 1,
-          horaApertura: "08:00",
-          diaCierre: 5,
-          horaCierre: "17:00",
-        }),
-      ),
-    ).toBe("De lunes 08:00 a viernes 17:00");
-  });
-
-  // 2026-10-07: «Vigente» / «Inactiva» como distintivo, y la inactiva YA NO se atenúa (el
-  // distintivo lo dice; la opacidad le restaba contraste al texto).
-  it("el estado lleva color y palabra, y la inactiva no se atenúa", () => {
+  const pintar = (ventanas: VentanaCarga[], onEditar = vi.fn()) => {
     render(
       <TablaVentanas
         nombreDe={(rol) => rol}
-        ventanas={[
-          ventana({ rol: "DMIP_OPERATIVOS", activo: true }),
-          ventana({ rol: "DIRECTOR", activo: false }),
-        ]}
+        ventanas={ventanas}
         cargando={false}
         procesando={false}
-        onEditar={vi.fn()}
+        onEditar={onEditar}
+        ahora={AHORA}
       />,
     );
+    return onEditar;
+  };
 
-    const filas = screen.getAllByRole("row");
+  it("cada fila dice su tipo, su horario, la franja de 24 h y el estado en vivo", () => {
+    pintar([
+      ventana(),
+      ventana({ rol: "DAF", horaApertura: "15:00", horaCierre: "15:30" }),
+      ventana({ rol: "DIRECTOR", tipo: "SIN_RESTRICCION", activo: false }),
+    ]);
+    const [, dmip, daf, director] = screen.getAllByRole("row");
 
-    expect(within(filas[1]).getByText("Vigente")).toHaveClass("badge-success");
-    expect(within(filas[2]).getByText("Inactiva")).toHaveClass("badge-ghost");
-    // Sin opacidad sobre el texto (docs/estilos.md): la fila inactiva usa text-app-muted.
-    expect(filas[2].className).not.toMatch(/(?:^| )opacity-(?!0(?: |$)|100(?: |$))[0-9]/);
+    expect(within(dmip).getByText("Diario")).toBeInTheDocument();
+    expect(within(dmip).getByText("Desde 00H00 hasta 15H00")).toBeInTheDocument();
+    // El estado en dos partes, las dos DENTRO de la misma etiqueta de esquinas rounded-lg.
+    const etiqueta = within(dmip).getByText("Abierta · cierra 15H00").closest(".badge")!;
+    expect(etiqueta).toHaveClass("rounded-lg");
+    expect(within(etiqueta as HTMLElement).getByText("(en 50 min)")).toBeInTheDocument();
+    expect(
+      within(dmip).getByRole("img", { name: "Desde 00H00 hasta 15H00; ahora 14H10" }),
+    ).toBeInTheDocument();
+
+    expect(within(daf).getByText("Cerrada · abre 15H00")).toBeInTheDocument();
+    expect(within(director).getByText("Sin restricción", { selector: ".badge span" }).closest(".badge")).toHaveClass("badge-ghost");
+    // Sin restricción: barra llena, rayada, con «Todo el día».
+    const barraLibre = within(director).getByRole("img");
+    expect(barraLibre).toHaveAccessibleDescription("Todo el día");
+    expect(barraLibre.querySelector("[data-todo-el-dia]")).not.toBeNull();
+    // Del mismo ancho que las demás: el tooltip la envuelve como bloque.
+    expect(barraLibre.parentElement).toHaveClass("w-full");
+    expect(within(director).getByText("No se muestra mensaje.")).toBeInTheDocument();
+  });
+
+  it("las etiquetas 00H…24H se centran sobre su hora", () => {
+    pintar([ventana()]);
+    const marcas = Array.from(document.querySelectorAll("[data-marca]"));
+    expect(marcas.map((marca) => marca.textContent)).toEqual(["00H", "06H", "12H", "18H", "24H"]);
+    expect(marcas.map((marca) => (marca as HTMLElement).style.left)).toEqual([
+      "0%",
+      "25%",
+      "50%",
+      "75%",
+      "100%",
+    ]);
+    expect((marcas[1] as HTMLElement).style.transform).toBe("translateX(-50%)");
+  });
+
+  it("muestra el mensaje con {cierre} ya reemplazado", () => {
+    pintar([ventana({ mensajeCierre: "Cerró a las {cierre}. Vuelve mañana." })]);
+    expect(screen.getByText("Cerró a las 15H00. Vuelve mañana.")).toBeInTheDocument();
+    expect(screen.queryByText(/no coincide con el horario/)).toBeNull();
+  });
+
+  it("una hora escrita a mano distinta del horario se marca, y ofrece el mensaje sugerido", async () => {
+    const onEditar = pintar([
+      ventana({ mensajeCierre: "La ventana de carga de su departamento cerró a las 18H25." }),
+    ]);
+
+    expect(screen.getByText(/El mensaje no coincide con el horario/)).toBeInTheDocument();
+    expect(screen.getByText("Dice «18H25» y el horario es hasta 15H00.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Usar mensaje sugerido" }));
+    expect(onEditar).toHaveBeenCalledWith(
+      expect.objectContaining({ rol: "DMIP_OPERATIVOS" }),
+      "La ventana de carga de su departamento cerró a las {cierre}. Vuelve a abrirse mañana a las {apertura}.",
+    );
   });
 
   it("no hay botón de agregar ni de eliminar: hay una ventana por rol", () => {
-    render(
-      <TablaVentanas
-        nombreDe={(rol) => rol}
-        ventanas={[ventana()]}
-        cargando={false}
-        procesando={false}
-        onEditar={vi.fn()}
-      />,
-    );
-
+    pintar([ventana()]);
     expect(screen.queryByRole("button", { name: /Agregar/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Eliminar/ })).toBeNull();
     expect(screen.getAllByRole("button", { name: /^Editar/ }).length).toBeGreaterThan(0);
-  });
-});
-
-/** 2026-10-07: la columna Mensaje muestra el texto resuelto y avisa de una hora fija. */
-describe("las ventanas · la columna Mensaje", () => {
-  it("muestra el mensaje con {cierre} ya reemplazado", () => {
-    render(
-      <TablaVentanas
-        nombreDe={(rol) => rol}
-        ventanas={[ventana({ mensajeCierre: "Cerró a las {cierre}. Vuelve mañana." })]}
-        cargando={false}
-        procesando={false}
-        onEditar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Cerró a las 15H00. Vuelve mañana.")).toBeInTheDocument();
-    expect(screen.queryByText(/no coincide con la hora de cierre/)).toBeNull();
-  });
-
-  it("ya no marca un mensaje con una hora fija distinta del cierre (2026-10-08)", () => {
-    render(
-      <TablaVentanas
-        nombreDe={(rol) => rol}
-        ventanas={[ventana({ mensajeCierre: "Cerró a las 18H25. Vuelve mañana." })]}
-        cargando={false}
-        procesando={false}
-        onEditar={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Cerró a las 18H25. Vuelve mañana.")).toBeInTheDocument();
-    expect(screen.queryByText(/no coincide con la hora de cierre/)).toBeNull();
   });
 });

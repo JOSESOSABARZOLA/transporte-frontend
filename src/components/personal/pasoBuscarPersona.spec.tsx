@@ -42,7 +42,7 @@ const conFicha = (): FilaDirectorio =>
       apellidos: "RIOS",
       nombres: "ANA",
       area: "GENERAL",
-      tipoContrato: "NOMBRAMIENTO",
+      jornadaLaboralId: 1,
       activo: true,
     },
   });
@@ -70,7 +70,7 @@ const deBaja = (): FilaDirectorio =>
       apellidos: "VERA",
       nombres: "LUIS",
       area: "OPERATIVOS",
-      tipoContrato: "OCASIONAL",
+      jornadaLaboralId: 2,
       activo: false,
     },
   });

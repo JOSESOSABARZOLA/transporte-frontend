@@ -57,7 +57,7 @@ const TITULOS: Record<string, string> = {
   PERSONA_NO_DISPONIBLE: "La persona no está disponible",
   PERSONA_EN_DESCANSO: "La persona está de descanso",
   TURNO_FUERA_DE_RANGO: "El horario no cabe en el turno",
-  CONTRATO_NO_ADMITE_TURNO: "El contrato no admite este turno",
+  JORNADA_NO_ADMITE_TURNO: "La jornada laboral no admite este turno",
   PATRULLA_CONSECUTIVA: "Salió en patrulla el día anterior",
   TOPE_SALIDAS_PESADAS: "Alcanzó el tope de salidas",
   SOLAPAMIENTO_HORARIO: "El horario se cruza con otro operativo",

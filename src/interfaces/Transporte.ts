@@ -27,30 +27,6 @@ export interface ResultadoTransporte {
 }
 
 /**
- * Fila de `GET /transporte/vehiculos?fecha=`. PV-33, cerrado el 2026-08-31.
- *
- * ═══════════════════════════════════════════════════════════════════════════════
- * NO LLEGA FILTRADA, Y ES LO CONTRARIO DE `ConductorDisponible`.
- *
- * Los conductores ausentes se excluyen en el servidor (RN-45). Las placas no utilizables
- * **sí vienen**, con `utilizable` en falso y `motivo` escrito para la DAF: una placa en el
- * taller es justo la que ella esperaba usar, y saber hasta cuándo lo está es lo que le
- * permite replanificar. Es el criterio de la regla 14: quien no puede ser convocado se
- * muestra, no se oculta.
- *
- * **No las filtre aquí.** Se pintan deshabilitadas y con su motivo al lado.
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-export interface VehiculoDeLaFlota {
-  id: number;
-  placa: string;
-  descripcion: string | null;
-  utilizable: boolean;
-  /** Por qué no se puede usar hoy. `null` cuando sí se puede. */
-  motivo: string | null;
-}
-
-/**
  * Una parada de taller. RN-DAF-05.
  *
  * **El motivo sí se muestra**, al contrario que en las ausencias del personal: allí puede
@@ -87,7 +63,7 @@ export interface CrearMantenimiento {
   zonalTallerId?: number | null;
 }
 
-export interface Conductor {
+export interface Conductor extends DatosDeBaja {
   id: number;
   cedula: string;
   nombreCompleto: string;
@@ -110,16 +86,15 @@ export interface Conductor {
    */
   faltantes?: FaltanteConductor[];
   /**
-   * Los tres del 2026-08-31. `null` significa **no consta**, y cada regla lo respeta: sin
-   * contrato registrado, la que impide conducir de noche NO se aplica a ese conductor.
+   * Los tres del 2026-08-31. `null` significa **no consta**, y cada regla lo respeta.
    */
   sector: "NORTE" | "SUR" | "CENTRO" | "VALLE" | null;
   parqueaderoAutorizado: boolean;
   /**
-   * El enumerado del servidor es NOMBRAMIENTO | OCASIONAL («contrato» en el habla de la DAF).
-   * Hasta el 2026-10-06 la pantalla enviaba «CONTRATO», que el servidor rechazaba.
+   * La JORNADA LABORAL (2026-10-23), que reemplaza al tipo de contrato: en qué días y horas trabaja.
+   * `null` = sin jornada: no se le asigna transporte.
    */
-  tipoContrato: "NOMBRAMIENTO" | "OCASIONAL" | null;
+  jornadaLaboralId: number | null;
   /**
    * Acta de parqueadero (Art. 8, 2026-10-06). Sin acta VIGENTE no se declara DOMICILIO como
    * guarda del vehículo. Fechas AAAA-MM-DD (regla 12). Opcionales en la respuesta (contratos viejos).
@@ -135,7 +110,7 @@ export interface Conductor {
 }
 
 /** Zonal donde puede quedar un vehiculo. Catalogo del administrador. RN-DAF-03. */
-export interface UbicacionFlota {
+export interface UbicacionFlota extends DatosDeBaja {
   id: number;
   nombre: string;
   activo: boolean;
@@ -157,7 +132,7 @@ export interface UbicacionFlota {
 /** Lo que el servidor señala como faltante en la ficha de un conductor (2026-10-14). */
 export type FaltanteConductor =
   | "VEHICULO_HABITUAL"
-  | "TIPO_CONTRATO"
+  | "JORNADA_LABORAL"
   | "PATRON_ROTACION";
 
 /** Un vehículo que quedó en un garaje, con la última fecha (AAAA-MM-DD). */
@@ -180,7 +155,17 @@ export interface EstadoDocumentos {
   dias: number | null;
 }
 
-export interface Vehiculo {
+/**
+ * ACTIVO o DE_BAJA, y cuándo y quién lo dio de baja (2026-10-20, D1). El estado se deriva de
+ * `activo` en el servidor; `bajaEn` (ISO) y `bajaPorNombre` van en `null` si está activo.
+ */
+export interface DatosDeBaja {
+  estado?: "ACTIVO" | "DE_BAJA";
+  bajaEn?: string | null;
+  bajaPorNombre?: string | null;
+}
+
+export interface Vehiculo extends DatosDeBaja {
   id: number;
   placa: string;
   descripcion: string | null;
@@ -208,16 +193,5 @@ export interface AlertaVencimiento {
   vence: string;
   dias: number;
   estado: "VENCIDO" | "POR_VENCER";
-}
-
-/** Un vehículo en la vista semanal de mantenimiento (2026-10-06). */
-export interface SemanaMantenimiento {
-  vehiculoId: number;
-  placa: string;
-  dias: {
-    fecha: string;
-    estado: "PROGRAMADO" | "EN_TALLER" | "LISTO" | null;
-    motivo?: string;
-  }[];
 }
 

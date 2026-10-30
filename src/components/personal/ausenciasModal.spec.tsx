@@ -7,9 +7,9 @@
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-08
  *
- * Se prueban DECISIONES: el mensaje en vivo (días, rango, solape, faltan fechas), el aviso de los
- * operativos que la ausencia NO retira, que no se registre un rango inválido y que una ausencia
- * pasada no se quite.
+ * Se prueban DECISIONES: el estado del pie y los errores en línea (días, rango, solape, faltan
+ * fechas), el aviso de los operativos que la ausencia NO retira, que no se registre un rango
+ * inválido y que una ausencia pasada no se quite («Historial»).
  */
 
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -36,7 +36,7 @@ const FUNCIONARIO: Funcionario = {
   correoPersonal: null,
   cargo: null,
   area: "TECNICO",
-  tipoContrato: "OCASIONAL",
+  jornadaLaboralId: 2,
   direccion: "DMIP_INSPECCIONES",
   activo: true,
 };
@@ -98,50 +98,72 @@ describe("Ausencias · cabecera y vacío", () => {
   });
 });
 
-describe("Ausencias · mensaje en vivo", () => {
-  it("con un rango válido dice los días y las fechas en dd/mm/aaaa, y registra", async () => {
+describe("Ausencias · el pie y los errores en línea", () => {
+  it("«Registrar ausencia» va en el pie, junto a «Cerrar», y no dentro del formulario", () => {
+    montar();
+    // El «Cerrar» del pie (el aspa de la cabecera se llama igual, sin texto visible).
+    const cerrar = screen
+      .getAllByRole("button", { name: "Cerrar" })
+      .find((boton) => boton.textContent === "Cerrar") as HTMLElement;
+    const pie = cerrar.parentElement as HTMLElement;
+    expect(within(pie).getByRole("button", { name: "Registrar ausencia" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Registrar ausencia" })).toHaveLength(1);
+  });
+
+  it("con un rango válido el pie dice «Se bloquearán N días (dd/mm al dd/mm)», y registra", async () => {
     const { onRegistrar } = montar();
     fechas("2026-10-01", "2026-10-05");
 
-    expect(
-      screen.getByText("5 días · del 01/10/2026 al 05/10/2026"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Se bloquearán 5 días (01/10 al 05/10)")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Registrar ausencia" }));
     expect(onRegistrar).toHaveBeenCalledWith(
       expect.objectContaining({ estado: "VACACIONES", desde: "2026-10-01", hasta: "2026-10-05" }),
     );
   });
 
-  it("«hasta» antes de «desde»: lo dice y no registra", async () => {
+  it("«hasta» antes de «desde»: «Revise las fechas», el texto del servidor en línea y el botón apagado", async () => {
     const { onRegistrar } = montar();
     fechas("2026-10-05", "2026-10-01");
 
-    expect(
-      screen.getByText("«Hasta» no puede ser anterior a «Desde»."),
-    ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Registrar ausencia" }));
+    expect(screen.getByText("Revise las fechas")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "La ausencia no puede terminar antes de empezar.",
+    );
+    const boton = screen.getByRole("button", { name: "Registrar ausencia" });
+    expect(boton).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(boton);
     expect(onRegistrar).not.toHaveBeenCalled();
   });
 
-  it("se cruza con una ya registrada: lo dice y no registra", async () => {
+  it("se cruza con una ya registrada: el texto del 409 en línea y no registra", async () => {
     const { onRegistrar } = montar([registrada()]);
     fechas("2026-10-20", "2026-10-28");
 
-    expect(
-      screen.getByText(/Se cruza con una ausencia ya registrada/),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "La persona ya tiene registrado un período del 12/10/2026 al 23/10/2026, que se cruza con el que intenta registrar. Retire el anterior o ajuste las fechas.",
+    );
+    expect(screen.getByText("Revise las fechas")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Registrar ausencia" }));
     expect(onRegistrar).not.toHaveBeenCalled();
   });
 
-  it("intentar sin fechas pide «Indique desde y hasta» (el botón se ve apagado pero responde)", async () => {
+  it("sin fechas, el botón queda apagado y el pie pide «Indique desde y hasta»", async () => {
     const { onRegistrar } = montar();
     const boton = screen.getByRole("button", { name: "Registrar ausencia" });
     expect(boton).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText("Indique desde y hasta")).toBeInTheDocument();
 
     await userEvent.click(boton);
-    expect(screen.getByText("Indique desde y hasta.")).toBeInTheDocument();
     expect(onRegistrar).not.toHaveBeenCalled();
+  });
+
+  it("bajo las fechas, la ayuda de Personal", () => {
+    montar();
+    expect(
+      screen.getByText(
+        "Ambas fechas se incluyen. Esos días se bloquean en la Cobertura por turnos y la persona no se ofrece al registrar operativos.",
+      ),
+    ).toBeInTheDocument();
   });
 });
 
@@ -185,12 +207,13 @@ describe("Ausencias · registradas", () => {
     expect(onRetirar).toHaveBeenCalledWith(1);
   });
 
-  it("una ausencia PASADA no se quita: el botón está deshabilitado", () => {
+  it("una ausencia PASADA no ofrece «Quitar»: dice «Historial»", () => {
     montar([
       registrada({ id: 3, momento: "PASADA", desde: "2026-09-01", hasta: "2026-09-05" }),
     ]);
     expect(screen.getByText("Pasada")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Quitar" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("button", { name: "Quitar" })).not.toBeInTheDocument();
+    expect(screen.getByText("Historial")).toBeInTheDocument();
   });
 });
 
@@ -200,7 +223,7 @@ describe("Ausencias · tras registrar", () => {
     fechas("2026-10-01", "2026-10-02");
     await userEvent.click(screen.getByRole("button", { name: "Registrar ausencia" }));
     await waitFor(() =>
-      expect(screen.getByText("Ambas fechas se incluyen.")).toBeInTheDocument(),
+      expect(screen.getByText("Indique desde y hasta")).toBeInTheDocument(),
     );
   });
 });

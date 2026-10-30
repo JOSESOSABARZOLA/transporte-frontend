@@ -39,6 +39,7 @@ import {
   type ValoresOperativo,
 } from "../../utils/valoresOperativo.util.ts";
 import { NOMBRE_AREA } from "../../utils/personal.util.ts";
+import { zonasDeLosOperativos } from "../../utils/registroPorZonas.util.ts";
 import type {
   AreaPersonal,
   CatalogosFormulario,
@@ -51,6 +52,11 @@ import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 export type PanelEdicionOperativoProps = {
   operativo: Operativo;
+  /**
+   * Los identificadores de su registro (2026-10-28). En el registro por zonas del 8 se edita el
+   * registro COMPLETO: las tarjetas muestran sus zonas, armadas desde estos operativos.
+   */
+  grupo?: Operativo[];
   catalogos: CatalogosFormulario | null;
   puntos: CatalogosFormulario["puntos"];
   cargandoPuntos: boolean;
@@ -60,6 +66,8 @@ export type PanelEdicionOperativoProps = {
   cargandoPersonal: boolean;
   onAgregarPersona: (persona: PersonaElegible) => void;
   onRetirarPersona: (funcionarioId: number) => void;
+  /** «Reemplazar» del formulario de una sola persona (2026-10-28). Ver `FormOperativo`. */
+  onReemplazarPersona?: (salienteId: number, entrante: PersonaElegible) => void;
   /**
    * CAMBIAR EL TURNO DE UNA PERSONA YA ASIGNADA (Fase C, 2026-09-30). En edición el turno se guarda
    * al instante (`PATCH /operativos/:id/personal/:funcionarioId`), como asignar y retirar. La lista
@@ -118,12 +126,10 @@ export type PanelEdicionOperativoProps = {
     ayudas: FormikHelpers<ValoresOperativo>,
     extras?: ExtrasDelEnvio,
   ) => void | Promise<void>;
-  /**
-   * ¿El personal se guarda al instante? (2026-10-01). Por omisión true (conducta de P-02 hasta hoy y
-   * del aporte). En la edición DIFERIDA del operativo propio la página lo pasa false: el personal se
-   * acumula y se aplica al «Guardar cambios», así que se apaga el rótulo «Se guarda al instante».
-   */
-  personalInmediato?: boolean;
+  /** Borrador del aporte (2026-10-28): quienes se agregaron y aún no se guardan («Nuevo»). */
+  idsNuevos?: ReadonlySet<number>;
+  /** El rótulo de cada persona nueva si no es «Nuevo» (la patrulla, 2026-10-29). */
+  rotulosNuevos?: ReadonlyMap<number, string>;
   /** `id` del `<form>`: el botón del pie del cajón lo envía con `form=`. */
   idForm: string;
   /** Qué falta, si hay cambios y las zonales elegidas, para el pie y el aviso del cajón. */
@@ -136,6 +142,7 @@ const esAreaPersonal = (area: string): area is AreaPersonal =>
 
 const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   operativo,
+  grupo,
   catalogos,
   puntos,
   cargandoPuntos,
@@ -144,6 +151,7 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   cargandoPersonal,
   onAgregarPersona,
   onRetirarPersona,
+  onReemplazarPersona,
   onCambiarHorarioPersona,
   puedeEditarPersona = () => true,
   onCambiarTramitePersona,
@@ -159,7 +167,8 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   onAgregarMiembroPatrulla,
   guardando,
   onGuardar,
-  personalInmediato = true,
+  idsNuevos,
+  rotulosNuevos,
   idForm,
   onEstadoEnvio,
 }) => {
@@ -199,8 +208,9 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
     <div className="flex flex-col gap-4">
         {/* RN-13: el identificador no cambia al editar, y conviene que se vea (ayuda corta). */}
         <p className="text-xs text-app-muted">
+          {/* Desde el 2026-10-29 todas las variantes del aporte se confirman con «Guardar cambios». */}
           {soloPersonal
-            ? "Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura. Cada persona se guarda en el momento."
+            ? "Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura."
             : "El identificador no cambia al editar."}
         </p>
 
@@ -218,20 +228,22 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           nadie, y de eso avisa el cierre con su propio mensaje.
           ═══════════════════════════════════════════════════════════════════════════
         */}
-        {operativo.composicion.esPatrulla &&
-          !operativo.composicion.completa && (
-            <AvisoEnLinea variante="advertencia">
-                Falta personal de{" "}
-                {operativo.composicion.areasPendientes.length === 1
-                  ? "el área"
-                  : "las áreas"}{" "}
+        {/*
+          INFORMACIÓN, NO ADVERTENCIA (2026-10-22, decisión del negocio): el servidor la mide sobre
+          TODO el registro (`grupoRegistro`) y quien registra decide si agrega a esa persona.
+          También en el 8, que no es patrulla.
+        */}
+        {operativo.composicion.areasPendientes.length > 0 && (
+            <AvisoEnLinea variante="info">
+                Este registro no tiene{" "}
                 <strong>
                   {operativo.composicion.areasPendientes
                     .map((area) => NOMBRE_AREA[area])
                     .join(", ")}
                 </strong>
-                . La patrulla se compone con una persona de cada área que admite el
-                formulario.
+                . Puede agregar{" "}
+                {operativo.composicion.areasPendientes.length === 1 ? "a esa persona" : "a esas personas"}{" "}
+                si corresponde.
               </AvisoEnLinea>
           )}
 
@@ -263,19 +275,27 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           personalAgregado={personalAgregado}
           onAgregarPersona={onAgregarPersona}
           onRetirarPersona={onRetirarPersona}
+          onReemplazarPersona={onReemplazarPersona}
           onCambiarHorarioPersona={onCambiarHorarioPersona}
           fechaTramites={
             onCambiarTramitePersona ? operativo.cuadroFecha : null
           }
           onCambiarTramitePersona={onCambiarTramitePersona}
           // Form 8 por lote: el trámite de una copia se aplica a todas las de esa persona.
-          tramitePorLote={personalBloqueado && operativo.grupoRegistro !== null}
+          tramitePorLote={personalBloqueado && operativo.esLote}
           avisoPersonal={avisoPersonal}
           idPersonaRechazada={idPersonaRechazada}
           confirmacionPersonal={confirmacionPersonal}
           // Las notas ya escritas (bitácora): se muestran en solo lectura; aquí solo se agregan.
           observacionesExistentes={operativo.observaciones}
-          valoresIniciales={comoValoresDeFormulario(operativo)}
+          valoresIniciales={
+            catalogos?.cantidadPorZona
+              ? {
+                  ...comoValoresDeFormulario(operativo),
+                  zonas: zonasDeLosOperativos(grupo?.length ? grupo : [operativo]),
+                }
+              : comoValoresDeFormulario(operativo)
+          }
           // Compartir unidad (2026-10-19): coincidencias de su jornada, sin contarse a sí mismo.
           fechaJornada={soloPersonal || conRoster ? null : operativo.cuadroFecha}
           operativoId={operativo.id}
@@ -286,9 +306,10 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
           personalOculto={conRoster}
           guardando={guardando}
           onGuardar={onGuardar}
-          // Gobierna el rótulo «Se guarda al instante» de la lista compacta. En el aporte el
-          // personal es inmediato; en la edición diferida del operativo propio, false.
-          personalInmediato={personalInmediato}
+          idsNuevos={idsNuevos}
+          rotulosNuevos={rotulosNuevos}
+          // En el aporte, quien no es de este departamento llega en lectura y se dice.
+          rotuloLectura={soloPersonal ? "Del dueño del formulario · lectura" : undefined}
           idForm={idForm}
           onEstadoEnvio={onEstadoEnvio}
         />

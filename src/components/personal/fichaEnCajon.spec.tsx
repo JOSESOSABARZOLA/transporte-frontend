@@ -19,7 +19,6 @@ import DrawerFlujoAlta, {
 import { PARA_FICHA } from "./propositoDirectorio.ts";
 import type { FilaDirectorio } from "../../interfaces/DirectorioAuth.ts";
 import type { AreaPersonal, Zonal } from "../../interfaces/Formulario.ts";
-import type { TipoContrato } from "../../interfaces/Personal.ts";
 
 const fila = (over?: Partial<FilaDirectorio>): FilaDirectorio => ({
   authId: 1,
@@ -64,10 +63,11 @@ const irAlPaso2 = async () => {
   await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 };
 
-/** Completa lo obligatorio del paso 2: área y tipo de contrato (no tienen valor por defecto). */
+/** Completa lo obligatorio del paso 2: área y jornada laboral (no tienen valor por defecto). */
 const completarObligatorios = async () => {
   await userEvent.selectOptions(screen.getByLabelText(/^Área/), "OPERATIVOS");
-  await userEvent.click(screen.getByRole("button", { name: "Nombramiento" }));
+  await screen.findAllByRole("option", { name: "Lunes a Viernes 8 horas" });
+  await userEvent.selectOptions(screen.getByLabelText(/^Jornada laboral/), "1");
 };
 
 /*
@@ -105,7 +105,8 @@ describe("La ficha en el cajón · zonal para Instrucción", () => {
 
     await userEvent.selectOptions(screen.getByLabelText(/^Área/), "INSTRUCCION");
     await userEvent.selectOptions(screen.getByLabelText(/Zonal \(opcional\)/), "7");
-    await userEvent.click(screen.getByRole("button", { name: "Nombramiento" }));
+    await screen.findAllByRole("option", { name: "Lunes a Viernes 8 horas" });
+    await userEvent.selectOptions(screen.getByLabelText(/^Jornada laboral/), "1");
     await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
 
     await waitFor(() => expect(onGuardar).toHaveBeenCalled());
@@ -117,17 +118,17 @@ describe("La ficha en el cajón · zonal para Instrucción", () => {
 });
 
 describe("La ficha en el cajón (paso 2)", () => {
-  it("el tipo de contrato es segmentado y NO trae valor por defecto", async () => {
+  it("la jornada laboral se elige del catálogo y NO trae valor por defecto (2026-10-23)", async () => {
     montar(vi.fn().mockResolvedValue({ ok: true, nombre: "X" }));
     await irAlPaso2();
 
+    await screen.findByRole("option", { name: "Lunes a Domingo 24/7" });
+    expect(screen.getByLabelText(/^Jornada laboral/)).toHaveValue("");
+
+    await userEvent.selectOptions(screen.getByLabelText(/^Jornada laboral/), "1");
     expect(
-      screen.getByRole("button", { name: "Nombramiento" }),
-    ).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Ocasional" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+      screen.getByText("Lunes a viernes, de 08H00 a 16H00. Fuera de ella no se la convoca."),
+    ).toBeInTheDocument();
   });
 
   it("«Guardar ficha» envía con crearOtro:false y origen AUTH los datos completados", async () => {
@@ -147,7 +148,7 @@ describe("La ficha en el cajón (paso 2)", () => {
         apellidos: "PEREZ LOPEZ",
         nombres: "JUAN",
         area: "OPERATIVOS",
-        tipoContrato: "NOMBRAMIENTO",
+        jornadaLaboralId: "1",
       }),
       // Con origen AUTH el servidor toma el correo institucional de Auth central (2026-10-08).
       { crearOtro: false, origen: "AUTH" },
@@ -188,8 +189,8 @@ describe("La ficha en el cajón (paso 2)", () => {
     // De vuelta en el paso 1: la misma persona sigue elegible; continuar otra vez.
     await userEvent.click(screen.getByRole("button", { name: "Continuar →" }));
 
-    // Hay dos `combobox` (área y zonal, siempre visible); el área es el primero y conserva su valor.
-    expect(screen.getAllByRole("combobox")[0]).toHaveValue("OPERATIVOS");
+    // El área conserva su valor.
+    expect(screen.getByLabelText(/^Área/)).toHaveValue("OPERATIVOS");
   });
 
   it("el error de cédula del servidor aterriza en el campo cédula (registro manual)", async () => {
@@ -227,7 +228,7 @@ const VALORES_EDICION = {
   correoPersonal: "",
   cargo: "Inspector",
   area: "OPERATIVOS" as AreaPersonal,
-  tipoContrato: "NOMBRAMIENTO" as TipoContrato,
+  jornadaLaboralId: "1",
   zonalId: "",
 };
 
@@ -254,6 +255,47 @@ const montarEdicion = (
       valoresEdicion={VALORES_EDICION}
     />,
   );
+
+/*
+  ZONAL DESACTIVADA DESPUÉS (2026-10-26, QA). La ficha conservaba una zonal que luego se desactivó:
+  el campo decía «Sin zonal» y al guardar el servidor la rechazaba. Ahora se ve cuál es, marcada
+  «(desactivada)», y no se ofrece a nadie más.
+*/
+describe("La ficha en el cajón · zonal desactivada", () => {
+  const ZONALES = [
+    { id: 3, codigo: "NORTE", nombre: "Eugenio Espejo", activo: true },
+    { id: 9, codigo: "CENTRO", nombre: "Manuela Sáenz", activo: false },
+    { id: 11, codigo: "SUR", nombre: "Quitumbe", activo: false },
+  ] as Zonal[];
+
+  it("la que ya tiene se ve elegida y marcada; otras desactivadas no se ofrecen", () => {
+    render(
+      <DrawerFlujoAlta
+        abierto
+        proposito={PARA_FICHA}
+        filas={[] as FilaDirectorio[]}
+        disponible
+        motivo={null}
+        cargando={false}
+        onActualizar={vi.fn()}
+        onCerrar={vi.fn()}
+        areasQueGestiona={["OPERATIVOS"] as AreaPersonal[]}
+        zonales={ZONALES}
+        onGuardar={vi.fn()}
+        edicion
+        valoresEdicion={{ ...VALORES_EDICION, zonalId: "9" }}
+      />,
+    );
+
+    const campo = screen.getByLabelText(/Zonal \(opcional\)/);
+    expect(campo).toHaveValue("9");
+    expect(
+      screen.getByRole("option", { name: "Manuela Sáenz (desactivada)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Eugenio Espejo" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Quitumbe/ })).toBeNull();
+  });
+});
 
 describe("La ficha en el cajón · EDICIÓN (req. F)", () => {
   it("abre directo en la ficha: sin stepper y con la cédula en solo lectura", () => {
@@ -334,7 +376,7 @@ describe("La ficha en el cajón · errores y resumen del pie (2026-10-08)", () =
 
     await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
 
-    expect(await screen.findByText("Falta: Contrato, Área")).toBeInTheDocument();
+    expect(await screen.findByText("Falta: Jornada laboral, Área")).toBeInTheDocument();
     expect(onGuardar).not.toHaveBeenCalled();
 
     await completarObligatorios();

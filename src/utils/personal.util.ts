@@ -20,14 +20,14 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type {
-  EstadoDisponibilidad,
-  Funcionario,
-  MotivoBaja,
-  NivelEquidad,
-  NivelFatiga,
-  PersonaElegible,
-  TipoContrato,
+import {
+  nombreDePersona,
+  type EstadoDisponibilidad,
+  type Funcionario,
+  type MotivoBaja,
+  type NivelEquidad,
+  type NivelFatiga,
+  type PersonaElegible,
 } from "../interfaces/Personal";
 import type { AreaPersonal } from "../interfaces/Formulario";
 import type { RolDepartamental } from "../config/env";
@@ -57,15 +57,12 @@ export const NOMBRE_AREA: Record<AreaPersonal, string> = {
 };
 
 /**
- * `NOMBRAMIENTO` y `OCASIONAL` no son etiquetas administrativas cualesquiera.
- *
- * De ellas depende RN-26: quién puede salir de noche y en fin de semana. Por eso el
- * formulario de alta explica la consecuencia en lugar de limitarse a pedir el dato.
+ * `NOMBRE_CONTRATO` se retiró el 2026-10-23: el tipo de contrato se dio de baja y lo reemplaza la
+ * jornada laboral, un catálogo del servidor (`useJornadasLaborales`, `utils/jornadaLaboral.util.ts`).
  */
-export const NOMBRE_CONTRATO: Record<TipoContrato, string> = {
-  NOMBRAMIENTO: "Nombramiento",
-  OCASIONAL: "Ocasional",
-};
+
+/** El valor del filtro «Jornada» para quien aún no tiene jornada asignada. */
+export const FILTRO_SIN_JORNADA = "sin";
 
 /**
  * MOTIVO DE LA BAJA en palabras (2026-09-30). El servidor guarda el código; la pantalla lo ofrece y
@@ -213,11 +210,136 @@ export const compararPorCarga = (
  * semáforo. Es lo que resume el botón «Ver reparto de carga». Vive aquí y no en el selector porque
  * desde el 2026-10-16 el botón lo pinta la cabecera de la tarjeta «Personal y horario».
  */
-export const hayCargaCalculada = (candidatos: readonly PersonaElegible[]): boolean =>
+export const hayCargaCalculada = (candidatos: readonly ConCarga[]): boolean =>
   candidatos.some((persona) => persona.indiceCarga !== undefined);
 
-export const conteoSemaforo = (
+/**
+ * Lo que necesitan el semáforo y el aviso de carga: la persona del registro o, desde el 2026-10-30,
+ * el conductor de la DAF, que trae las mismas señales.
+ */
+type ConCarga = Pick<PersonaElegible, "indiceCarga" | "nivelFatiga">;
+
+/**
+ * Una fila de `RepartoCarga` (2026-10-30): lo que se lee de una persona o de un conductor. Las
+ * señales son las mismas que calcula el servidor para los dos (fatiga y equidad); `area` solo la
+ * tiene el personal.
+ */
+export type FilaReparto = Pick<
+  PersonaElegible,
+  | "id"
+  | "elegible"
+  | "motivo"
+  | "indiceCarga"
+  | "nivelFatiga"
+  | "operativosAsignados"
+  | "desviacionCarga"
+  | "nivelEquidad"
+  | "sugerido"
+> & {
+  nombre: string;
+  area?: AreaPersonal;
+};
+
+/** La persona del registro como fila del reparto. */
+export const filaDePersona = (persona: PersonaElegible): FilaReparto => ({
+  ...persona,
+  nombre: nombreDePersona(persona),
+});
+
+/**
+ * AVISO DE CARGA ALTA AL SELECCIONAR (2026-10-30). Al agregar a una persona o asignar a un
+ * conductor con «Carga Alta» (fatiga `ROJO`, el umbral `FATIGA_UMBRAL_ROJO`) sale un aviso breve
+ * INFORMATIVO: no frena ni pregunta, la selección ya se hizo. Varios a la vez («Completar con N»)
+ * dan UN solo aviso con sus nombres. Sin nadie en carga alta, `null`: no se avisa.
+ */
+export const avisoCargaAlta = (
+  seleccionados: readonly (ConCarga & {
+    nombre: string;
+    operativosAsignados?: number;
+  })[],
+): { titulo: string; texto: string } | null => {
+  const altos = seleccionados.filter((s) => s.nivelFatiga === "ROJO");
+  if (altos.length === 0) return null;
+  if (altos.length === 1) {
+    const [uno] = altos;
+    const cuantos =
+      uno.operativosAsignados !== undefined
+        ? ` (${uno.operativosAsignados} ${uno.operativosAsignados === 1 ? "operativo" : "operativos"} esta semana)`
+        : "";
+    return {
+      titulo: "Carga alta de operativos",
+      texto: `${uno.nombre} tiene una carga alta de operativos${cuantos}. Considere repartir con quien tenga menos carga.`,
+    };
+  }
+  return {
+    titulo: "Carga alta de operativos",
+    texto: `${altos.length} de los seleccionados tienen una carga alta de operativos: ${altos
+      .map((s) => s.nombre)
+      .join(", ")}. Considere repartir con quien tenga menos carga.`,
+  };
+};
+
+/**
+ * CARGA ALTA ANTES DE AGREGAR (2026-10-30). Al pulsar «+ Agregar» o «Reemplazar» sobre alguien con
+ * «Carga Alta» (fatiga `ROJO`) no se agrega todavía: se pregunta con un `MensajeModal` advertencia.
+ * Es solo un aviso: «Agregar igual» siempre está, y no cambia ninguna regla de elegibilidad.
+ */
+export const pideConfirmarCarga = (persona: ConCarga): boolean =>
+  persona.nivelFatiga === "ROJO";
+
+/**
+ * A QUIÉN PROPONER EN SU LUGAR: la persona DISPONIBLE (elegible y aún no agregada) del MISMO tipo de
+ * personal con MENOS carga que la elegida, con el mismo orden del selector (`compararPorCarga`: nivel
+ * y, a igualdad, índice). Si nadie tiene menos carga, `null`: el modal no ofrece «Elegir a …».
+ */
+export const sugerenciaDeMenorCarga = (
+  elegida: PersonaElegible,
   candidatos: readonly PersonaElegible[],
+  idsAgregados: readonly number[],
+): PersonaElegible | null => {
+  const agregados = new Set(idsAgregados);
+  const mejor = candidatos
+    .filter(
+      (c) =>
+        c.id !== elegida.id &&
+        c.elegible &&
+        !agregados.has(c.id) &&
+        c.area === elegida.area &&
+        compararPorCarga(c, elegida) < 0,
+    )
+    .sort(compararPorCarga)[0];
+  return mejor ?? null;
+};
+
+/** «N op. esta semana» / «1 operativo», o nada si el servidor no lo trae. */
+const operativosDeLaSemana = (cantidad: number | undefined, corto: boolean): string | null => {
+  if (cantidad === undefined) return null;
+  if (corto) return `${cantidad} op. esta semana`;
+  return `${cantidad} ${cantidad === 1 ? "operativo" : "operativos"} esta semana`;
+};
+
+/** Los textos del modal de carga alta: título, mensaje y, si hay, la línea de la sugerencia. */
+export const textoModalCargaAlta = (
+  elegida: PersonaElegible,
+  sugerida: PersonaElegible | null,
+): { titulo: string; mensaje: string; sugerencia: string | null } => {
+  const semana = operativosDeLaSemana(elegida.operativosAsignados, false);
+  const deSugerida = sugerida
+    ? operativosDeLaSemana(sugerida.operativosAsignados, true)
+    : null;
+  return {
+    titulo: `${nombreDePersona(elegida)} tiene carga alta`,
+    mensaje: `${
+      semana ? `Ya tiene ${semana}.` : "Ya tiene una carga alta esta semana."
+    } Considere repartir con quien tenga menos carga.`,
+    sugerencia: sugerida
+      ? `Con menos carga: ${nombreDePersona(sugerida)}${deSugerida ? ` (${deSugerida})` : ""}`
+      : null,
+  };
+};
+
+export const conteoSemaforo = (
+  candidatos: readonly ConCarga[],
 ): { baja: number; media: number; alta: number } =>
   candidatos.reduce(
     (cuenta, persona) => {
@@ -312,7 +434,8 @@ export const nombreCompleto = (funcionario: Funcionario): string =>
 export interface FiltrosPersonal {
   busqueda?: string;
   area?: AreaPersonal | "";
-  contrato?: TipoContrato | "";
+  /** Id de la jornada laboral como texto, `FILTRO_SIN_JORNADA` o "" (todas). */
+  jornada?: string;
   /** `""` todos · `activos` · `inactivos`. */
   estado?: "" | "activos" | "inactivos";
 }
@@ -322,6 +445,19 @@ export interface FiltrosPersonal {
  * el contador decía «68 de 68» aunque 38 fueran bajas. «Limpiar filtros» vuelve AQUÍ, no a vacío.
  */
 export const FILTROS_INICIALES: FiltrosPersonal = { estado: "activos" };
+
+/**
+ * Los filtros iniciales con la jornada que llega en la URL (`?jornada=<id>` o `?jornada=sin`,
+ * 2026-10-24): el enlace «N fichas de personal →» de «Jornadas laborales» abre la pantalla ya
+ * filtrada. Un valor que no es un id ni `sin` se ignora.
+ */
+export const filtrosDesdeUrl = (busqueda: string): FiltrosPersonal => {
+  const jornada = new URLSearchParams(busqueda).get("jornada");
+  if (jornada === null || !(jornada === FILTRO_SIN_JORNADA || /^\d+$/.test(jornada))) {
+    return FILTROS_INICIALES;
+  }
+  return { ...FILTROS_INICIALES, jornada };
+};
 
 /**
  * TELÉFONO: celular de diez dígitos que empieza por 09 (2026-10-08). Espejo de `esTelefonoValido`
@@ -365,7 +501,7 @@ export const contarFichasActivas = (
 /**
  * Filtra en memoria sobre el maestro ya recibido.
  *
- * El servidor admite `area` y `direccion` como parámetros, pero no `tipoContrato` ni la
+ * El servidor admite `area` y `direccion` como parámetros, pero no la jornada laboral ni la
  * búsqueda por nombre. Repartir los filtros entre servidor y memoria daría dos
  * comportamientos distintos en la misma barra —unos recargarían y otros no—, así que se
  * pide el maestro una vez y se filtra aquí. Son decenas de fichas, no miles.
@@ -378,7 +514,14 @@ export const filtrarPersonal = (
 
   return personal.filter((funcionario) => {
     if (filtros.area && funcionario.area !== filtros.area) return false;
-    if (filtros.contrato && funcionario.tipoContrato !== filtros.contrato) {
+    if (filtros.jornada === FILTRO_SIN_JORNADA && funcionario.jornadaLaboralId != null) {
+      return false;
+    }
+    if (
+      filtros.jornada &&
+      filtros.jornada !== FILTRO_SIN_JORNADA &&
+      String(funcionario.jornadaLaboralId) !== filtros.jornada
+    ) {
       return false;
     }
     if (filtros.estado === "activos" && !funcionario.activo) return false;
@@ -397,7 +540,7 @@ export const hayFiltrosDePersonal = (filtros: FiltrosPersonal): boolean =>
   Boolean(
     (filtros.busqueda ?? "").trim() ||
       filtros.area ||
-      filtros.contrato ||
+      filtros.jornada ||
       (filtros.estado ?? "") !== (FILTROS_INICIALES.estado ?? ""),
   );
 
@@ -418,6 +561,33 @@ export const hayFiltrosDePersonal = (filtros: FiltrosPersonal): boolean =>
  * utilidad al tipo del componente.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
+/**
+ * «REEMPLAZAR» (2026-10-28, formularios de UNA persona por operativo: el 8). La persona nueva ocupa
+ * el lugar de la saliente y CONSERVA lo que es del puesto —horario, cantidad de operativos, quién la
+ * asignó—; lo que es de la persona —nombre, área, cargo, teléfono y trámite de Inspección— se renueva.
+ * Sirve igual al alta (`PersonaAgregada`) que al borrador de la edición (`PersonaAsignada`).
+ */
+export const conPersonaReemplazada = <T extends { funcionarioId: number }>(
+  lista: readonly T[],
+  salienteId: number,
+  entrante: PersonaElegible,
+): T[] =>
+  lista.map((persona) =>
+    persona.funcionarioId === salienteId
+      ? ({
+          ...persona,
+          funcionarioId: entrante.id,
+          nombre: nombreDePersona(entrante),
+          area: entrante.area,
+          // RN-34: el teléfono lo resuelve el servidor; el cargo, del Maestro hasta que confirme.
+          telefono: null,
+          cargo: entrante.cargo?.trim() || null,
+          tramiteCodigo: null,
+          tramiteInspeccion: null,
+        } as T)
+      : persona,
+  );
+
 export const turnoDePrimera = <
   T extends { horaInicio?: string; horaFin?: string },
 >(

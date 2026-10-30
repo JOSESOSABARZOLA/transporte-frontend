@@ -217,6 +217,10 @@ describe("textos de las filas", () => {
     expect(lineaDeDetalle({ ...totales, avisos: 2 })).toBe(
       "5 conductores en uso · 5 vehículos disponibles · 2 avisos en los conductores",
     );
+    // Vehículo de otra institución (2026-10-23): no pide vehículo, pero la DAF sabe que existe.
+    expect(lineaDeDetalle({ ...totales, otraInstitucion: 2 })).toBe(
+      "5 conductores en uso · 5 vehículos disponibles · sin avisos · 2 operativos en vehículo de otra institución",
+    );
   });
 });
 

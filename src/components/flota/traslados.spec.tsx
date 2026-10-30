@@ -17,7 +17,7 @@ import AdminTrasladosPage from "../../pages/AdminTrasladosPage.tsx";
 import { TrasladosService } from "../../services/traslados.service.ts";
 
 vi.mock("../../services/traslados.service.ts", () => ({
-  TrasladosService: { obtener: vi.fn(), guardar: vi.fn() },
+  TrasladosService: { obtener: vi.fn(), guardar: vi.fn(), verificarImpacto: vi.fn() },
 }));
 
 beforeEach(() => {
@@ -31,7 +31,16 @@ beforeEach(() => {
     reglaGeneral: { mismaZona: 10, mismoSector: 20, otroSector: 40 },
   });
   vi.mocked(TrasladosService.guardar).mockResolvedValue({ guardados: 2 });
+  vi.mocked(TrasladosService.verificarImpacto).mockResolvedValue(SIN_IMPACTO);
 });
+
+const SIN_IMPACTO = {
+  desde: "2026-10-20",
+  hasta: "2026-12-18",
+  afectadas: 0,
+  nuevasNoLlega: [],
+  resueltas: 0,
+};
 
 const celda = (origen: string, destino: string) =>
   screen.getByRole("textbox", { name: `Minutos de ${origen} a ${destino}` });
@@ -47,6 +56,16 @@ describe("Traslados entre zonales", () => {
     expect(celda("Calderón", "Quitumbe")).toHaveValue("45");
     // Vacía: la sugerencia es lo que daría la regla general (otro sector).
     expect(celda("Quitumbe", "Calderón")).toHaveAttribute("placeholder", "40");
+  });
+
+  it("plantilla visual (2026-10-24): «Guardar cambios» en la cabecera azul, la regla al pie y sin «N zonales»", async () => {
+    render(<AdminTrasladosPage />);
+    const regla = await screen.findByText(/misma zonal 10 min · mismo sector 20 min/);
+
+    const guardar = screen.getByRole("button", { name: "Guardar cambios" });
+    expect(guardar.closest(".app-section-header")).not.toBeNull();
+    expect(regla.closest("[data-nota-panel]")).not.toBeNull();
+    expect(screen.queryByText(/^\d+ zonales?$/)).toBeNull();
   });
 
   it("guarda SOLO los pares tocados, y el vacío viaja como null", async () => {
@@ -186,7 +205,7 @@ describe("Traslados entre zonales", () => {
     expect(screen.queryByTestId("cobertura-traslados")).not.toBeInTheDocument();
   });
 
-  it("escala de color fija: ≤ 30 corto (verde), 31–60 medio (sin color), > 60 largo (rojo), con leyenda", async () => {
+  it("escala de color fija: ≤ 30 corto (verde), 31–60 medio (turquesa), > 60 largo (naranja), con leyenda", async () => {
     const usuario = userEvent.setup();
     render(<AdminTrasladosPage />);
     await screen.findByText(/misma zonal 10 min/);
@@ -197,19 +216,100 @@ describe("Traslados entre zonales", () => {
 
     const prueba = celda("Quitumbe", "Calderón");
     for (const [minutos, rango, clase] of [
-      ["30", "corto", "border-success"],
-      ["31", "medio", null],
-      ["60", "medio", null],
-      ["61", "largo", "border-error"],
+      ["30", "corto", "app-traslado-corto"],
+      ["31", "medio", "app-traslado-medio"],
+      ["60", "medio", "app-traslado-medio"],
+      ["61", "largo", "app-traslado-largo"],
     ] as const) {
       await usuario.clear(prueba);
       await usuario.type(prueba, minutos);
+      // El color nunca va solo: el rango también va en palabras (regla 6).
       expect(prueba).toHaveAttribute("title", `Propio · traslado ${rango}`);
-      if (clase) expect(prueba).toHaveClass(clase);
-      else {
-        expect(prueba).not.toHaveClass("border-success");
-        expect(prueba).not.toHaveClass("border-error");
-      }
+      expect(prueba).toHaveClass(clase);
     }
+  });
+});
+
+describe("Traslados entre zonales · aviso de impacto antes de guardar (2026-10-20)", () => {
+  const AFECTA = {
+    desde: "2026-10-20",
+    hasta: "2026-12-18",
+    afectadas: 1,
+    nuevasNoLlega: [
+      {
+        fecha: "2026-10-21",
+        conductor: "Jose Luis Sosa",
+        placa: "PMA-3370",
+        desde: "OCPMO-001 (dejar)",
+        hacia: "OCPMO-005 (completo)",
+        fin: "08H30",
+        inicio: "08H50",
+        huecoMin: 20,
+        antesMin: 15,
+        despuesMin: 45,
+        faltanMin: 25,
+        mensaje: "No llega…",
+      },
+    ],
+    resueltas: 0,
+  };
+
+  const subirUnPar = async () => {
+    const usuario = userEvent.setup();
+    render(<AdminTrasladosPage />);
+    await screen.findByText(/misma zonal 10 min/);
+    await usuario.clear(celda("Calderón", "Quitumbe"));
+    await usuario.type(celda("Calderón", "Quitumbe"), "90");
+    await usuario.click(screen.getByRole("button", { name: "Guardar cambios" }));
+    return usuario;
+  };
+
+  it("sin asignaciones afectadas guarda directo, después de verificar", async () => {
+    await subirUnPar();
+
+    await waitFor(() => expect(TrasladosService.guardar).toHaveBeenCalledTimes(1));
+    expect(TrasladosService.verificarImpacto).toHaveBeenCalledWith([
+      { zonalOrigenId: 1, zonalDestinoId: 2, minutos: 90 },
+    ]);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("con asignaciones afectadas avisa ANTES de guardar, y solo «Guardar igual» guarda", async () => {
+    vi.mocked(TrasladosService.verificarImpacto).mockResolvedValue(AFECTA);
+    const usuario = await subirUnPar();
+
+    const aviso = await screen.findByRole("alertdialog", { name: /Advertencia de impacto/ });
+    expect(aviso).toHaveTextContent("afectará la viabilidad de 1 asignación existente");
+    expect(aviso).toHaveTextContent("entre hoy (20/10) y el 21/10");
+    expect(aviso).toHaveTextContent(
+      "21/10 · Jose Luis Sosa · OCPMO-001 (dejar) → OCPMO-005 (completo): hueco 20 min, necesita 45 (faltan 25)",
+    );
+    expect(aviso).toHaveTextContent("No se retiran: reasígnelas en «Planificar el día».");
+    expect(TrasladosService.guardar).not.toHaveBeenCalled();
+
+    await usuario.click(screen.getByRole("button", { name: "Guardar igual" }));
+    await waitFor(() => expect(TrasladosService.guardar).toHaveBeenCalledTimes(1));
+  });
+
+  it("«Cancelar» no guarda y conserva lo tecleado", async () => {
+    vi.mocked(TrasladosService.verificarImpacto).mockResolvedValue(AFECTA);
+    const usuario = await subirUnPar();
+
+    await screen.findByRole("alertdialog", { name: /Advertencia de impacto/ });
+    await usuario.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(TrasladosService.guardar).not.toHaveBeenCalled();
+    expect(celda("Calderón", "Quitumbe")).toHaveValue("90");
+  });
+
+  it("si no se pudo verificar, no bloquea: lo dice y deja guardar igual", async () => {
+    vi.mocked(TrasladosService.verificarImpacto).mockRejectedValue(new Error("sin red"));
+    const usuario = await subirUnPar();
+
+    await screen.findByRole("alertdialog", { name: /No se pudo verificar el impacto/ });
+    expect(TrasladosService.guardar).not.toHaveBeenCalled();
+    await usuario.click(screen.getByRole("button", { name: "Guardar igual" }));
+    await waitFor(() => expect(TrasladosService.guardar).toHaveBeenCalledTimes(1));
   });
 });

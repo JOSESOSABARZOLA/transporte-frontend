@@ -153,6 +153,8 @@ exports[`estructura de cada cajón migrado (instantánea) > Nuevo formulario 1`]
         "Filtra el personal por el rol que consultaSolo se ofrece personal de las áreas del rol que registra.",
         "Un operativo por persona (split)Cada persona asignada genera su propio operativo, todos vinculados al mismo registro.",
         "Ofrece fijar cantidad de operativos por personaMuestra «Cantidad de operativos» para crear N copias por persona. Sin esta bandera solo se admite 1. Requiere «Un operativo por persona».",
+        "Un solo tipo de personal por operativoAl registrar se elige primero el tipo de personal (p. ej. Inspector General o Técnico) y solo se ofrecen personas de ese tipo.",
+        "Máximo de personas por operativoCon 1, cada operativo lleva una sola persona y el registro ofrece «Reemplazar».Sin tope12345678910",
       ],
       "titulo": "Comportamiento al registrar",
     },
@@ -182,8 +184,9 @@ exports[`estructura de cada cajón migrado (instantánea) > Nuevo funcionario (p
   "ancho": "lg",
   "botonesPie": [
     "Cerrar",
+    "Registrar ausencia (apagado: Indique desde y hasta.)",
   ],
-  "estadoPie": "",
+  "estadoPie": "Indique desde y hasta",
   "secciones": [
     {
       "campos": [
@@ -259,7 +262,7 @@ exports[`estructura de cada cajón migrado (instantánea) > Nuevo vehículo, Edi
     {
       "campos": [
         "Sector donde vive",
-        "Tipo de contrato",
+        "Jornada laboral",
       ],
       "titulo": "Asignación",
     },
@@ -391,32 +394,31 @@ exports[`estructura de cada cajón migrado (instantánea) > Operación del vehí
 
 exports[`estructura de cada cajón migrado (instantánea) > Programar mantenimiento 1`] = `
 {
-  "ancho": "lg",
+  "ancho": "md",
   "botonesPie": [
     "Cancelar",
-    "Registrar parada (apagado)",
+    "Programar (apagado)",
   ],
   "estadoPie": "1 campo por completar",
   "secciones": [
     {
       "campos": [
-        "Vehículo *",
         "Desde*",
         "Hasta*",
+        "Motivo *",
       ],
-      "titulo": "Vehículo y fechas",
+      "titulo": "Parada*",
     },
     {
-      "campos": [
-        "Taller",
-        "Hora de la cita",
-        "Motivo",
-        "Zonal del taller",
-      ],
-      "titulo": "Cita en el taller",
+      "campos": [],
+      "titulo": "Cita en el taller (opcional)",
+    },
+    {
+      "campos": [],
+      "titulo": "Paradas programadas",
     },
   ],
-  "subtitulo": "Elija la placa que va al taller",
+  "subtitulo": "PMA-3370 · Camioneta",
   "titulo": "Programar mantenimiento",
 }
 `;
@@ -436,36 +438,36 @@ exports[`estructura de cada cajón migrado (instantánea) > Visor de la orden de
 }
 `;
 
-exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > aplicar patrón 1`] = `
+exports[`estructura de cada cajón migrado (instantánea) > los tres de Turnos del mes > asignar turnos 1`] = `
 {
   "ancho": "md",
   "botonesPie": [
     "Cancelar",
-    "Aplicar patrón (apagado: El patrón no cambia ninguna celda.)",
+    "Asignar turnos (apagado: Ya tiene ese horario.)",
   ],
-  "estadoPie": "El patrón no cambia ninguna celda",
+  "estadoPie": "Ya tiene ese horario",
   "secciones": [
     {
       "campos": [
-        "Patrón libre (D, N y -; de 2 a 14 letras)",
+        "AGUAS MORA FEDERICOSin zona",
       ],
-      "titulo": "Patrón",
+      "titulo": "1 · ¿A quién?",
     },
     {
-      "campos": [
-        "Desde el día0102",
-        "Solo celdas vacías",
-        "Sobrescribir",
-      ],
-      "titulo": "Dónde se escribe",
+      "campos": [],
+      "titulo": "2 · ¿Qué horario?",
+    },
+    {
+      "campos": [],
+      "titulo": "3 · ¿Desde cuándo?",
     },
   ],
-  "subtitulo": "Cobertura por turnos · Alcance: las 1 personas visibles",
-  "titulo": "Aplicar patrón",
+  "subtitulo": "Cobertura por turnos · Octubre de 2026",
+  "titulo": "Asignar turnos",
 }
 `;
 
-exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > cambiar zona 1`] = `
+exports[`estructura de cada cajón migrado (instantánea) > los tres de Turnos del mes > cambiar zona 1`] = `
 {
   "ancho": "md",
   "botonesPie": [
@@ -487,26 +489,7 @@ exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos
 }
 `;
 
-exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > continuar rotación 1`] = `
-{
-  "ancho": "md",
-  "botonesPie": [
-    "Cancelar",
-    "Completar 0 celdas (apagado: No hay celdas que completar.)",
-  ],
-  "estadoPie": "",
-  "secciones": [
-    {
-      "campos": [],
-      "titulo": "Propuesta",
-    },
-  ],
-  "subtitulo": "Cobertura por turnos",
-  "titulo": "Continuar rotación",
-}
-`;
-
-exports[`estructura de cada cajón migrado (instantánea) > los cuatro de Turnos del mes > propuesta del mes 1`] = `
+exports[`estructura de cada cajón migrado (instantánea) > los tres de Turnos del mes > propuesta del mes 1`] = `
 {
   "ancho": "md",
   "botonesPie": [

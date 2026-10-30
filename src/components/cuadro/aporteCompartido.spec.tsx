@@ -234,7 +234,8 @@ describe("el motivo se dice con palabras, no con un botón gris", () => {
 const patrullaEcu = (): Operativo => ({
   id: 7,
   identificador: "ICECU-001-26-AGO-2026",
-  grupoRegistro: null,
+  grupoRegistro: "registro-suelto",
+  esLote: false,
   secuencial: 1,
   cuadroFecha: "2026-08-26",
   esAdicional: false,
@@ -360,6 +361,7 @@ const patrullaReacn = (): Operativo => {
     id: 9,
     identificador: "IGNECU-001-17-SEP-2026",
     grupoRegistro: "lote-reacn",
+    esLote: true,
     esNocturno: true,
     formulario: {
       ...base.formulario,

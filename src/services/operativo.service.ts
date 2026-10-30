@@ -20,10 +20,13 @@ import type {
   ConteoFormulario,
   CrearAdicional,
   CrearOperativo,
+  EditarPorZonas,
   FiltroCoincidencias,
   FiltroOperativos,
   Operativo,
+  ProximoIdentificador,
   RangoConsulta,
+  RegistrarPorZonas,
   RespuestaPaginada,
   ResultadoBaja,
 } from "../interfaces/Operativo";
@@ -83,6 +86,48 @@ const obtener = async (id: number): Promise<Operativo> => {
 /** `POST /operativos`. El identificador y el secuencial los pone el servidor. */
 const registrar = async (operativo: CrearOperativo): Promise<Operativo> => {
   const { data } = await httpClient.post<Operativo>("/operativos", operativo);
+  return data;
+};
+
+/**
+ * `POST /operativos/por-zonas` (formulario 8, 2026-10-28): una persona, varias zonas con su
+ * cantidad y un transporte común. Devuelve TODOS los identificadores creados, en orden.
+ */
+const registrarPorZonas = async (
+  registro: RegistrarPorZonas,
+): Promise<Operativo[]> => {
+  const { data } = await httpClient.post<Operativo[]>(
+    "/operativos/por-zonas",
+    registro,
+  );
+  return data;
+};
+
+/** `PUT /operativos/registro/:grupoRegistro/zonas`: edita el registro por zonas COMPLETO. */
+const editarPorZonas = async (
+  grupoRegistro: string,
+  cambios: EditarPorZonas,
+): Promise<Operativo[]> => {
+  const { data } = await httpClient.put<Operativo[]>(
+    `/operativos/registro/${grupoRegistro}/zonas`,
+    cambios,
+  );
+  return data;
+};
+
+/**
+ * `GET /operativos/proximo-identificador`: la vista previa de la numeración (prefijo del tipo y
+ * siguiente número del día). No reserva nada: los números los asigna el registro.
+ */
+const proximoIdentificador = async (
+  fecha: string,
+  formulario: string,
+  area: string,
+): Promise<ProximoIdentificador> => {
+  const { data } = await httpClient.get<ProximoIdentificador>(
+    "/operativos/proximo-identificador",
+    { params: { fecha, formulario, area } },
+  );
   return data;
 };
 
@@ -223,6 +268,23 @@ const actualizarTurnoPersonal = async (
 };
 
 /**
+ * Guarda el personal POR LOTE (2026-10-28): el conjunto final de personas con su turno. El servidor
+ * aplica altas, bajas y cambios de horario en una transacción; si rechaza a alguien no guarda nada
+ * y lo nombra en `detalles.funcionarioId`. `confirmarLiberacion`, como en el cambio de turno.
+ */
+const guardarPersonal = async (
+  id: number,
+  personal: { funcionarioId: number; horaInicio: string; horaFin: string }[],
+  confirmarLiberacion = false,
+): Promise<Operativo> => {
+  const { data } = await httpClient.put<Operativo>(
+    `/operativos/${id}/personal/lote`,
+    confirmarLiberacion ? { personal, confirmarLiberacion: true } : { personal },
+  );
+  return data;
+};
+
+/**
  * Fija o quita el trámite de Inspección de una persona ya asignada (2026-10-07). `null` lo quita.
  * El servidor vuelve a preguntar a Inspección antes de guardarlo: aquí solo viaja el código.
  */
@@ -245,6 +307,9 @@ export const OperativoService = {
   coincidenciasTransporte,
   obtener,
   registrar,
+  registrarPorZonas,
+  editarPorZonas,
+  proximoIdentificador,
   crearAdicional,
   editar,
   editarPatrulla,
@@ -253,5 +318,6 @@ export const OperativoService = {
   reemplazarPersonal,
   retirarPersonal,
   actualizarTurnoPersonal,
+  guardarPersonal,
   fijarTramitePersonal,
 };

@@ -37,6 +37,12 @@
  * URL; `@Roles(DMIT_INSTRUCTOR)` en `/jornada` impide obtener los datos; y
  * `exigirParticipacion` impide escribir donde no corresponde, mire lo que mire la
  * pantalla. Si alguna vez discrepan, manda el servidor.
+ *
+ * PLANTILLA VISUAL (2026-10-24). El encabezado es `EncabezadoPagina`: el antetítulo es el módulo
+ * y el perfil va como chip, el de la sesión (decía «DMIT Instrucción» fijo, y la abren los tres
+ * departamentales). Los chips —código · fecha en palabras · semana · estado, y después operativos,
+ * alertas y editables— suben al encabezado; el banner de la ventana queda justo debajo. La tabla va
+ * en `PanelTabla`: el filtro de formulario baja a la barra blanca y la leyenda, a la nota del pie.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -44,12 +50,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import AvisoVentana from "../components/common/AvisoVentana.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
 import FiltroJornada, {
   TODOS_LOS_FORMULARIOS,
 } from "../components/jornada/FiltroJornada.tsx";
 import PanelPersonalJornada from "../components/jornada/PanelPersonalJornada.tsx";
 import TablaJornada from "../components/jornada/TablaJornada.tsx";
 import { colorEstado, rolUser } from "../config/env.ts";
+import { useUser } from "../hooks/useUser.ts";
 import { useVentanaCarga } from "../hooks/useVentanaCarga.ts";
 import { nombreEstadoCuadro } from "../interfaces/CuadroDiario.ts";
 import type {
@@ -60,8 +69,8 @@ import type {
 import { JornadaService } from "../services/jornada.service.ts";
 import { NOMBRE_AREA } from "../utils/personal.util.ts";
 import { presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
-import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
-import { conDiaYMesEnMayuscula } from "../utils/texto.util.ts";
+import { esperaDeLaJornada, fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
+import { fechaEnPalabras } from "../utils/texto.util.ts";
 
 /** Los roles bajo los que opera esta pantalla. Hoy es uno. */
 const ROLES_DE_LA_PANTALLA = [rolUser.rolDmitInstructor] as const;
@@ -91,6 +100,7 @@ const JornadaDiaPage = () => {
   } | null>(null);
 
   const ventana = useVentanaCarga(ROLES_DE_LA_PANTALLA);
+  const { user } = useUser();
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -174,37 +184,58 @@ const JornadaDiaPage = () => {
    * podría reclamar gente que el servidor rechazaría al asignarla.
    * ════════════════════════════════════════════════════════════════════════════════
    */
-  const esperando = useMemo(() => {
-    const filas = (jornada?.secciones ?? [])
-      .flatMap((seccion) => seccion.filas)
-      .filter((fila) => fila.areasPendientesDelRol.length > 0);
-
-    const areas = [
-      ...new Set(filas.flatMap((fila) => fila.areasPendientesDelRol)),
-    ];
-
-    return { operativos: filas.length, areas };
-  }, [jornada]);
+  const esperando = useMemo(
+    () =>
+      esperaDeLaJornada(
+        (jornada?.secciones ?? []).flatMap((seccion) => seccion.filas),
+      ),
+    [jornada],
+  );
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-col gap-1">
-          {/* El antetítulo dice de quién es la pantalla. En un sistema cuyo encargo nació
-              del aislamiento de la información, esa línea no es adorno. */}
-          <p className="page-heading-kicker font-semibold uppercase">
-            DMIT Instrucción
-          </p>
-          <h1 className="page-heading-title">
-            Jornada del Día
-          </h1>
-          <p className="page-heading-subtitle text-sm">
-            La jornada completa. Puede asignar personal en los formularios en
-            los que su departamento participa; el resto se muestra en lectura.
-          </p>
-        </div>
-
-        <div className="app-page-header-actions flex">
+      {/* El chip «Perfil» dice quién mira. En un sistema cuyo encargo nació del aislamiento
+          de la información, esa línea no es adorno. */}
+      <EncabezadoPagina
+        modulo="Cuadro de Colores"
+        titulo="Jornada del Día"
+        subtitulo="La jornada completa. Puede asignar personal en los formularios en los que su departamento participa; el resto se muestra en lectura."
+        perfil={user?.rolName}
+        chips={
+          cabecera && (
+            <>
+              <span className="badge badge-ghost badge-sm">
+                {cabecera.ordenTrabajo}
+              </span>
+              <span className="badge badge-ghost badge-sm">
+                {fechaEnPalabras(cabecera.fecha)}
+              </span>
+              <span className="badge badge-ghost badge-sm">
+                Semana {cabecera.nroSemana} de {cabecera.anioSemana}
+              </span>
+              {/* El estado lleva color **y** palabra (regla 6). */}
+              <span className={`badge badge-sm ${colorEstado(estado ?? "")}`}>
+                {estado}
+              </span>
+              <span className="badge badge-ghost badge-sm">
+                {cabecera.totalOperativos} operativos
+              </span>
+              <span
+                className={`badge badge-sm ${
+                  cabecera.totalAlertas > 0 ? "badge-warning" : "badge-ghost"
+                }`}
+              >
+                {cabecera.totalAlertas} alertas
+              </span>
+              {/* Cuántos puede tocar, dicho con número y palabra. */}
+              <span className="badge badge-ghost badge-sm">
+                {editables} de {jornada?.secciones.length ?? 0} formularios
+                editables
+              </span>
+            </>
+          )
+        }
+        contexto={
           <div className="form-control">
             <label
               className="label"
@@ -225,43 +256,10 @@ const JornadaDiaPage = () => {
               }}
             />
           </div>
-        </div>
-      </header>
+        }
+      />
 
       <AvisoVentana cuentaAtras={ventana.cuentaAtras} />
-
-      {cabecera && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="badge badge-ghost badge-sm">
-            {cabecera.ordenTrabajo}
-          </span>
-          <span className="badge badge-ghost badge-sm">
-            {conDiaYMesEnMayuscula(cabecera.fechaNatural)}
-          </span>
-          <span className="badge badge-ghost badge-sm">
-            Semana {cabecera.nroSemana} de {cabecera.anioSemana}
-          </span>
-          {/* El estado lleva color **y** palabra (regla 6). */}
-          <span className={`badge badge-sm ${colorEstado(estado ?? "")}`}>
-            {estado}
-          </span>
-          <span className="badge badge-ghost badge-sm">
-            {cabecera.totalOperativos} operativos
-          </span>
-          <span
-            className={`badge badge-sm ${
-              cabecera.totalAlertas > 0 ? "badge-warning" : "badge-ghost"
-            }`}
-          >
-            {cabecera.totalAlertas} alertas
-          </span>
-          {/* Cuántos puede tocar, dicho con número y palabra. */}
-          <span className="badge badge-ghost badge-sm">
-            {editables} de {jornada?.secciones.length ?? 0} formularios
-            editables
-          </span>
-        </div>
-      )}
 
       {sinJornada && (
         <AvisoEnLinea variante="info">
@@ -317,53 +315,43 @@ const JornadaDiaPage = () => {
         </AvisoEnLinea>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Jornada del día
-          </h2>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {jornada && (
-              <FiltroJornada
-                secciones={jornada.secciones}
-                seleccionado={formulario}
-                onSeleccionar={setFormulario}
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <TablaJornada
-            secciones={secciones}
-            mensajeVacio={
-              cargando
-                ? "Cargando la jornada…"
-                : sinJornada
-                  ? "Sin jornada abierta para esta fecha."
-                  : "No hay formularios que mostrar con el filtro aplicado."
-            }
-            onEditarPersonal={(fila, seccion) => setEnPanel({ fila, seccion })}
-            bloqueado={Boolean(motivoBloqueo)}
-            motivoBloqueo={motivoBloqueo}
-          />
-
-          {/* Regla 6: la leyenda traduce a palabras lo que el color señala. */}
-          <p className="text-xs text-app-muted">
-            Las celdas en Amarillo de Alerta indican asignación logística
-            pendiente; el borde marcado señala un vehículo obligatorio sin
-            conductor. Todas llevan el motivo en el texto emergente. Aquí solo
-            aparecen los formularios en los que su departamento participa.
-          </p>
-        </div>
-      </div>
+      <PanelTabla
+        titulo="Jornada del día"
+        filtros={
+          jornada && (
+            <FiltroJornada
+              secciones={jornada.secciones}
+              seleccionado={formulario}
+              onSeleccionar={setFormulario}
+            />
+          )
+        }
+        /* Regla 6: la leyenda traduce a palabras lo que el color señala. */
+        nota="Las celdas en Amarillo de Alerta indican asignación logística pendiente; el borde marcado señala un vehículo obligatorio sin conductor. Todas llevan el motivo en el texto emergente. Aquí solo aparecen los formularios en los que su departamento participa."
+      >
+        <TablaJornada
+          secciones={secciones}
+          mensajeVacio={
+            cargando
+              ? "Cargando la jornada…"
+              : sinJornada
+                ? "Sin jornada abierta para esta fecha."
+                : "No hay formularios que mostrar con el filtro aplicado."
+          }
+          onEditarPersonal={(fila, seccion) => setEnPanel({ fila, seccion })}
+          bloqueado={Boolean(motivoBloqueo)}
+          motivoBloqueo={motivoBloqueo}
+        />
+      </PanelTabla>
 
       {enPanel && (
         <PanelPersonalJornada
           fila={enPanel.fila}
           seccion={enPanel.seccion}
           fecha={fecha}
+          roles={user?.rolCodes ?? []}
+          // Si la ventana o el cuadro se cierran con el cajón abierto, «Guardar cambios» se apaga.
+          motivoBloqueo={motivoBloqueo}
           onCerrar={() => setEnPanel(null)}
           onCambio={() => void cargar()}
         />

@@ -33,6 +33,10 @@
  * `Table` sigue siendo lo correcto donde la consulta la resuelva el servidor —P-07, con
  * cincuenta y dos funcionarios y filtros reales—; y allí sí habrá que memoizar
  * `findRecordsFn` con `useCallback`, como advierte el plan.
+ *
+ * PLANTILLA VISUAL (2026-10-24): la cabecera lleva el estilo de las demás tablas
+ * (`text-xs uppercase tracking-wider text-app-label`; la fila de filtros sigue debajo) y el horario
+ * va en una sola línea sin partirse (`horarioLegible`).
  */
 
 import {
@@ -55,20 +59,27 @@ import {
   horarioBajaPorPersona,
   nombreEstadoTransporte,
   operaPorPropiosMedios,
-  partesDeHorario,
   tiposDelOperativo,
   valorDeColumna,
   type ColumnaOperativo,
   type FiltrosListado,
 } from "../../utils/listadoOperativos.util.ts";
-import { agruparPorClave } from "../../utils/agrupacionForm8.util.ts";
-import { notasDe } from "../../utils/notasDeTabla.util.ts";
+import {
+  agruparPorClave,
+  ordenarPorPersona,
+  ordenarPorPersonaYZona,
+} from "../../utils/agrupacionForm8.util.ts";
+import { esRegistroPorZonas, lineasDeZona } from "../../utils/zonasDelBloque.util.ts";
+import { horarioLegible } from "../../utils/texto.util.ts";
+import { notaDeComposicion, notasDe } from "../../utils/notasDeTabla.util.ts";
 import { ATRIBUTO_FILA } from "../../hooks/useDestelloDeFila.ts";
 import CeldaAlerta from "./CeldaAlerta.tsx";
+import { nombreConCargo } from "./NombreConCargo.tsx";
 import Insignia from "../common/Insignia.tsx";
 import NotasObservacion from "../common/NotasObservacion.tsx";
 import Tooltip from "../common/Tooltip.tsx";
 import {
+  CONDUCTOR_OTRA_INSTITUCION,
   DESCRIPCION_MACROOPERATIVO,
   opcionTransporte,
 } from "../../utils/tipoTransporte.util.ts";
@@ -125,7 +136,20 @@ const claveDeFusion = (operativo: Operativo): string | null => {
   // puede diferir (el aporte del DMIT a otra hora). Si el horario entrara en la clave, ese código se
   // saldría de la patrulla y se pintaría como un operativo aparte —lo reportado—. Baja POR PERSONA
   // cuando difiere (ver `GrupoForm6Operativos`).
-  if (operativo.grupoRegistro) {
+  // REGISTRO POR ZONAS DEL 8 (2026-10-28): UN bloque por registro. Zonal, punto y tipo cambian por
+  // zona y NO parten el bloque: se dicen en una línea por zona (ver `GrupoForm6Operativos`).
+  if (esRegistroPorZonas(operativo)) {
+    return JSON.stringify([
+      "ZONAS",
+      operativo.cuadroFecha,
+      operativo.grupoRegistro,
+      operativo.esAdicional,
+      ...(["transporte", "conductor", "estado"] as const).map((columna) =>
+        valorDeColumna(operativo, columna),
+      ),
+    ]);
+  }
+  if (operativo.esLote) {
     return JSON.stringify([
       "F6",
       // Con un rango de varios días (2026-10-13) nunca se funden filas de cuadros distintos.
@@ -167,8 +191,10 @@ const ANCHO_COLUMNA: Partial<Record<ColumnaOperativo, string>> = {
   personal: "min-w-32",
   telefono: "w-24",
   tipoControl: "min-w-28",
-  conductor: "min-w-[130px]",
-  estado: "w-24",
+  // Conductor 120 y Estado 120 (2026-10-26): las etiquetas («Sin conductor», «Propios medios»)
+  // van en UNA línea; Estado ganó 24 px y Conductor cedió 10, para no desplazar la tabla.
+  conductor: "min-w-[120px]",
+  estado: "min-w-[120px]",
   // Las notas son tarjetas de ~220 px (2026-10-19): la fila crece lo que haga falta.
   observaciones: "app-columna-notas",
 };
@@ -186,16 +212,15 @@ const TextoTelefono: FC<{ telefono: string | null }> = ({ telefono }) => {
 };
 
 /**
- * El horario en dos líneas (2026-10-13): «08H00 a» arriba y «15H00» abajo, cada una sin partirse.
- * Lo que no es un rango simple (varios horarios unidos por coma) se pinta tal cual.
+ * El horario en UNA línea que no se parte (plantilla visual, 2026-10-24), con la «a» en minúscula
+ * (`horarioLegible`). Iba en dos líneas desde el 2026-10-13; ahora se lee igual que en la Jornada,
+ * la Matriz y Órdenes. `data-horario` conserva el texto del servidor para encontrarlo.
  */
 const TextoHorario: FC<{ horario: string }> = ({ horario }) => {
-  const partes = horario ? partesDeHorario(horario) : null;
-  if (!partes) return <>{horario}</>;
+  if (!horario) return null;
   return (
-    <span data-horario={horario}>
-      <span className="block whitespace-nowrap">{partes.inicio}</span>
-      <span className="block whitespace-nowrap">{partes.fin}</span>
+    <span className="whitespace-nowrap" data-horario={horario}>
+      {horarioLegible(horario)}
     </span>
   );
 };
@@ -239,6 +264,12 @@ const anclaDeFila = (id: number): Record<string, number> => ({ [ATRIBUTO_FILA]: 
 /** La clase de destello de la fila del operativo, si es la pedida. */
 const claseDestello = (id: number, destacadoId: number | null): string =>
   destacadoId === id ? "app-fila-destello " : "";
+
+/** La nota informativa de composición del registro (2026-10-22), si la hay. */
+const informativasDe = (operativo: Operativo): string[] => {
+  const nota = notaDeComposicion(operativo.composicion?.areasPendientes);
+  return nota ? [nota] : [];
+};
 
 /** El `title` de Transporte en los formularios que no habilitan vehículo (RN-41, RN-42). */
 const AYUDA_SIN_VEHICULO = "Este formulario no pide vehículo a la DAF.";
@@ -329,7 +360,7 @@ const TablaOperativos: FC<TablaOperativosProps> = ({
       */}
       <table className="table table-sm">
         <thead>
-          <tr>
+          <tr className="text-xs uppercase tracking-wider text-app-label">
             {columnas.map((columna) => (
               <th
                 key={columna}
@@ -399,10 +430,10 @@ const TablaOperativos: FC<TablaOperativosProps> = ({
                     </tr>
                   )}
                 {/*
-                  La PATRULLA (Form 5/6, con `grupoRegistro`) va SIEMPRE por su componente, aunque
+                  La PATRULLA (Form 5/6, `esLote`) va SIEMPRE por su componente, aunque
                   lleve un solo código: así sus acciones fusionadas se ofrecen desde el primero.
                 */}
-                {grupo[0].grupoRegistro ? (
+                {grupo[0].esLote ? (
                 <GrupoForm6Operativos
                   operativos={grupo}
                   columnas={columnas}
@@ -473,7 +504,7 @@ const FilasDelOperativo: FC<{
 
   const textoDePersona = (
     columna: ColumnaOperativo,
-    fila: { nombre: string; telefono: string; horario: string },
+    fila: { nombre: string; cargo: string; telefono: string; horario: string },
   ): string =>
     columna === "personal"
       ? fila.nombre
@@ -499,6 +530,7 @@ const FilasDelOperativo: FC<{
                 operativo={operativo}
                 columna={columna}
                 texto={textoDePersona(columna, fila)}
+                cargo={fila.cargo}
               />
             ) : (
               // Lo que es del operativo se pinta una vez, en el primer renglón.
@@ -538,19 +570,21 @@ const CeldaDePersona: FC<{
   operativo: Operativo;
   columna: ColumnaOperativo;
   texto: string;
-}> = ({ operativo, columna, texto }) => {
+  /** El cargo de la persona, solo para la columna Personal (2026-10-27). */
+  cargo?: string;
+}> = ({ operativo, columna, texto, cargo }) => {
   if (columna === "personal") {
     return (
       <CeldaAlerta
         alertas={operativo.alertas}
         campo="personal"
       >
-        {texto || null}
+        {nombreConCargo(texto, cargo)}
       </CeldaAlerta>
     );
   }
 
-  // RN-66: el horario propio de la persona, en dos líneas como el del operativo.
+  // RN-66: el horario propio de la persona, en una línea como el del operativo.
   if (columna === "horario") {
     return (
       <td className="px-2 py-1 align-top">
@@ -617,6 +651,12 @@ const CeldaConductor: FC<{
         </span>
       );
     }
+    // Vehículo de otra institución (2026-10-23): «Otra institución». Con la columna «Transporte»
+    // (P-01) ya se lee ahí: aquí basta el guion.
+    if (operativo.tipoTransporte === "OTRA_INSTITUCION")
+      return (
+        <span className="text-app-muted">{conTransporte ? "—" : CONDUCTOR_OTRA_INSTITUCION}</span>
+      );
     // Con la columna «Transporte» (P-01) ya se lee ahí: aquí basta el guion.
     if (propios)
       return (
@@ -679,9 +719,14 @@ const Celda: FC<{
                 Vehículo exclusivo
               </Insignia>
             )}
-            {(notasDe(operativo).length > 0 || !operativo.esMacrooperativo) && (
+            {(notasDe(operativo).length > 0 ||
+              notaDeComposicion(operativo.composicion?.areasPendientes) !== null ||
+              !operativo.esMacrooperativo) && (
               <NotasObservacion
                 notas={notasDe(operativo)}
+                // La composición del registro, como nota informativa (2026-10-22): quien
+                // registra decide si agrega a esa persona.
+                informativas={informativasDe(operativo)}
                 onIrA={verOperativo}
                 etiqueta={`Observaciones de ${operativo.identificador}`}
               />
@@ -752,11 +797,11 @@ const Celda: FC<{
   if (columna === "estado") {
     return (
       <td
-        className={`px-2 py-1 ${alin}`}
+        className={`whitespace-nowrap px-2 py-1 ${alin}`}
         rowSpan={rowSpan}
       >
         <span
-          className={`badge badge-sm ${colorEstado(
+          className={`badge badge-sm whitespace-nowrap ${colorEstado(
             nombreEstadoTransporte[operativo.estadoTransporte],
           )}`}
         >
@@ -909,7 +954,7 @@ const GrupoForm8Operativos: FC<{
                   campo="personal"
                   rowSpan={total}
                 >
-                  {nombreConConteo}
+                  {nombreConCargo(nombreConConteo, filasDePersonal(cabeza)[0]?.cargo)}
                 </CeldaAlerta>
               );
             }
@@ -979,11 +1024,36 @@ const GrupoForm6Operativos: FC<{
   // Se ordenan por identificador para que la CABEZA —de la que cuelgan «Editar»/«Agregar Personal»—
   // sea SIEMPRE la misma (el código del registrante, IGNECU), y así los botones se comporten IGUAL
   // en las dos tablas.
-  const ordenados = [...operativos].sort((una, otra) =>
+  // Y CADA PERSONA SEGUIDA (2026-10-28, la corrección de la Jornada y la Matriz): sobre ese orden,
+  // `ordenarPorPersona` junta los códigos de cada quien sin mover la cabeza. En un registro por
+  // zonas, además, la zona principal primero y cada zona con sus códigos juntos.
+  const porIdentificador = [...operativos].sort((una, otra) =>
     una.identificador.localeCompare(otra.identificador),
   );
+  const personaDe = (operativo: Operativo): string =>
+    String(operativo.personal[0]?.funcionarioId ?? `sin-${operativo.id}`);
+  const porZonas = esRegistroPorZonas(porIdentificador[0]);
+  const ordenados = porZonas
+    ? ordenarPorPersonaYZona(
+        porIdentificador,
+        personaDe,
+        (operativo) => valorDeColumna(operativo, "zonal"),
+        (operativo) => operativo.esZonaPrincipal,
+        (operativo) => operativo.identificador,
+      )
+    : ordenarPorPersona(porIdentificador, personaDe, (operativo) => operativo.identificador);
   const cabeza = ordenados[0];
   const total = ordenados.length;
+  // Una línea por zona (2026-10-28): zonal con su rango, punto y tipo de control, la principal primero.
+  const zonas = porZonas
+    ? lineasDeZona(ordenados, {
+        zonal: (operativo) => valorDeColumna(operativo, "zonal"),
+        punto: (operativo) => valorDeColumna(operativo, "punto"),
+        tipo: (operativo) => valorDeColumna(operativo, "tipoControl"),
+        identificador: (operativo) => operativo.identificador,
+        esPrincipal: (operativo) => operativo.esZonaPrincipal,
+      })
+    : null;
 
   // HORARIO POR PERSONA cuando las ventanas de los códigos difieren (RN-66): cada persona de la
   // patrulla puede tener su turno propio. Si difieren, el horario BAJA por fila (como personal); si
@@ -999,8 +1069,7 @@ const GrupoForm6Operativos: FC<{
   // En la patrulla (Form 5/6) cada persona trae UN solo código (n=1): no se muestra el conteo y el
   // marcado queda idéntico al de antes. Como `ordenados` va por identificador y el prefijo codifica
   // el área de cada persona, los códigos de una misma persona quedan contiguos y el `rowSpan` calza.
-  const idDePersona = (operativo: Operativo): string =>
-    String(operativo.personal[0]?.funcionarioId ?? `sin-${operativo.id}`);
+  const idDePersona = personaDe;
   const conteoPorPersona = new Map<string, number>();
   for (const operativo of ordenados) {
     const clave = idDePersona(operativo);
@@ -1055,7 +1124,7 @@ const GrupoForm6Operativos: FC<{
                       campo="personal"
                       rowSpan={abarcaPersona}
                     >
-                      {etiqueta || null}
+                      {nombreConCargo(etiqueta, persona.cargo)}
                     </CeldaAlerta>
                   );
                 }
@@ -1085,6 +1154,27 @@ const GrupoForm6Operativos: FC<{
               // El resto —horario (si coincide), zonal, punto…— se fusiona en la primera fila y
               // abarca el grupo. SIN `centrado`: se alinea arriba, como cualquier otro operativo.
               if (indice !== 0) return null;
+              // Registro por zonas: zonal, punto y tipo, UNA LÍNEA POR ZONA y alineadas entre sí.
+              if (
+                zonas &&
+                (columna === "zonal" || columna === "punto" || columna === "tipoControl")
+              ) {
+                return (
+                  <td key={columna} className="px-2 py-1 align-top" rowSpan={total}>
+                    <ul aria-label={`${TITULO_COLUMNA[columna]} por zona`}>
+                      {zonas.map((linea) => (
+                        <li key={linea.clave}>
+                          {columna === "zonal"
+                            ? `${linea.zonal} · ${linea.identificadores}`
+                            : columna === "punto"
+                              ? linea.punto
+                              : linea.tipo}
+                        </li>
+                      ))}
+                    </ul>
+                  </td>
+                );
+              }
               return (
                 <Celda
                   key={columna}

@@ -25,7 +25,7 @@
  */
 
 import type { ParametroPolitica } from "../interfaces/Administracion";
-import type { TipoVentana, VentanaCarga } from "../interfaces/Administracion";
+import type { TipoVentana } from "../interfaces/Administracion";
 
 /** `HH:MM` de 00:00 a 23:59. El mismo patrón que `PATRON_HORA` en el servidor. */
 const PATRON_HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -38,11 +38,26 @@ const PATRON_HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
  * sufijo de la clave, que es lo que hay: si mañana aparece una clave de hora con otro
  * nombre, el servidor la rechazará igual y su mensaje se mostrará tal cual.
  */
-const esClaveDeHora = (clave: string): boolean =>
-  clave.startsWith("HORA_") || clave.startsWith("FRANJA_");
+export const esClaveDeHora = (clave: string): boolean =>
+  clave.startsWith("HORA_") ||
+  clave.startsWith("FRANJA_") ||
+  // Transporte (2026-10-24): dos horas que no siguen el prefijo.
+  clave === "INICIO_JORNADA_TRANSPORTE" ||
+  clave === "GUARDA_HORA_TARDE";
 
-/** Valores admitidos del período de cómputo. Los declara `PERIODOS_COMPUTO`. */
-const PERIODOS_COMPUTO = ["SEMANAL", "QUINCENAL", "MENSUAL"];
+/**
+ * Lo tecleado en un campo de hora (`CampoHora24`, 2026-10-24), en forma HH:MM mientras se
+ * escribe: solo cifras y los dos puntos, que se ponen solos tras la segunda cifra («1630» →
+ * «16:30»). Como mucho cinco caracteres. Validar es cosa de `motivoDeRechazo`.
+ */
+export const comoHoraTecleada = (texto: string): string => {
+  if (texto.includes(":")) {
+    const [horas, minutos = ""] = texto.split(":");
+    return `${horas.replace(/\D/g, "").slice(0, 2)}:${minutos.replace(/\D/g, "").slice(0, 2)}`;
+  }
+  const cifras = texto.replace(/\D/g, "").slice(0, 4);
+  return cifras.length > 2 ? `${cifras.slice(0, 2)}:${cifras.slice(2)}` : cifras;
+};
 
 /**
  * Parámetros de la DAF con valor por DÍA DE LA SEMANA (versión consolidada, 2026-10-06): siete
@@ -51,9 +66,6 @@ const PERIODOS_COMPUTO = ["SEMANAL", "QUINCENAL", "MENSUAL"];
 const CLAVES_POR_DIA = ["DAF_MIN_CONDUCTORES_DIA", "DAF_MIN_CONDUCTORES_NOCHE"];
 const AYUDA_POR_DIA = "7 números L,M,X,J,V,S,D o SIN_CONFIGURAR";
 const PATRON_POR_DIA = /^\d+(,\d+){6}$/;
-
-/** Valores de `DAF_PERMITE_NOCHE_A_DIA` (2026-10-06). */
-const VALORES_NOCHE_A_DIA = ["SIN_CONFIGURAR", "SI", "NO"];
 
 /**
  * Motivo por el que el valor no es admisible, o `null` si lo es.
@@ -101,17 +113,9 @@ export const motivoDeRechazo = (
       ) {
         return `${parametro.clave} admite ${AYUDA_POR_DIA}.`;
       }
-      if (
-        parametro.clave === "DAF_PERMITE_NOCHE_A_DIA" &&
-        !VALORES_NOCHE_A_DIA.includes(limpio)
-      ) {
-        return `${parametro.clave} admite estos valores: ${VALORES_NOCHE_A_DIA.join(", ")}.`;
-      }
-      if (
-        parametro.clave === "PERIODO_COMPUTO_SALIDAS" &&
-        !PERIODOS_COMPUTO.includes(limpio)
-      ) {
-        return `El período de cómputo admite estos valores: ${PERIODOS_COMPUTO.join(", ")}.`;
+      // Las listas (períodos, SI/NO/SIN_CONFIGURAR) las declara el servidor en `opciones` (2026-10-24).
+      if (parametro.opciones && !parametro.opciones.includes(limpio)) {
+        return `${parametro.clave} admite estos valores: ${parametro.opciones.join(", ")}.`;
       }
       return null;
   }
@@ -153,13 +157,8 @@ export const descripcionDeRango = (parametro: ParametroPolitica): string => {
   if (parametro.tipo === "TEXTO" && esClaveDeHora(parametro.clave)) {
     return "Hora en formato HH:MM";
   }
-  if (parametro.clave === "PERIODO_COMPUTO_SALIDAS") {
-    return PERIODOS_COMPUTO.join(" · ");
-  }
+  if (parametro.opciones) return parametro.opciones.join(" · ");
   if (CLAVES_POR_DIA.includes(parametro.clave)) return AYUDA_POR_DIA;
-  if (parametro.clave === "DAF_PERMITE_NOCHE_A_DIA") {
-    return VALORES_NOCHE_A_DIA.join(" · ");
-  }
   if (parametro.tipo === "BOOLEANO") return "Verdadero o falso";
 
   return "Sin rango definido";
@@ -192,48 +191,8 @@ export const AYUDA_TIPO_VENTANA: Partial<Record<TipoVentana, string>> = {
     "El rol puede cargar a cualquier hora; no se usan horas ni mensaje.",
 };
 
-const DIAS = [
-  "lunes",
-  "martes",
-  "miércoles",
-  "jueves",
-  "viernes",
-  "sábado",
-  "domingo",
-];
-
-/** El día de la semana en palabras. 1 es lunes, 7 es domingo. */
-export const nombreDeDia = (dia: number | null): string =>
-  dia === null ? "" : (DIAS[dia - 1] ?? String(dia));
-
-/**
- * El horario de la ventana en una frase.
- *
- * Una hora nula **no es un error ni un dato faltante**: significa «sin restricción de
- * apertura», que es lo único que las fuentes permiten afirmar de los departamentos, cuyo
- * horario solo define el cierre. Escribir «—» lo haría parecer un dato que alguien olvidó
- * cargar.
- */
-export const horarioDeVentana = (ventana: VentanaCarga): string => {
-  if (!ventana.activo) return "Sin restricción horaria";
-
-  const apertura = ventana.horaApertura
-    ? `${ventana.diaApertura ? `${nombreDeDia(ventana.diaApertura)} ` : ""}${ventana.horaApertura}`
-    : null;
-
-  const cierre = ventana.horaCierre
-    ? `${ventana.diaCierre ? `${nombreDeDia(ventana.diaCierre)} ` : ""}${ventana.horaCierre}`
-    : null;
-
-  // LABORABLE (2026-10-07): el mismo horario, solo de lunes a viernes.
-  const dias = ventana.tipo === "LABORABLE" ? ", de lunes a viernes" : "";
-
-  if (apertura && cierre) return `De ${apertura} a ${cierre}${dias}`;
-  if (cierre) return `Hasta ${cierre}, sin hora de apertura${dias}`;
-  if (apertura) return `Desde ${apertura}, sin hora de cierre${dias}`;
-
-  return "Sin horas declaradas";
-};
+// `horarioDeVentana` y `nombreDeDia` se retiraron el 2026-10-24: la tabla de ventanas dice su
+// horario con `detalleDeHorario` y su estado en vivo con `estadoVentana.util.ts`.
 
 /*
  * ═══════════════════════════════════════════════════════════════════════════════

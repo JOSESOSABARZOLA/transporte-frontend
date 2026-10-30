@@ -25,7 +25,7 @@ const FUNCIONARIO: Funcionario = {
   correoPersonal: null,
   cargo: null,
   area: "OPERATIVOS",
-  tipoContrato: "NOMBRAMIENTO",
+  jornadaLaboralId: 1,
   direccion: "DMIP_OPERATIVOS",
   zonalId: null,
   denominacion: null,

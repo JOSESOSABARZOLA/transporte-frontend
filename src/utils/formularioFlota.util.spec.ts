@@ -102,7 +102,7 @@ const CONDUCTOR: Conductor = {
   activo: false,
   sector: null,
   parqueaderoAutorizado: false,
-  tipoContrato: null,
+  jornadaLaboralId: null,
 };
 
 describe("cajón de conductor", () => {

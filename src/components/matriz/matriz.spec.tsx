@@ -19,6 +19,10 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import MatrizConsolidadaPage from "../../pages/MatrizConsolidadaPage.tsx";
 import { DocumentoService } from "../../services/documento.service.ts";
 
+// La sesión: el chip «Perfil» del encabezado sale de ella (plantilla visual, 2026-10-24).
+vi.mock("../../hooks/useUser.ts", () => ({
+  useUser: () => ({ user: { rolCodes: ["DIRECTOR"], rolName: "Dirección", displayName: "Prueba" } }),
+}));
 vi.mock("../../services/documento.service.ts", () => ({
   DocumentoService: { consultarMatriz: vi.fn(), exportarMatriz: vi.fn() },
 }));
@@ -44,12 +48,14 @@ import {
 import { CuadroDiarioService } from "../../services/cuadroDiario.service.ts";
 import FiltroFormulario from "./FiltroFormulario.tsx";
 import TablaMatriz from "./TablaMatriz.tsx";
+import { columnasDeCabecera, ocupacionPorFila } from "../../pruebas/rejillaTabla.ts";
 import type { FilaMatriz, SeccionMatriz } from "../../interfaces/Documento.ts";
 
 const fila = (parcial: Partial<FilaMatriz> = {}): FilaMatriz => ({
   id: 1,
   identificador: "ICNECU-001-31-JUL-2026",
-  grupoRegistro: null,
+  grupoRegistro: `registro-${parcial.id ?? 1}`,
+  esLote: false,
   // Adicional del día · 2026-08-20. La fila ordinaria no nace de ninguno.
   esAdicional: false,
   origen: null,
@@ -233,10 +239,9 @@ describe("casos 4 y 5 · la celda alertada lleva siempre su motivo", () => {
       "title",
       "Falta asignar conductor. Lo hace la DAF.",
     );
-    // La celda está vacía, así que el motivo se lee sin apuntar con el ratón.
-    expect(
-      screen.getByText("Falta asignar conductor. Lo hace la DAF."),
-    ).toBeInTheDocument();
+    // La celda vacía dice «Sin asignar» (2026-10-26); el motivo completo, en el texto emergente.
+    expect(within(celda as HTMLElement).getByText("Sin asignar")).toBeInTheDocument();
+    expect(screen.queryByText("Falta asignar conductor. Lo hace la DAF.")).toBeNull();
   });
 
   it("caso 5 · la crítica se distingue con `ring`, y no con `border`", () => {
@@ -313,9 +318,9 @@ describe("agrupación de las copias del formulario 8", () => {
     // El personal aparece UNA sola vez, con el conteo de operativos del grupo.
     const celdaPersonal = screen.getByText("SOSA JOSE (3)").closest("td");
     expect(celdaPersonal).toBeInTheDocument();
-    // La celda fusionada va CENTRADA en el bloque (vertical y horizontal).
-    expect(celdaPersonal?.className).toContain("align-middle");
-    expect(celdaPersonal?.className).toContain("text-center");
+    // Personal va arriba a la izquierda (2026-10-26), como en las demás filas.
+    expect(celdaPersonal?.className).toContain("align-top");
+    expect(celdaPersonal?.className).not.toContain("text-center");
   });
 });
 
@@ -333,6 +338,7 @@ describe("agrupación de la patrulla (formulario 6)", () => {
     });
     const comun = {
       grupoRegistro: "lote-1",
+      esLote: true,
       horario: "20H00 A 02H00",
       zonales: ["DMQ"],
       puntoEncuentro: "AMC Matriz",
@@ -406,6 +412,7 @@ describe("agrupación de la patrulla (formulario 6)", () => {
     });
     const comun = {
       grupoRegistro: "lote-8",
+      esLote: true,
       horario: "08H00 A 12H30",
       zonales: ["DMQ"],
       puntoEncuentro: "AMC Matriz",
@@ -438,12 +445,12 @@ describe("agrupación de la patrulla (formulario 6)", () => {
       />,
     );
 
-    // Un nombre por persona con «(2)», cada celda abarcando sus dos códigos y CENTRADA.
+    // Un nombre por persona con «(2)», cada celda abarcando sus dos códigos, arriba a la izquierda.
     const villa = screen.getByText("VILLAVICENCIO VACA MIGUEL ANGEL (2)");
     const celdaVilla = villa.closest("td");
     expect(celdaVilla?.getAttribute("rowspan")).toBe("2");
-    expect(celdaVilla?.className).toContain("align-middle");
-    expect(celdaVilla?.className).toContain("text-center");
+    expect(celdaVilla?.className).toContain("align-top");
+    expect(celdaVilla?.className).not.toContain("text-center");
     const alv = screen.getByText("ALVARADO (2)");
     expect(alv.closest("td")?.getAttribute("rowspan")).toBe("2");
     // Los cuatro identificadores siguen visibles, uno por fila.
@@ -557,8 +564,8 @@ describe("la fila de datos", () => {
       />,
     );
 
-    expect(screen.getByText("07H00 A 16H00")).toBeInTheDocument();
-    expect(screen.getByText("09H00 A 18H00")).toBeInTheDocument();
+    expect(screen.getByText("07H00 a 16H00")).toBeInTheDocument();
+    expect(screen.getByText("09H00 a 18H00")).toBeInTheDocument();
   });
 
   it("cuando todas heredan el horario del operativo, se pinta una sola vez", () => {
@@ -571,7 +578,7 @@ describe("la fila de datos", () => {
 
     // La fixture da a las dos personas la misma ventana efectiva (18:00–23:30): el
     // horario del operativo aparece una vez, no uno por persona.
-    expect(screen.getAllByText("18H00 A 23H30")).toHaveLength(1);
+    expect(screen.getAllByText("18H00 a 23H30")).toHaveLength(1);
   });
 
   it("el estado de transporte lleva color y palabra", () => {
@@ -964,5 +971,187 @@ describe("las observaciones de la matriz son notas", () => {
     );
     expect(screen.getByText("Una").closest(".app-nota")).not.toBe(screen.getByText("Dos").closest(".app-nota"));
     expect(screen.getAllByText("—").some((nodo) => nodo.classList.contains("text-app-muted"))).toBe(true);
+  });
+});
+
+/*
+  CÓDIGOS INTERCALADOS (2026-10-26). El servidor puede entregar IG-001 (Caiza), IT-001 (Aguirre),
+  IG-002 (Caiza). Las filas de una persona se pintan SEGUIDAS y cada fila suma las columnas de la
+  cabecera: sin celdas fuera de la tabla ni huecos.
+*/
+describe("patrulla con los códigos de una persona intercalados", () => {
+  const persona = (funcionarioId: number, nombre: string) => ({
+    funcionarioId,
+    nombre,
+    telefono: null,
+    esResponsable: false,
+    horaInicio: "08:00",
+    horaFin: "12:30",
+  });
+  const codigo = (id: number, identificador: string, funcionarioId: number, nombre: string) =>
+    fila({
+      id,
+      identificador,
+      grupoRegistro: "lote-mezclado",
+      esLote: true,
+      horario: "08H00 A 12H30",
+      esNocturno: false,
+      personal: [persona(funcionarioId, nombre)],
+    });
+
+  const pintar = () =>
+    ((secciones: SeccionMatriz[]) =>
+      render(<TablaMatriz secciones={secciones} mensajeVacio="Sin datos" />))([
+      seccion({
+        numero: 8,
+        codigo: "IGECU",
+        totalOperativos: 3,
+        filas: [
+          codigo(1, "IG-001", 1, "CAIZA"),
+          codigo(2, "IT-001", 2, "AGUIRRE"),
+          codigo(3, "IG-002", 1, "CAIZA"),
+        ],
+      }),
+    ]);
+
+  it("A, B, A se pinta como A, A, B, y el nombre dice «(2)» y abarca sus dos filas", () => {
+    pintar();
+
+    const orden = screen.getAllByText(/^I[GT]-00\d$/).map((celda) => celda.textContent);
+    expect(orden).toEqual(["IG-001", "IG-002", "IT-001"]);
+    expect(screen.getByText("CAIZA (2)").closest("td")).toHaveAttribute("rowspan", "2");
+    expect(screen.getByText("AGUIRRE").closest("td")).not.toHaveAttribute("rowspan");
+  });
+
+  it("cada fila del grupo suma exactamente las columnas de la cabecera", () => {
+    const { container } = pintar();
+    const tablaHtml = container.querySelector("table") as HTMLTableElement;
+    const esperadas = columnasDeCabecera(tablaHtml);
+
+    const delGrupo = ocupacionPorFila(tablaHtml).filter((fila) => /I[GT]-00\d/.test(fila.texto));
+    expect(delGrupo).toHaveLength(3);
+    for (const fila of delGrupo) expect(fila.columnas).toBe(esperadas);
+  });
+
+  it("el identificador va en una línea y Personal arriba a la izquierda", () => {
+    pintar();
+
+    expect(screen.getByText("IG-001").closest("td")).toHaveClass("whitespace-nowrap", "min-w-[170px]");
+    const personal = screen.getByText("CAIZA (2)").closest("td");
+    expect(personal).toHaveClass("align-top");
+    expect(personal).not.toHaveClass("text-center");
+  });
+});
+
+/*
+  TODOS TIENEN ID DE REGISTRO (2026-10-27). Lo que agrupa es `esLote`, no el id: dos operativos de
+  un formulario de un operativo nunca se funden en un bloque de patrulla, aunque compartan id.
+*/
+describe("un operativo que no es lote va suelto aunque tenga id de registro", () => {
+  it("cada uno en su fila, sin celdas fusionadas", () => {
+    const persona = (funcionarioId: number, nombre: string) => ({
+      funcionarioId,
+      nombre,
+      telefono: null,
+      esResponsable: false,
+      horaInicio: "08:00",
+      horaFin: "12:00",
+    });
+    const { container } = ((secciones: SeccionMatriz[]) =>
+      render(<TablaMatriz secciones={secciones} mensajeVacio="Sin datos" />))([
+      seccion({
+        totalOperativos: 2,
+        filas: [
+          fila({
+            id: 1,
+            identificador: "OCF-001",
+            grupoRegistro: "mismo-id",
+            esLote: false,
+            personal: [persona(1, "ABAD VERONICA")],
+          }),
+          fila({
+            id: 2,
+            identificador: "OCF-002",
+            grupoRegistro: "mismo-id",
+            esLote: false,
+            personal: [persona(2, "AGUIRRE FLAVIO")],
+          }),
+        ],
+      }),
+    ]);
+
+    expect(screen.getByText("OCF-001").closest("tr")).not.toBe(
+      screen.getByText("OCF-002").closest("tr"),
+    );
+    expect(container.querySelectorAll("td[rowspan]")).toHaveLength(0);
+  });
+});
+
+/*
+  REGISTRO POR ZONAS DEL 8 (2026-10-28): UN bloque por registro, una línea por zona con su rango, la
+  principal primero, y cada fila sigue sumando las columnas de la cabecera (la línea ocupa Zonal,
+  Punto y Tipo).
+*/
+describe("registro por zonas del formulario 8", () => {
+  const nicole = {
+    funcionarioId: 9,
+    nombre: "SALTOS NICOLE",
+    telefono: null,
+    esResponsable: false,
+    horaInicio: "08:00",
+    horaFin: "16:30",
+  };
+  const codigo = (id: number, identificador: string, zonal: string, esZonaPrincipal: boolean) =>
+    fila({
+      id,
+      identificador,
+      grupoRegistro: "registro-nicole",
+      esLote: true,
+      esZonaPrincipal,
+      horario: "08H00 A 16H30",
+      esNocturno: false,
+      zonales: [zonal],
+      puntoEncuentro: `AMC ${zonal}`,
+      tipoControl: "CCF / ITCC",
+      personal: [nicole],
+    });
+  const pintar = () =>
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            numero: 8,
+            totalOperativos: 3,
+            filas: [
+              codigo(1, "IG-030", "La Delicia", true),
+              codigo(2, "IG-031", "La Delicia", true),
+              codigo(3, "IG-043", "Calderón", false),
+            ],
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+  it("sale como UN bloque con una línea por zona, la principal primero", () => {
+    pintar();
+
+    expect(screen.getByText("SALTOS NICOLE (3)")).toBeInTheDocument();
+    const zonas = within(screen.getByRole("list", { name: "Zonas del registro" }))
+      .getAllByRole("listitem")
+      .map((linea) => linea.textContent);
+    expect(zonas).toEqual([
+      "La Delicia · AMC La Delicia · CCF / ITCC · IG-030 a IG-031",
+      "Calderón · AMC Calderón · CCF / ITCC · IG-043",
+    ]);
+  });
+
+  it("cada fila del bloque suma exactamente las columnas de la cabecera", () => {
+    const { container } = pintar();
+    const tablaHtml = container.querySelector("table") as HTMLTableElement;
+    const esperadas = columnasDeCabecera(tablaHtml);
+    const delGrupo = ocupacionPorFila(tablaHtml).filter((f) => /IG-0\d\d/.test(f.texto));
+    expect(delGrupo).toHaveLength(3);
+    for (const f of delGrupo) expect(f.columnas).toBe(esperadas);
   });
 });

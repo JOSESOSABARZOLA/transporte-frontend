@@ -14,7 +14,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { compararPorCarga } from "./personal.util";
+import {
+  avisoCargaAlta,
+  sugerenciaDeMenorCarga,
+  textoModalCargaAlta,
+  compararPorCarga,
+  conPersonaReemplazada,
+} from "./personal.util";
 import type { PersonaElegible } from "../interfaces/Personal";
 
 /** Construye un candidato con lo justo para el comparador; el resto no influye en el orden. */
@@ -84,5 +90,120 @@ describe("compararPorCarga · orden del selector por carga", () => {
     ];
 
     expect(ordenar(lista)).toEqual([10, 20, 30]);
+  });
+});
+
+describe("«Reemplazar» del formulario de una sola persona (2026-10-28)", () => {
+  it("la persona nueva conserva horario y cantidad; nombre, área y trámite se renuevan", () => {
+    const lista = [
+      {
+        funcionarioId: 1,
+        nombre: "AGUAS PRUEBA",
+        area: "TECNICO" as const,
+        telefono: "0999",
+        horaInicio: "08:00",
+        horaFin: "16:30",
+        cantidad: 3,
+        tramiteCodigo: "DENUNCIA-1",
+      },
+    ];
+    const entrante = {
+      id: 2,
+      apellidos: "ALVAREZ",
+      nombres: "RENE",
+      area: "TECNICO",
+      cargo: " Inspector ",
+      elegible: true,
+      motivo: null,
+    } as PersonaElegible;
+
+    expect(conPersonaReemplazada(lista, 1, entrante)).toEqual([
+      expect.objectContaining({
+        funcionarioId: 2,
+        nombre: "ALVAREZ RENE",
+        telefono: null,
+        cargo: "Inspector",
+        horaInicio: "08:00",
+        horaFin: "16:30",
+        cantidad: 3,
+        tramiteCodigo: null,
+      }),
+    ]);
+  });
+});
+
+describe("avisoCargaAlta (2026-10-30)", () => {
+  it("sin nadie en «Carga Alta» no avisa", () => {
+    expect(
+      avisoCargaAlta([
+        { nombre: "PEREZ JUAN", nivelFatiga: "AMBAR", operativosAsignados: 3 },
+        { nombre: "SIN CARGA" },
+      ]),
+    ).toBeNull();
+  });
+
+  it("una persona en «Carga Alta»: su nombre y sus operativos, en singular cuando es uno", () => {
+    expect(
+      avisoCargaAlta([{ nombre: "PEREZ JUAN", nivelFatiga: "ROJO", operativosAsignados: 1 }]),
+    ).toEqual({
+      titulo: "Carga alta de operativos",
+      texto:
+        "PEREZ JUAN tiene una carga alta de operativos (1 operativo esta semana). Considere repartir con quien tenga menos carga.",
+    });
+  });
+
+  it("varias a la vez dan UN solo aviso con los nombres de las que están en carga alta", () => {
+    expect(
+      avisoCargaAlta([
+        { nombre: "A", nivelFatiga: "ROJO" },
+        { nombre: "B", nivelFatiga: "VERDE" },
+        { nombre: "C", nivelFatiga: "ROJO" },
+      ])?.texto,
+    ).toBe(
+      "2 de los seleccionados tienen una carga alta de operativos: A, C. Considere repartir con quien tenga menos carga.",
+    );
+  });
+});
+
+describe("sugerenciaDeMenorCarga (2026-10-30)", () => {
+  const alta = persona(1, { nivelFatiga: "ROJO", indiceCarga: 14 });
+
+  it("propone a la disponible del mismo tipo con MENOS carga, la menor primero", () => {
+    const media = persona(2, { nivelFatiga: "AMBAR", indiceCarga: 7 });
+    const baja = persona(3, { nivelFatiga: "VERDE", indiceCarga: 2 });
+    expect(sugerenciaDeMenorCarga(alta, [alta, media, baja], [])).toBe(baja);
+  });
+
+  it("no propone a quien ya está agregada, no es elegible, es de otro tipo o no tiene menos carga", () => {
+    const agregada = persona(2, { nivelFatiga: "VERDE", indiceCarga: 1 });
+    const noElegible = persona(3, { nivelFatiga: "VERDE", indiceCarga: 1, elegible: false });
+    const otroTipo = persona(4, { area: "TECNICO", nivelFatiga: "VERDE", indiceCarga: 1 });
+    const masCarga = persona(5, { nivelFatiga: "ROJO", indiceCarga: 20 });
+    expect(
+      sugerenciaDeMenorCarga(alta, [alta, agregada, noElegible, otroTipo, masCarga], [2]),
+    ).toBeNull();
+  });
+});
+
+describe("textoModalCargaAlta (2026-10-30)", () => {
+  it("título, mensaje con los operativos de la semana y la línea de la sugerida", () => {
+    expect(
+      textoModalCargaAlta(
+        persona(1, { operativosAsignados: 7 }),
+        persona(2, { operativosAsignados: 1 }),
+      ),
+    ).toEqual({
+      titulo: "APELLIDO1 Nombre1 tiene carga alta",
+      mensaje: "Ya tiene 7 operativos esta semana. Considere repartir con quien tenga menos carga.",
+      sugerencia: "Con menos carga: APELLIDO2 Nombre2 (1 op. esta semana)",
+    });
+  });
+
+  it("sin el conteo del servidor ni sugerida, no inventa números", () => {
+    expect(textoModalCargaAlta(persona(1), null)).toEqual({
+      titulo: "APELLIDO1 Nombre1 tiene carga alta",
+      mensaje: "Ya tiene una carga alta esta semana. Considere repartir con quien tenga menos carga.",
+      sugerencia: null,
+    });
   });
 });

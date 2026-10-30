@@ -229,3 +229,20 @@ describe("enlace a Catálogos", () => {
     );
   });
 });
+
+describe("una persona y un tipo de personal (2026-10-28)", () => {
+  it("el tope viaja como número, «Sin tope» como null, y solo si cambió", () => {
+    const ocho = fila({ maxPersonas: 1, elegirUnaArea: true });
+    const valores = valoresIniciales(ocho, null);
+
+    expect(valores.maxPersonas).toBe("1");
+    expect(valores.elegirUnaArea).toBe(true);
+    expect(cambiosDeEdicion(ocho, valores)).toEqual({});
+    expect(cambiosDeEdicion(ocho, { ...valores, maxPersonas: "" })).toEqual({
+      maxPersonas: null,
+    });
+    expect(
+      cambiosDeEdicion(fila(), { ...valoresIniciales(fila(), null), elegirUnaArea: true }),
+    ).toEqual({ elegirUnaArea: true });
+  });
+});

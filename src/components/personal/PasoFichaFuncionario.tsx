@@ -19,7 +19,8 @@
  *     de Auth por la cédula (`origen: "AUTH"`), no lo que diga el navegador.
  *   · Modo MANUAL: sin Auth; cédula (obligatoria) y los dos correos son campos.
  *   · Modo EDICIÓN: la cédula en solo lectura; los correos editables.
- *   · Tipo de contrato con botones segmentados y SIN valor por defecto (RN-26 se decide mirando).
+ *   · Jornada laboral (2026-10-23, reemplaza al tipo de contrato): combo con las jornadas activas,
+ *     SIN valor por defecto (RN-26 se decide mirando), con sus días y horas debajo.
  *   · Área obligatoria sin precargar; zonal («Sin zonal»), cargo y teléfono opcionales.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -30,7 +31,6 @@ import type { FC } from "react";
 import Boton from "../common/Boton.tsx";
 import SeccionDrawer from "../common/SeccionDrawer.tsx";
 import Iconos from "../common/Iconos.tsx";
-import SelectorSegmentado from "../forms/SelectorSegmentado.tsx";
 import {
   EmailInput,
   PhoneInput,
@@ -38,13 +38,14 @@ import {
   TextInput,
 } from "../forms/FormikField.tsx";
 import type { AreaPersonal, Zonal } from "../../interfaces/Formulario.ts";
-import type { TipoContrato } from "../../interfaces/Personal.ts";
-import { NOMBRE_AREA, NOMBRE_CONTRATO } from "../../utils/personal.util.ts";
+import { useJornadasLaborales } from "../../hooks/useJornadasLaborales.ts";
+import { jornadasElegibles, textoJornada } from "../../utils/jornadaLaboral.util.ts";
+import { NOMBRE_AREA } from "../../utils/personal.util.ts";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 /**
- * Valores de la ficha en el cajón. `area` y `tipoContrato` admiten "" = SIN elegir (no hay valor
- * por defecto). Yup los exige al guardar.
+ * Valores de la ficha en el cajón. `area` y `jornadaLaboralId` admiten "" = SIN elegir (no hay
+ * valor por defecto). Yup los exige al guardar.
  */
 export type ValoresFichaAlta = {
   cedula: string;
@@ -55,7 +56,8 @@ export type ValoresFichaAlta = {
   correoPersonal: string;
   cargo: string;
   area: AreaPersonal | "";
-  tipoContrato: TipoContrato | "";
+  /** Id de la jornada laboral como texto (valor del `<select>`); "" = sin elegir. */
+  jornadaLaboralId: string;
   /** Id de la zonal como texto (valor del `<select>`); "" = sin zonal. */
   zonalId: string;
 };
@@ -70,8 +72,6 @@ export type ResumenAuth = {
   correoInstitucional: string;
   dependencia?: string | null;
 };
-
-const CONTRATOS = Object.keys(NOMBRE_CONTRATO) as TipoContrato[];
 
 /** Iniciales para la tarjeta: primeras letras de las dos primeras palabras del nombre. */
 const inicialesDe = (nombre: string): string =>
@@ -100,14 +100,20 @@ const PasoFichaFuncionario: FC<PasoFichaFuncionarioProps> = ({
   zonales,
   onCambiar,
 }) => {
-  const { values, errors, touched, submitCount, setFieldValue, setFieldTouched } =
-    useFormikContext<ValoresFichaAlta>();
-
-  // El error del segmentado se muestra tras intentar guardar (como el resto de campos).
-  const errorContrato =
-    (touched.tipoContrato || submitCount > 0) && errors.tipoContrato
-      ? String(errors.tipoContrato)
-      : undefined;
+  const { values } = useFormikContext<ValoresFichaAlta>();
+  const { jornadas } = useJornadasLaborales();
+  // La que ya tiene la ficha se sigue ofreciendo aunque se haya desactivado.
+  const actualId = values.jornadaLaboralId ? Number(values.jornadaLaboralId) : null;
+  const opcionesJornada = jornadasElegibles(jornadas, actualId);
+  const elegida = jornadas.find((jornada) => jornada.id === actualId);
+  // Igual con la zonal (2026-10-26): la desactivada solo se ofrece a quien ya la tiene, y se dice.
+  const zonalActualId = values.zonalId ? Number(values.zonalId) : null;
+  const opcionesZonal = zonales
+    .filter((zonal) => zonal.activo !== false || zonal.id === zonalActualId)
+    .map((zonal) => ({
+      value: String(zonal.id),
+      label: zonal.activo === false ? `${zonal.nombre} (desactivada)` : zonal.nombre,
+    }));
 
   return (
     <div className="flex flex-col gap-4">
@@ -195,23 +201,23 @@ const PasoFichaFuncionario: FC<PasoFichaFuncionarioProps> = ({
         titulo="Vinculación"
         rejilla={false}
       >
-        {/* Tipo de contrato PRIMERO, segmentado, sin valor por defecto (RN-26). */}
-        <SelectorSegmentado
-          id="tipoContrato"
-          etiqueta="Tipo de contrato"
-          obligatorio
-          opciones={CONTRATOS.map((contrato) => ({
-            valor: contrato,
-            nombre: NOMBRE_CONTRATO[contrato],
+        {/* Jornada laboral PRIMERO, sin valor por defecto (RN-26, 2026-10-23). */}
+        <Field
+          name="jornadaLaboralId"
+          component={SelectInput}
+          label="Jornada laboral"
+          required
+          opcionVacia="Seleccione…"
+          options={opcionesJornada.map((jornada) => ({
+            value: String(jornada.id),
+            label: jornada.activo ? jornada.nombre : `${jornada.nombre} (desactivada)`,
           }))}
-          valor={values.tipoContrato}
-          onCambiar={(valor) => {
-            void setFieldValue("tipoContrato", valor);
-            void setFieldTouched("tipoContrato", true, false);
-          }}
-          ayuda="Define si puede salir de noche o en fin de semana (reglas de descanso)."
-          error={errorContrato}
         />
+        <p className="-mt-1 text-xs text-app-muted">
+          {elegida
+            ? `${textoJornada(elegida)}. Fuera de ella no se la convoca.`
+            : "Define en qué días y horas se la puede convocar. Sin jornada no se la convoca."}
+        </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
             name="area"
@@ -233,10 +239,7 @@ const PasoFichaFuncionario: FC<PasoFichaFuncionarioProps> = ({
             component={SelectInput}
             label="Zonal (opcional)"
             opcionVacia="Sin zonal"
-            options={zonales.map((zonal) => ({
-              value: String(zonal.id),
-              label: zonal.nombre,
-            }))}
+            options={opcionesZonal}
           />
         </div>
         <Field

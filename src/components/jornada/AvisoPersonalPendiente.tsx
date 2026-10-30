@@ -52,7 +52,7 @@ import BotonEnlace from "../common/BotonEnlace.tsx";
 import type { AreaPersonal } from "../../interfaces/Formulario.ts";
 import { JornadaService } from "../../services/jornada.service.ts";
 import { NOMBRE_AREA } from "../../utils/personal.util.ts";
-import { fechaDeJornadaPorDefecto } from "../../utils/jornada.util.ts";
+import { esperaDeLaJornada, fechaDeJornadaPorDefecto } from "../../utils/jornada.util.ts";
 import { rolUser } from "../../config/env.ts";
 import { useUser } from "../../hooks/useUser.ts";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
@@ -124,17 +124,13 @@ const AvisoPersonalPendiente: FC = () => {
           fechaDeJornadaPorDefecto(),
         );
 
-        const filas = jornada.secciones
-          .flatMap((seccion) => seccion.filas)
-          .filter((fila) => fila.areasPendientesDelRol.length > 0);
+        // Una vez por registro (2026-10-22): una patrulla de tres códigos es UNA.
+        const espera = esperaDeLaJornada(
+          jornada.secciones.flatMap((seccion) => seccion.filas),
+        );
 
         if (vigente) {
-          setPendiente({
-            operativos: filas.length,
-            areas: [
-              ...new Set(filas.flatMap((fila) => fila.areasPendientesDelRol)),
-            ],
-          });
+          setPendiente(espera);
         }
       } catch {
         /*

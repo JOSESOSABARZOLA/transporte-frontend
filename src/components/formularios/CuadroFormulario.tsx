@@ -20,12 +20,16 @@ import { colorDeTextoSobre } from "../../utils/banner.util.ts";
 type CuadroFormularioProps = {
   numero: string | number;
   colorFondo: string;
+  /** `md` (36 px, tabla y cajón) por omisión; `lg` (40 px, en negrita) junto al selector de Catálogos. */
+  tamano?: "md" | "lg";
 };
 
-const CuadroFormulario: FC<CuadroFormularioProps> = ({ numero, colorFondo }) => (
+const CuadroFormulario: FC<CuadroFormularioProps> = ({ numero, colorFondo, tamano = "md" }) => (
   <span
     aria-hidden="true"
-    className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${
+    className={`inline-flex shrink-0 items-center justify-center rounded-md ${
+      tamano === "lg" ? "h-10 w-10 text-base font-bold" : "h-9 w-9 text-sm font-semibold"
+    } ${
       colorFondo ? "border border-base-300" : "border-2 border-dashed border-base-300 text-app-muted"
     }`}
     style={colorFondo ? { backgroundColor: colorFondo, color: colorDeTextoSobre(colorFondo) } : undefined}

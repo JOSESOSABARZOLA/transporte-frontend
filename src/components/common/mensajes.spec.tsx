@@ -447,3 +447,38 @@ describe("partirAviso · título corto y texto debajo", () => {
     expect(within(region).getByText("Ya aparece en el maestro.")).toBeInTheDocument();
   });
 });
+
+describe("MensajeModal · tercera salida (`accionExtra`, 2026-10-30)", () => {
+  it("apila acción, extra y el botón seguro en ese orden; Escape es el seguro, nunca la extra", async () => {
+    const usuario = userEvent.setup();
+    const onPrincipal = vi.fn();
+    const onSecundario = vi.fn();
+    const extra = vi.fn();
+    render(
+      <MensajeModal
+        variante="advertencia"
+        titulo="PEREZ JUAN tiene carga alta"
+        textoPrincipal="Elegir a LOPEZ ANA"
+        textoSecundario="Cancelar"
+        onPrincipal={onPrincipal}
+        onSecundario={onSecundario}
+        accionExtra={{ texto: "Agregar igual", onClick: extra }}
+      />,
+    );
+
+    const modal = screen.getByRole("alertdialog", { name: "PEREZ JUAN tiene carga alta" });
+    expect(within(modal).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Elegir a LOPEZ ANA",
+      "Agregar igual",
+      "Cancelar",
+    ]);
+
+    await usuario.click(within(modal).getByRole("button", { name: "Agregar igual" }));
+    expect(extra).toHaveBeenCalledTimes(1);
+
+    await usuario.keyboard("{Escape}");
+    expect(onSecundario).toHaveBeenCalledTimes(1);
+    expect(extra).toHaveBeenCalledTimes(1);
+    expect(onPrincipal).not.toHaveBeenCalled();
+  });
+});

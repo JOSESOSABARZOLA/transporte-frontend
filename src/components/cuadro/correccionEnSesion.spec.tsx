@@ -52,6 +52,7 @@ import type { FormikProps } from "formik";
 
 import CuadroRegistroPage from "../../pages/CuadroRegistroPage.tsx";
 import { OperativoService } from "../../services/operativo.service.ts";
+import { PersonalService } from "../../services/personal.service.ts";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 import type { ValoresOperativo } from "../../utils/valoresOperativo.util.ts";
 import { fechaDeJornadaPorDefecto } from "../../utils/jornada.util.ts";
@@ -685,6 +686,30 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     expect(CATALOGOS.cargarPuntosDeZonales).toHaveBeenCalledWith([1]);
   });
 
+  /*
+    EL CAJÓN PIDE LOS ELEGIBLES CON EL HORARIO DEL OPERATIVO (2026-10-23), como P-02: sin él, el
+    servidor no descarta a quien tiene un turno que no contiene esa ventana y el cajón lo ofrecía
+    como disponible. El alta sigue pidiendo sin horario (RN-66).
+  */
+  it("editar pide el personal elegible con el horario del operativo", async () => {
+    await registrarUno(operativo({ cuadroFecha: "2026-09-02" }));
+
+    expect(PersonalService.consultarElegibles).not.toHaveBeenCalledWith(
+      expect.objectContaining({ horaInicio: expect.any(String) }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
+
+    await waitFor(() =>
+      expect(PersonalService.consultarElegibles).toHaveBeenCalledWith({
+        formulario: "OCF",
+        inicio: "2026-09-02",
+        horaInicio: "08:00",
+        horaFin: "12:00",
+      }),
+    );
+  });
+
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
    * «LO CAPTURADO NUNCA SE PIERDE», Y AHORA CUESTA MÁS CUMPLIRLO.
@@ -1236,8 +1261,9 @@ describe("P-01 · la tabla única de operativos", () => {
   });
 
   /**
-   * R11 (2026-10-16): el aviso dice qué se registró y dónde quedó; el «N hoy» del selector y el «N
-   * en la jornada» de la tabla se vuelven a pedir; el formulario se limpia y sigue el mismo.
+   * R11 (2026-10-16): el aviso dice qué se registró y dónde quedó; el «N hoy» del selector se vuelve
+   * a pedir; el formulario se limpia y sigue el mismo. El «N en la jornada» de la cabecera de la tabla
+   * se retiró con la plantilla visual (2026-10-24): el panel ya no lleva contadores.
    */
   it("al registrar avisa, refresca los contadores y deja el formulario limpio en el mismo", async () => {
     vi.mocked(OperativoService.conteo).mockResolvedValue([
@@ -1245,8 +1271,10 @@ describe("P-01 · la tabla única de operativos", () => {
       { formularioId: 2, total: 0 },
     ]);
     await abrirCon([operativo({ id: 9, identificador: "OCF-001-02-SEP-2026" })]);
-    expect(await screen.findByText("4 en la jornada")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent("4 hoy");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent("4 hoy"),
+    );
+    expect(screen.queryByText(/en la jornada$/)).not.toBeInTheDocument();
 
     vi.mocked(OperativoService.conteo).mockResolvedValue([
       { formularioId: 1, total: 5 },
@@ -1261,8 +1289,9 @@ describe("P-01 · la tabla única de operativos", () => {
     const avisos = await screen.findByRole("region", { name: "Avisos" });
     expect(avisos).toHaveTextContent("OCF-002-02-SEP-2026 registrado");
     expect(avisos).toHaveTextContent("Quedó en la tabla de abajo, resaltado.");
-    expect(await screen.findByText("5 en la jornada")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent("5 hoy");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Formulario/ })).toHaveTextContent("5 hoy"),
+    );
     expect(AYUDAS.resetForm).toHaveBeenCalledWith({
       values: expect.objectContaining({ formularioCodigo: "OCF", zonalesIds: [] }),
     });
@@ -1310,14 +1339,19 @@ describe("P-01 · la tabla única de operativos", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("«Ver detalle» abre el cajón en solo lectura aunque la fila admita edición", async () => {
+  it("«Ver detalle» abre el DETALLE aunque la fila admita edición; «Editar» abre la edición", async () => {
     await abrirCon([operativo()]);
 
     await userEvent.click(screen.getByRole("button", { name: /^Ver detalle\b/ }));
 
-    const cajon = await screen.findByRole("dialog");
-    expect(within(cajon).getByText(/Solo lectura/)).toBeInTheDocument();
+    // El detalle de solo lectura (2026-10-27), no el formulario de edición apagado.
+    const cajon = await screen.findByRole("dialog", { name: "Detalle del operativo" });
+    expect(cajon.querySelector("[data-detalle-operativo]")).not.toBeNull();
+    expect(cajon.querySelector("[data-drawer-operativo]")).toBeNull();
     expect(within(cajon).queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+
+    await userEvent.click(within(cajon).getByRole("button", { name: "Editar" }));
+    expect(await screen.findByRole("dialog", { name: "Editar operativo" })).toBeInTheDocument();
   });
 });
 

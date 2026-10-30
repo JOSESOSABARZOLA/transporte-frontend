@@ -108,7 +108,13 @@ describe("trasladosDe", () => {
     const [segmento] = trasladosDe(
       [
         tramo({ id: 1, horaInicio: "08:00", horaFin: "10:00", zonalDestino: zonal(1, "NORTE") }),
-        tramo({ id: 2, horaInicio: "10:30", horaFin: "11:00", zonalOrigen: zonal(5, "SUR") }),
+        tramo({
+          id: 2,
+          operativoId: 2,
+          horaInicio: "10:30",
+          horaFin: "11:00",
+          zonalOrigen: zonal(5, "SUR"),
+        }),
       ],
       "05:00",
       tabla,
@@ -116,6 +122,50 @@ describe("trasladosDe", () => {
     expect(segmento.hueco).toBe(30);
     expect(segmento.requerido).toBe(60);
     expect(segmento.noLlega).toBe(true);
+  });
+
+  it("hueco IGUAL al traslado sí llega, como en el servidor (2026-10-20)", () => {
+    const [segmento] = trasladosDe(
+      [
+        tramo({ id: 1, horaInicio: "08:00", horaFin: "10:00", zonalDestino: zonal(1, "NORTE") }),
+        tramo({
+          id: 2,
+          operativoId: 2,
+          horaInicio: "11:00",
+          horaFin: "12:00",
+          zonalOrigen: zonal(5, "SUR"),
+        }),
+      ],
+      "05:00",
+      tabla,
+    );
+    expect(segmento.requerido).toBe(60);
+    expect(segmento.noLlega).toBe(false);
+  });
+
+  it("el dejar y el retirar de un mismo operativo no piden traslado entre sí (2026-10-20)", () => {
+    const [segmento] = trasladosDe(
+      [
+        tramo({
+          id: 1,
+          operativoId: 9,
+          horaInicio: "08:00",
+          horaFin: "08:30",
+          zonalDestino: zonal(1, "NORTE"),
+        }),
+        tramo({
+          id: 2,
+          operativoId: 9,
+          horaInicio: "08:40",
+          horaFin: "09:00",
+          zonalOrigen: zonal(5, "SUR"),
+        }),
+      ],
+      "05:00",
+      tabla,
+    );
+    expect(segmento.requerido).toBeNull();
+    expect(segmento.noLlega).toBe(false);
   });
 
   it("sin tabla, solo el cruce de horarios se marca como «no llega»", () => {
@@ -137,7 +187,7 @@ describe("quién aparece en la línea (2026-10-08)", () => {
     id: 7,
     nombre: "QUISHPE JORGE",
     sector: "NORTE",
-    tipoContrato: "OCASIONAL",
+    jornada: { nombre: "Lunes a Domingo 24/7", dias: [1, 2, 3, 4, 5, 6, 7], ventana: null },
     parqueaderoAutorizado: false,
     actaVigente: false,
     turno: "DIA" as const,

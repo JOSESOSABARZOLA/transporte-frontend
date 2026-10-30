@@ -14,14 +14,15 @@
  *
  * LO QUE FALTA SE DICE EN LA CELDA DONDE FALTA, con el efecto en el `title` (regla 6):
  *   · «⚠ Sin vehículo» — sin habitual, o con uno dado de baja: la DAF no puede proponerle placa.
- *   · «⚠ Sin contrato» — la regla de nocturnidad por nombramiento no se le aplica.
+ *   · «⚠ Sin jornada» — sin jornada laboral (2026-10-23) no se le asigna transporte.
  *   · «Sin patrón» — la propuesta del mes no tiene qué seguir.
  * Son los tres `faltantes` del servidor; el indicador «Conductores con datos incompletos» los
  * cuenta.
  *
  * AJUSTES FINALES (2026-10-15): la cédula sale de debajo del nombre a su propia columna
  * «Identificación» (mono), «Contacto» pasa a «Teléfono» y bajo el nombre queda solo «Licencia X».
- * Las acciones van como botones visibles bajo el encabezado «Acciones».
+ * Las acciones van con icono y tooltip (`AccionesFila modo="icono"`, 2026-10-20) bajo «Acciones»; «De baja»
+ * dice en su tooltip cuándo y quién (`EstadoRegistroFlota`).
  *
  * AUSENCIAS (2026-10-16): «📅 Ausencias» en la fila (con `flota:ausencias`) y, en «Estado», el
  * distintivo «Ausente dd/mm–dd/mm» (en curso) o «Ausencia dd/mm–dd/mm» (próxima).
@@ -32,6 +33,7 @@ import type { FC } from "react";
 
 import FichasPatron from "./FichasPatron.tsx";
 import AccionesFila from "../common/AccionesFila.tsx";
+import EstadoRegistroFlota from "./EstadoRegistroFlota.tsx";
 import Iconos from "../common/Iconos.tsx";
 import Insignia from "../common/Insignia.tsx";
 import type { AusenciaDeLaFlota } from "../../interfaces/Flota.ts";
@@ -39,6 +41,8 @@ import type { Conductor, Vehiculo } from "../../interfaces/Transporte.ts";
 import { fechaCorta } from "../../utils/ausencias.util.ts";
 import { NOMBRE_ESTADO_DISPONIBILIDAD } from "../../utils/personal.util.ts";
 import { descripcionVisible, normalizarPlaca, tieneVehiculoUtil } from "../../utils/flota.util.ts";
+import { useJornadasLaborales } from "../../hooks/useJornadasLaborales.ts";
+import { nombreDeJornada } from "../../utils/jornadaLaboral.util.ts";
 
 const NOMBRE_SECTOR: Record<NonNullable<Conductor["sector"]>, string> = {
   NORTE: "Norte",
@@ -47,12 +51,7 @@ const NOMBRE_SECTOR: Record<NonNullable<Conductor["sector"]>, string> = {
   VALLE: "Valle",
 };
 
-const NOMBRE_CONTRATO: Record<NonNullable<Conductor["tipoContrato"]>, string> = {
-  NOMBRAMIENTO: "Nombramiento",
-  OCASIONAL: "Ocasional",
-};
-
-const AYUDA_SIN_CONTRATO = "La regla de nocturnidad por nombramiento no se aplica.";
+const AYUDA_SIN_JORNADA = "Sin jornada laboral no se le asigna transporte.";
 const AYUDA_SIN_VEHICULO = "Sin vehículo habitual activo, la DAF no puede proponerle placa.";
 
 type TablaConductoresProps = {
@@ -86,6 +85,8 @@ const TablaConductores: FC<TablaConductoresProps> = ({
   ausencias = {},
   onAusencias,
 }) => {
+  // La jornada laboral (2026-10-23): el conductor guarda el id y aquí se pinta el nombre.
+  const { jornadas } = useJornadasLaborales();
   if (conductores.length === 0) {
     return <p className="px-2 py-6 text-center text-sm text-app-muted">{mensajeVacio}</p>;
   }
@@ -93,19 +94,19 @@ const TablaConductores: FC<TablaConductoresProps> = ({
   return (
     <div className="overflow-x-auto">
       <table
-        className="app-data-table table table-sm"
+        className="table table-sm table-zebra w-full text-sm"
         aria-label="Conductores"
       >
         <thead>
-          <tr>
+          <tr className="text-xs uppercase tracking-wider text-app-label">
             <th scope="col">Conductor</th>
             <th scope="col">Identificación</th>
             <th scope="col">Teléfono</th>
             <th scope="col">Vehículo habitual</th>
-            <th scope="col">Sector · contrato</th>
+            <th scope="col">Sector · jornada</th>
             <th scope="col">Patrón</th>
             <th scope="col">Estado</th>
-            <th scope="col" className="w-[230px] text-right">
+            <th scope="col" className="w-[9.5rem] text-right">
               Acciones
             </th>
           </tr>
@@ -125,7 +126,7 @@ const TablaConductores: FC<TablaConductoresProps> = ({
               <tr
                 key={conductor.id}
                 data-resaltado={resaltada || undefined}
-                className={`transition-colors ${resaltada ? "bg-success/10" : ""}`}
+                className={`transition-colors hover:bg-primary/5 ${resaltada ? "bg-success/10" : ""}`}
               >
                 <td>
                   <div className="flex flex-col leading-tight">
@@ -177,17 +178,17 @@ const TablaConductores: FC<TablaConductoresProps> = ({
                 <td>
                   <div className="flex flex-col items-start gap-0.5 leading-tight">
                     <span>{conductor.sector ? NOMBRE_SECTOR[conductor.sector] : "Sin sector"}</span>
-                    {conductor.tipoContrato ? (
+                    {nombreDeJornada(conductor.jornadaLaboralId, jornadas) ? (
                       <span className="text-xs leading-tight text-app-muted">
-                        {NOMBRE_CONTRATO[conductor.tipoContrato]}
+                        {nombreDeJornada(conductor.jornadaLaboralId, jornadas)}
                       </span>
                     ) : (
                       <Insignia
                         variante="aviso"
-                        title={AYUDA_SIN_CONTRATO}
+                        title={AYUDA_SIN_JORNADA}
                       >
-                        ⚠ Sin contrato
-                        <span className="sr-only">: {AYUDA_SIN_CONTRATO}</span>
+                        ⚠ Sin jornada
+                        <span className="sr-only">: {AYUDA_SIN_JORNADA}</span>
                       </Insignia>
                     )}
                   </div>
@@ -196,9 +197,7 @@ const TablaConductores: FC<TablaConductoresProps> = ({
                   <FichasPatron patron={conductor.patronRotacion} />
                 </td>
                 <td>
-                  <Insignia variante={conductor.activo ? "exito" : "neutro"}>
-                    {conductor.activo ? "Activo" : "De baja"}
-                  </Insignia>
+                  <EstadoRegistroFlota enUso={conductor.activo} textoEnUso="Activo" registro={conductor} />
                   {/* Regla 6: el texto dice si está ausente hoy o si lo estará, y las fechas. */}
                   {ausencia && (
                     <span className="mt-1 block">
@@ -211,8 +210,9 @@ const TablaConductores: FC<TablaConductoresProps> = ({
                     </span>
                   )}
                 </td>
-                <td className="text-right">
+                <td className="whitespace-nowrap text-right">
                   <AccionesFila
+                    modo="icono"
                     nombre={conductor.nombreCompleto}
                     procesando={procesando}
                     editar={{ onClick: () => onEditar(conductor) }}

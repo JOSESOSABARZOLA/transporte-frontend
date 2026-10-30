@@ -155,12 +155,14 @@ afterEach(() => {
 });
 
 describe("tabla y filtro", () => {
-  it("arranca en Vigentes, con el contador, y «Todos» muestra el inactivo", async () => {
+  it("arranca en Vigentes, sin contador, y «Todos» muestra el inactivo", async () => {
     await abrirPantalla();
 
     expect(screen.getByRole("button", { name: "Vigentes" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("FORMULARIO RETIRADO")).toBeNull();
-    expect(screen.getByText("3 formularios · 3 vigentes de 4")).toBeInTheDocument();
+    // Plantilla visual (2026-10-24): sin «N formularios · X vigentes de Y»; el total, en el pie.
+    expect(screen.queryByText(/vigentes de/)).toBeNull();
+    expect(screen.getByText(/Mostrando/).textContent).toContain("de 3");
 
     await userEvent.click(screen.getByRole("button", { name: "Todos" }));
     expect(within(filaDe(/FORMULARIO RETIRADO/)).getByText("Inactivo")).toBeInTheDocument();
@@ -194,6 +196,19 @@ describe("tabla y filtro", () => {
     expect(within(fijos).getByText("Unidad de Operativos")).toBeInTheDocument();
     expect(within(fijos).getByText("FIJOS · prefijo OCF")).toBeInTheDocument();
     expect(within(fijos).getByText("Vigente")).toBeInTheDocument();
+    // Plantilla visual (2026-10-24): el estado es `EtiquetaEstado` (verde), no un `badge` suelto.
+    expect(within(fijos).getByText("Vigente")).toHaveClass("badge-success", "rounded-full", "text-xs");
+  });
+
+  it("plantilla visual: cabecera azul «Formularios» con el alta, y la nota al pie", async () => {
+    await abrirPantalla();
+    const panel = screen.getByRole("region", { name: "Formularios" });
+    const cabecera = panel.querySelector(".app-section-header") as HTMLElement;
+    expect(cabecera).not.toBeNull();
+    expect(within(cabecera).getByText("Formularios")).toBeInTheDocument();
+    expect(within(cabecera).getByRole("button", { name: "+ Nuevo formulario" })).toBeInTheDocument();
+    expect(panel.querySelector("[data-nota-panel]")).toHaveTextContent(/no se eliminan: se desactivan/);
+    expect(screen.getByRole("searchbox").className).toContain("min-w-[320px]");
   });
 
   it("un formulario sin áreas se marca «⚠ Sin áreas»", async () => {
@@ -231,7 +246,7 @@ describe("desactivar y reactivar", () => {
     await abrirPantalla();
     await userEvent.click(screen.getByRole("button", { name: "Inactivos" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Activar 2. FORMULARIO RETIRADO" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reactivar 2. FORMULARIO RETIRADO" }));
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(servicio.actualizar).toHaveBeenCalledWith("VIEJO", { activo: true });

@@ -41,6 +41,27 @@
  *     página retrocede. El contador de la barra cuenta lo filtrado, no la página.
  *   · Sin `?fecha=`: el menú ya no la pone en este enlace y, si llega, se quita.
  *
+ * MANTENIMIENTO EN VEHÍCULOS, PESTAÑAS Y BAJA REAL (2026-10-20, plan «flota-mantenimiento-baja»):
+ *   · Pestañas Conductores · Vehículos · Garajes autorizados; **por omisión, Conductores**.
+ *   · Cinco indicadores, en ese orden: Conductores activos · Vehículos activos · **En taller hoy**
+ *     (ámbar si hay; abre Vehículos en Lista con la ficha «Solo en taller ese día») · Documentos por
+ *     vencer · Sin conductor habitual. «Datos incompletos» de los conductores dejó de ser tarjeta: es
+ *     un enlace en la pestaña Conductores que pone el mismo filtro (`?filtro=incompletos`).
+ *   · Vehículos: «Estado el día» (hoy en Quito por omisión) y [Lista | Calendario semanal]
+ *     (`?vista=calendario`). La lista suma «Disponibilidad»; el calendario (`CalendarioTaller`) va
+ *     placa × 7 días. Los dos leen `FlotaService.disponibilidad` (una consulta por fecha).
+ *   · «Programar mantenimiento» (`DrawerMantenimiento`, permiso `flota:mantenimiento`) se abre desde
+ *     la fila; la página «Mantenimiento de vehículos» se retiró y su ruta trae aquí.
+ *   · LA BAJA YA NO SE BLOQUEA ANTES DE PREGUNTAR: confirma con `MensajeModal` peligro y decide el
+ *     servidor; su 409 (con el motivo real, D2) queda en el MISMO modal. Hecha, aviso breve «X dado
+ *     de baja» con [Deshacer] (reactiva). La espera de la baja es de 15 s (`flota.service.ts`).
+ *
+ * PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina` y `PanelTabla` con las pestañas en la cabecera
+ * azul (`Pestanas sobreBarra`, sin números) y «+ Nuevo …» a su derecha. La barra blanca lleva el
+ * buscador, la ficha del indicador, el segmentado, lo propio de Vehículos y, a la derecha, «Ver datos
+ * incompletos»; el contador «X de Y» se retiró (el total está en el paginador). La ayuda de cada
+ * pestaña pasó a la nota del pie.
+ *
  * Contrato: `transporte-backend/docs/CONTRATO-flota-y-garajes.md`.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
@@ -56,30 +77,36 @@ import { useSearchParams } from "react-router-dom";
 
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import Insignia from "../components/common/Insignia.tsx";
 import MensajeModal from "../components/common/MensajeModal.tsx";
 import Paginacion from "../components/common/Paginacion.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
 import Pestanas from "../components/common/Pestanas.tsx";
 import TarjetaIndicador from "../components/common/TarjetaIndicador.tsx";
 import PanelAusenciasConductor from "../components/flota/AusenciasConductor.tsx";
+import CalendarioTaller from "../components/flota/CalendarioTaller.tsx";
 import DrawerConductor from "../components/flota/DrawerConductor.tsx";
+import DrawerMantenimiento from "../components/flota/DrawerMantenimiento.tsx";
 import DrawerGaraje from "../components/flota/DrawerGaraje.tsx";
 import DrawerVehiculo from "../components/flota/DrawerVehiculo.tsx";
 import TablaConductores from "../components/flota/TablaConductores.tsx";
 import TablaGarajes from "../components/flota/TablaGarajes.tsx";
 import TablaVehiculos from "../components/flota/TablaVehiculos.tsx";
 import SelectorSegmentado from "../components/forms/SelectorSegmentado.tsx";
-import type { ImpactoBaja, ResumenFlota } from "../interfaces/Flota.ts";
+import type {
+  DisponibilidadDeVehiculo,
+  DisponibilidadFlota,
+  ImpactoBaja,
+  ResumenFlota,
+} from "../interfaces/Flota.ts";
 import type { Conductor, UbicacionFlota, Vehiculo } from "../interfaces/Transporte.ts";
 import { useAusenciasDeLaFlota } from "../hooks/useAusenciasDeLaFlota.ts";
 import { usePermiso } from "../hooks/usePermiso.ts";
 import { CatalogoCuadroService } from "../services/catalogoCuadro.service.ts";
 import { FlotaService } from "../services/flota.service.ts";
-import { fechaLarga } from "../utils/ausencias.util.ts";
-import { ANTETITULO_DAF } from "../utils/daf.util.ts";
 import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
 import {
-  esGarajeVigente,
   filtrarConductores,
   filtrarGarajes,
   filtrarVehiculos,
@@ -111,19 +138,19 @@ const PESTANAS: {
   nuevo: string;
 }[] = [
   {
-    id: "vehiculos",
-    titulo: "Vehículos",
-    ayuda: "Un vehículo sin conductor habitual no se propone automáticamente al planificar el día.",
-    marcador: "Buscar placa o descripción…",
-    nuevo: "+ Nuevo vehículo",
-  },
-  {
     id: "conductores",
     titulo: "Conductores",
     ayuda:
       "Los conductores viven en su propio maestro; no se les asignan operativos, solo el transporte de ellos.",
     marcador: "Buscar cédula, nombre o placa…",
     nuevo: "+ Nuevo conductor",
+  },
+  {
+    id: "vehiculos",
+    titulo: "Vehículos",
+    ayuda: "Un vehículo sin conductor habitual no se propone automáticamente al planificar el día.",
+    marcador: "Buscar placa o descripción…",
+    nuevo: "+ Nuevo vehículo",
   },
   {
     id: "garajes",
@@ -140,7 +167,7 @@ const esPestana = (valor: string | null): valor is Pestana =>
 
 /** Qué filtro de indicador vale en cada pestaña. Uno ajeno en la URL se ignora. */
 const INDICADORES_DE: Record<Pestana, FiltroIndicador[]> = {
-  vehiculos: ["alertas-documentos", "sin-conductor"],
+  vehiculos: ["alertas-documentos", "sin-conductor", "en-taller"],
   conductores: ["incompletos"],
   garajes: [],
 };
@@ -149,7 +176,16 @@ const NOMBRE_INDICADOR: Record<FiltroIndicador, string> = {
   "alertas-documentos": "Con alertas de documentos",
   "sin-conductor": "Sin conductor habitual",
   incompletos: "Datos incompletos",
+  "en-taller": "Solo en taller ese día",
 };
+
+/** La vista de la pestaña Vehículos (`?vista=`): la lista o el calendario semanal de taller. */
+type VistaVehiculos = "lista" | "calendario";
+
+const VISTAS: { valor: VistaVehiculos; nombre: string }[] = [
+  { valor: "lista", nombre: "Lista" },
+  { valor: "calendario", nombre: "Calendario semanal" },
+];
 
 const opcionesEstado = (pestana: Pestana): { valor: FiltroEstado; nombre: string }[] => [
   { valor: "activos", nombre: pestana === "garajes" ? "Vigentes" : "Activos" },
@@ -163,17 +199,27 @@ type Edicion =
   | { tipo: "garaje"; registro: UbicacionFlota | null };
 
 type PorDarDeBaja =
-  | { tipo: "vehiculo"; registro: Vehiculo; impacto: ImpactoBaja }
-  | { tipo: "conductor"; registro: Conductor; impacto: ImpactoBaja }
+  | { tipo: "vehiculo"; registro: Vehiculo; impacto: ImpactoBaja | null }
+  | { tipo: "conductor"; registro: Conductor }
   | { tipo: "garaje"; registro: UbicacionFlota };
 
 /** La fila recién tocada, con su pestaña: los ids de vehículos y conductores se repiten. */
 type Resaltado = { tipo: Pestana; id: number } | null;
 
 const TEXTO_BAJA: Record<PorDarDeBaja["tipo"], string> = {
-  vehiculo: "Dejará de ofrecerse en la asignación de transporte. Su historial se conserva.",
-  conductor: "Dejará de ofrecerse a la DAF. No se borra nada; puede reactivarlo después.",
-  garaje: "Ya no podrá elegirse como destino de la flota al terminar la jornada.",
+  vehiculo:
+    "Dejará de ofrecerse en la asignación de transporte. Su historial se conserva y puede reactivarlo después.",
+  conductor:
+    "Dejará de ofrecerse a la DAF. Su historial se conserva y puede reactivarlo después.",
+  garaje:
+    "Ya no podrá elegirse como destino de la flota al terminar la jornada. Su historial se conserva y puede reactivarlo después.",
+};
+
+/** La pestaña de cada tipo de baja. */
+const PESTANA_DE: Record<PorDarDeBaja["tipo"], Pestana> = {
+  vehiculo: "vehiculos",
+  conductor: "conductores",
+  garaje: "garajes",
 };
 
 /** Filas por página que se ofrecen; la primera es la de omisión. */
@@ -198,26 +244,10 @@ const porPestana = <T,>(valor: T): Record<Pestana, T> => ({
   garajes: valor,
 });
 
-/** «07:30» → «07H30», como lo escribe el servidor. */
-const horaConH = (hora: string): string => hora.replace(":", "H");
-
-/**
- * El motivo por el que la baja no procede, con las mismas palabras que el 409 del servidor. Se
- * dice ANTES de confirmar: ofrecer «Sí, dar de baja» para que el servidor lo rechace es un engaño.
- */
-const textoBajaBloqueada = (sujeto: string, impacto: ImpactoBaja): string => {
-  const primera = impacto.primeraAsignacion;
-  const otros = impacto.asignacionesVigentes - 1;
-  const donde = primera
-    ? ` el ${fechaLarga(primera.fecha)} a las ${horaConH(primera.horaInicio)} (operativo ${primera.identificador})`
-    : "";
-  const mas = otros > 0 ? ` y ${otros} ${otros === 1 ? "operativo más" : "operativos más"}` : "";
-  return `${sujeto} tiene transporte asignado${donde}${mas}. Libere esa asignación en «Planificar el día» antes de darlo de baja.`;
-};
-
 const AdminFlotaPage = () => {
   const [params, setParams] = useSearchParams();
-  const pestana: Pestana = esPestana(params.get("tab")) ? (params.get("tab") as Pestana) : "vehiculos";
+  const pestana: Pestana = esPestana(params.get("tab")) ? (params.get("tab") as Pestana) : "conductores";
+  const vista: VistaVehiculos = params.get("vista") === "calendario" ? "calendario" : "lista";
   const filtroUrl = params.get("filtro") as FiltroIndicador | null;
   const indicador = filtroUrl && INDICADORES_DE[pestana].includes(filtroUrl) ? filtroUrl : null;
 
@@ -277,12 +307,28 @@ const AdminFlotaPage = () => {
   const { porConductor: ausenciasPorConductor, refrescar: refrescarAusencias } =
     useAusenciasDeLaFlota(puedeAusencias, hoyFlota);
 
+  /**
+   * Mantenimiento en la pestaña Vehículos (2026-10-20): «Estado el día» (hoy por omisión), la semana
+   * del calendario (arranca en ese día) y la versión que sube tras cada escritura para releer.
+   */
+  const puedeProgramar = usePermiso("flota:mantenimiento");
+  const [fechaEstado, setFechaEstado] = useState(hoyFlota);
+  const [desdeSemana, setDesdeSemana] = useState(hoyFlota);
+  const [versionTaller, setVersionTaller] = useState(0);
+  const [estadoDia, setEstadoDia] = useState<DisponibilidadFlota | null>(null);
+  const [semana, setSemana] = useState<{ datos: DisponibilidadFlota | null; error: string | null }>({
+    datos: null,
+    error: null,
+  });
+  const [enMantenimiento, setEnMantenimiento] = useState<Vehiculo | null>(null);
+
   /** `?conductor=<id>` se lee UNA vez: abre su ficha y la URL se limpia. */
   const conductorDeUrl = useRef(params.get("conductor"));
 
   const abrir = useCallback((nueva: Edicion) => {
     setErrorCajon(null);
     setEnAusencias(null);
+    setEnMantenimiento(null);
     setApertura((antes) => antes + 1);
     setEdicion(nueva);
   }, []);
@@ -338,6 +384,46 @@ const AdminFlotaPage = () => {
     void cargar();
   }, [cargar]);
 
+  /** La disponibilidad de «Estado el día». Si falla, la columna dice «—» y la flota sigue. */
+  useEffect(() => {
+    let vigente = true;
+    FlotaService.disponibilidad(fechaEstado)
+      .then((datos) => {
+        if (vigente) setEstadoDia(datos);
+      })
+      .catch(() => {
+        if (vigente) setEstadoDia(null);
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [fechaEstado, versionTaller]);
+
+  /** La semana del calendario: solo se pide con la vista abierta. */
+  const calendarioAbierto = pestana === "vehiculos" && vista === "calendario";
+  useEffect(() => {
+    if (!calendarioAbierto) return undefined;
+    let vigente = true;
+    FlotaService.disponibilidad(desdeSemana)
+      .then((datos) => {
+        if (vigente) setSemana({ datos, error: null });
+      })
+      .catch((fallo: unknown) => {
+        if (vigente) setSemana({ datos: null, error: presentarError(fallo).mensaje });
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [calendarioAbierto, desdeSemana, versionTaller]);
+
+  /** Tras programar, cambiar el estado o eliminar una parada: disponibilidad, calendario y KPIs. */
+  const refrescarTaller = useCallback(() => {
+    setVersionTaller((antes) => antes + 1);
+    void FlotaService.resumen()
+      .then(setResumen)
+      .catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     // Aparte: si el catálogo de zonales falla, la flota se administra igual.
     void CatalogoCuadroService.listarZonales()
@@ -390,17 +476,35 @@ const AdminFlotaPage = () => {
 
   // ─────────────────────────── Navegación ───────────────────────────
 
-  const irA = (destino: Pestana, filtro: FiltroIndicador | null = null) => {
+  const irA = (
+    destino: Pestana,
+    filtro: FiltroIndicador | null = null,
+    nuevaVista: VistaVehiculos | null = null,
+  ) => {
     setParams(
       (actuales) => {
         const siguiente = new URLSearchParams(actuales);
         siguiente.set("tab", destino);
         if (filtro) siguiente.set("filtro", filtro);
         else siguiente.delete("filtro");
+        // La vista es de Vehículos: fuera de ella no se arrastra.
+        if (destino !== "vehiculos") siguiente.delete("vista");
+        else if (nuevaVista === "lista") siguiente.delete("vista");
+        else if (nuevaVista === "calendario") siguiente.set("vista", "calendario");
         return siguiente;
       },
       { replace: true },
     );
+  };
+
+  const cambiarVista = (nueva: VistaVehiculos) => irA("vehiculos", indicador, nueva);
+
+  /** «En taller hoy»: Vehículos en Lista, con hoy en «Estado el día» y su ficha. */
+  const irAEnTaller = () => {
+    setFechaEstado(hoyFlota);
+    setEstados((antes) => ({ ...antes, vehiculos: "activos" }));
+    aPrimeraPagina("vehiculos");
+    irA("vehiculos", "en-taller", "lista");
   };
 
   /** Cambiar lo que se filtra vuelve a la primera página de esa pestaña. */
@@ -433,15 +537,45 @@ const AdminFlotaPage = () => {
 
   const filtros = { busqueda: busquedas[pestana], estado: estados[pestana], indicador };
 
+  /** La disponibilidad de «Estado el día» por vehículo, y los que están en el taller ese día. */
+  const disponibilidadPorVehiculo = useMemo(
+    () =>
+      new Map<number, DisponibilidadDeVehiculo>(
+        (estadoDia?.vehiculos ?? []).map((fila) => [fila.vehiculoId, fila]),
+      ),
+    [estadoDia],
+  );
+  const enTallerEseDia = useMemo(
+    () =>
+      new Set(
+        (estadoDia?.vehiculos ?? [])
+          .filter((fila) => fila.disponibilidad === "EN_TALLER")
+          .map((fila) => fila.vehiculoId),
+      ),
+    [estadoDia],
+  );
+
   const vehiculosVisibles = useMemo(
     () =>
       filtrarVehiculos(
         vehiculos,
         { busqueda: busquedas.vehiculos, estado: estados.vehiculos, indicador: pestana === "vehiculos" ? indicador : null },
         conductores,
+        enTallerEseDia,
       ),
-    [vehiculos, conductores, busquedas.vehiculos, estados.vehiculos, pestana, indicador],
+    [vehiculos, conductores, busquedas.vehiculos, estados.vehiculos, pestana, indicador, enTallerEseDia],
   );
+
+  /** El calendario respeta el buscador: los vehículos ACTIVOS que la búsqueda deja. */
+  const filasCalendario = useMemo(() => {
+    if (!semana.datos) return null;
+    const coinciden = new Set(
+      filtrarVehiculos(vehiculos, { busqueda: busquedas.vehiculos, estado: "activos" }, conductores).map(
+        (uno) => uno.id,
+      ),
+    );
+    return semana.datos.vehiculos.filter((fila) => coinciden.has(fila.vehiculoId));
+  }, [semana.datos, vehiculos, conductores, busquedas.vehiculos]);
   const conductoresVisibles = useMemo(
     () =>
       filtrarConductores(conductores, {
@@ -455,22 +589,6 @@ const AdminFlotaPage = () => {
     () => filtrarGarajes(garajes, { busqueda: busquedas.garajes, estado: estados.garajes }),
     [garajes, busquedas.garajes, estados.garajes],
   );
-
-  const vigentes: Record<Pestana, number> = {
-    vehiculos: vehiculos.filter((uno) => uno.activo).length,
-    conductores: conductores.filter((uno) => uno.activo).length,
-    garajes: garajes.filter(esGarajeVigente).length,
-  };
-  const totales: Record<Pestana, number> = {
-    vehiculos: vehiculos.length,
-    conductores: conductores.length,
-    garajes: garajes.length,
-  };
-  const visibles: Record<Pestana, number> = {
-    vehiculos: vehiculosVisibles.length,
-    conductores: conductoresVisibles.length,
-    garajes: garajesVisibles.length,
-  };
 
   /** Los ids visibles de cada pestaña, en orden: para saber en qué página quedó una fila. */
   const idsVisibles: Record<Pestana, number[]> = useMemo(
@@ -627,57 +745,58 @@ const AdminFlotaPage = () => {
     void mensaje.errorDe(fallo, { titulo });
   };
 
-  /** Antes de confirmar, qué pasaría: con transporte asignado no se ofrece la baja. */
+  /**
+   * La baja SE CONFIRMA SIEMPRE (2026-10-20, D7): lo que la impide lo decide el servidor (D2) y su
+   * 409 queda en el modal. Del vehículo se pregunta antes `impacto-baja` solo para nombrar a quienes
+   * quedarán sin él (D3); si esa consulta falla, se confirma igual, sin los nombres.
+   */
   const pedirBaja = async (
     objetivo: { tipo: "vehiculo"; registro: Vehiculo } | { tipo: "conductor"; registro: Conductor },
   ) => {
+    if (objetivo.tipo === "conductor") {
+      setBaja(objetivo);
+      return;
+    }
     setProcesando(true);
     try {
-      const impacto = await FlotaService.impactoBaja(
-        objetivo.tipo === "vehiculo" ? "vehiculos" : "conductores",
-        objetivo.registro.id,
+      const impacto = await FlotaService.impactoBaja("vehiculos", objetivo.registro.id).catch(
+        () => null,
       );
-      if (impacto.asignacionesVigentes > 0) {
-        const sujeto =
-          objetivo.tipo === "vehiculo"
-            ? `El vehículo de placa ${normalizarPlaca(objetivo.registro.placa)}`
-            : objetivo.registro.nombreCompleto;
-        void mensaje.error({ titulo: "No se puede dar de baja", mensaje: textoBajaBloqueada(sujeto, impacto) });
-        return;
-      }
-      setBaja(
-        objetivo.tipo === "vehiculo"
-          ? { tipo: "vehiculo", registro: objetivo.registro, impacto }
-          : { tipo: "conductor", registro: objetivo.registro, impacto },
-      );
-    } catch (fallo: unknown) {
-      mostrarFallo(fallo, "No se pudo revisar la baja");
+      setBaja({ tipo: "vehiculo", registro: objetivo.registro, impacto });
     } finally {
       setProcesando(false);
     }
   };
 
   /**
-   * Si el servidor la rechaza —un 409 `RECURSO_CON_ASIGNACION`: alguien asignó transporte entre el
-   * aviso y la confirmación—, lanza, y el MISMO modal pasa a error con el mensaje tal cual.
+   * Si el servidor la rechaza —un 409 `RECURSO_CON_ASIGNACION` con el motivo real (traslados que no
+   * terminan, un mantenimiento abierto, vehículos que duermen en el garaje)—, lanza, y el MISMO modal
+   * pasa a error con el mensaje tal cual. Hecha: «X dado de baja» con [Deshacer], que reactiva.
    */
   const confirmarBaja = async () => {
     if (!baja) return;
+    const nombre = nombreDe(baja);
+    const tipo = PESTANA_DE[baja.tipo];
+    const id = baja.registro.id;
+    let texto: string | undefined;
     if (baja.tipo === "vehiculo") {
-      const hecha = await FlotaService.desactivarVehiculo(baja.registro.id);
-      toast.exito(hecha.mensaje);
-      setResaltado({ tipo: "vehiculos", id: baja.registro.id });
+      const hecha = await FlotaService.desactivarVehiculo(id);
+      const sinVehiculo = (hecha.conductoresSinVehiculo ?? []).map((uno) => uno.nombreCompleto);
+      texto =
+        sinVehiculo.length > 0 ? `Quedaron sin vehículo habitual: ${sinVehiculo.join(", ")}.` : undefined;
     } else if (baja.tipo === "conductor") {
-      const hecha = await FlotaService.desactivarConductor(baja.registro.id);
-      toast.exito(hecha.mensaje);
-      setResaltado({ tipo: "conductores", id: baja.registro.id });
+      await FlotaService.desactivarConductor(id);
     } else {
-      const hecha = await FlotaService.darDeBajaUbicacion(baja.registro.id);
-      toast.exito(`${hecha.nombre} se dio de baja: ya no se ofrece como destino de la flota.`);
-      setResaltado({ tipo: "garajes", id: baja.registro.id });
+      await FlotaService.darDeBajaUbicacion(id);
     }
+    toast.exito(`${nombre} dado de baja`, {
+      texto,
+      accion: { texto: "Deshacer", onClick: () => void reactivar(tipo, id, nombre) },
+    });
+    setResaltado({ tipo, id });
     setBaja(null);
     await cargar();
+    refrescarTaller();
   };
 
   const reactivar = async (tipo: Pestana, id: number, nombre: string) => {
@@ -691,6 +810,7 @@ const AdminFlotaPage = () => {
       );
       mostrarFila({ tipo, id });
       await cargar();
+      refrescarTaller();
     } catch (fallo: unknown) {
       mostrarFallo(fallo, "No se pudo reactivar");
     } finally {
@@ -701,7 +821,7 @@ const AdminFlotaPage = () => {
   /** El texto de la confirmación, con quienes quedarán sin vehículo (D3). */
   const mensajeBaja = (objetivo: PorDarDeBaja): string => {
     const base = TEXTO_BAJA[objetivo.tipo];
-    if (objetivo.tipo !== "vehiculo") return base;
+    if (objetivo.tipo !== "vehiculo" || !objetivo.impacto) return base;
     const quienes = objetivo.impacto.conductoresHabituales.map((uno) => uno.nombreCompleto);
     return quienes.length > 0 ? `${base} Quedarán sin vehículo habitual: ${quienes.join(", ")}.` : base;
   };
@@ -737,25 +857,40 @@ const AdminFlotaPage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">{ANTETITULO_DAF}</p>
-        <h1 className="page-heading-title">Flota y garajes</h1>
-        <p className="page-heading-subtitle text-sm">
-          Lo que la DAF puede asignar al planificar el día: vehículos, conductores y dónde se guarda
-          la flota.
-        </p>
-      </header>
+      <EncabezadoPagina
+        modulo="Transporte · DAF"
+        titulo="Flota y garajes"
+        subtitulo="Lo que la DAF puede asignar al planificar el día: vehículos, conductores y dónde se guarda la flota."
+      />
 
       <div
         role="group"
         aria-label="Indicadores de la flota"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
       >
+        <TarjetaIndicador
+          titulo="Conductores activos"
+          valor={resumen?.conductores.activos ?? null}
+          detalle={
+            resumen
+              ? `${resumen.conductores.deBaja} ${resumen.conductores.deBaja === 1 ? "dado de baja" : "dados de baja"}`
+              : "Sin datos del resumen"
+          }
+          onClick={() => irAIndicador("conductores", null)}
+        />
         <TarjetaIndicador
           titulo="Vehículos activos"
           valor={resumen?.vehiculos.activos ?? null}
           detalle={resumen ? `${deBaja} ${deBaja === 1 ? "dado de baja" : "dados de baja"}` : "Sin datos del resumen"}
           onClick={() => irAIndicador("vehiculos", null)}
+        />
+        <TarjetaIndicador
+          titulo="En taller hoy"
+          valor={resumen?.vehiculos.enTallerHoy ?? null}
+          detalle="No se ofrecen en Planificar el día"
+          atencion={(resumen?.vehiculos.enTallerHoy ?? 0) > 0}
+          activa={kpiActiva("vehiculos", "en-taller")}
+          onClick={irAEnTaller}
         />
         <TarjetaIndicador
           titulo="Documentos por vencer"
@@ -771,20 +906,12 @@ const AdminFlotaPage = () => {
           onClick={() => irAIndicador("vehiculos", "alertas-documentos")}
         />
         <TarjetaIndicador
-          titulo="Vehículos sin conductor habitual"
+          titulo="Sin conductor habitual"
           valor={resumen?.vehiculos.sinConductorHabitual ?? null}
-          detalle="No se proponen automáticamente"
+          detalle="Vehículos que no se proponen automáticamente"
           atencion={(resumen?.vehiculos.sinConductorHabitual ?? 0) > 0}
           activa={kpiActiva("vehiculos", "sin-conductor")}
           onClick={() => irAIndicador("vehiculos", "sin-conductor")}
-        />
-        <TarjetaIndicador
-          titulo="Conductores con datos incompletos"
-          valor={resumen?.conductores.incompletos ?? null}
-          detalle="Falta vehículo, contrato o patrón"
-          atencion={(resumen?.conductores.incompletos ?? 0) > 0}
-          activa={kpiActiva("conductores", "incompletos")}
-          onClick={() => irAIndicador("conductores", "incompletos")}
         />
       </div>
 
@@ -802,32 +929,40 @@ const AdminFlotaPage = () => {
         </AvisoEnLinea>
       )}
 
-      <section
-        aria-label="Flota"
-        className="app-shell-surface flex flex-col gap-4 rounded-3xl border border-base-300 bg-base-100 px-4 pt-2 pb-4 shadow-[0_12px_32px_rgba(15,23,42,0.12)] md:px-6"
-      >
-        <Pestanas
-          etiqueta="Maestro"
-          pestanas={PESTANAS.map((una) => ({
-            id: una.id,
-            titulo: una.titulo,
-            cuenta: vigentes[una.id],
-            etiquetaCuenta: una.id === "garajes" ? "vigentes" : "activos",
-          }))}
-          activa={pestana}
-          onElegir={(id) => irA(id)}
-        />
-
-        <div
-          id={`panel-${pestana}`}
-          role="tabpanel"
-          aria-labelledby={`pestana-${pestana}`}
-          className="flex flex-col gap-3"
-        >
-          <div className="flex flex-wrap items-center gap-3">
+      <PanelTabla
+        etiqueta="Flota"
+        cabecera={
+          <Pestanas
+            etiqueta="Maestro"
+            sobreBarra
+            pestanas={PESTANAS.map((una) => ({ id: una.id, titulo: una.titulo }))}
+            activa={pestana}
+            onElegir={(id) => irA(id)}
+          />
+        }
+        acciones={
+          <Boton
+            variante="primario"
+            tamano="md"
+            deshabilitado={cargando || procesando}
+            onClick={() =>
+              abrir(
+                pestana === "vehiculos"
+                  ? { tipo: "vehiculo", registro: null }
+                  : pestana === "conductores"
+                    ? { tipo: "conductor", registro: null }
+                    : { tipo: "garaje", registro: null },
+              )
+            }
+          >
+            {configuracion.nuevo}
+          </Boton>
+        }
+        filtros={
+          <>
             <input
               type="search"
-              className="input input-bordered w-full sm:w-80"
+              className="input input-bordered input-sm w-full min-w-[320px] sm:max-w-md"
               placeholder={configuracion.marcador}
               aria-label={configuracion.marcador.replace("…", "")}
               value={busquedas[pestana]}
@@ -858,100 +993,136 @@ const AdminFlotaPage = () => {
                 aPrimeraPagina(pestana);
               }}
             />
-            <span
-              className="text-sm text-app-strong"
-              role="status"
-            >
-              {cargando ? "Cargando…" : `${visibles[pestana]} de ${totales[pestana]}`}
-            </span>
-            <Boton
-              variante="primario"
-              tamano="md"
-              className="sm:ml-auto"
-              deshabilitado={cargando || procesando}
-              onClick={() =>
-                abrir(
-                  pestana === "vehiculos"
-                    ? { tipo: "vehiculo", registro: null }
-                    : pestana === "conductores"
-                      ? { tipo: "conductor", registro: null }
-                      : { tipo: "garaje", registro: null },
-                )
-              }
-            >
-              {configuracion.nuevo}
-            </Boton>
-          </div>
-
-          <p className="text-xs text-app-muted">{configuracion.ayuda}</p>
-
-          <div
-            ref={refTabla}
-            className="scroll-mt-4"
-          >
-          {pestana === "vehiculos" && (
-            <TablaVehiculos
-              vehiculos={paginaVehiculos.filas}
-              conductores={conductores}
-              procesando={procesando}
-              kmMaximo={resumen?.kmMaximo ?? KM_MAXIMO_POR_DEFECTO}
-              resaltado={resaltadoAqui}
-              mensajeVacio={mensajeVacio()}
-              onEditar={(registro) => abrir({ tipo: "vehiculo", registro })}
-              onDarDeBaja={(registro) => void pedirBaja({ tipo: "vehiculo", registro })}
-              onReactivar={(registro) => void reactivar("vehiculos", registro.id, normalizarPlaca(registro.placa))}
-            />
-          )}
-          {pestana === "conductores" && (
-            <TablaConductores
-              conductores={paginaConductores.filas}
-              vehiculos={vehiculos}
-              procesando={procesando}
-              resaltado={resaltadoAqui}
-              mensajeVacio={mensajeVacio()}
-              onEditar={(registro) => abrir({ tipo: "conductor", registro })}
-              onDarDeBaja={(registro) => void pedirBaja({ tipo: "conductor", registro })}
-              onReactivar={(registro) =>
-                void reactivar("conductores", registro.id, registro.nombreCompleto)
-              }
-              ausencias={puedeAusencias ? ausenciasPorConductor : undefined}
-              onAusencias={
-                puedeAusencias
-                  ? (registro) => {
-                      setEdicion(null);
-                      setEnAusencias(registro);
-                    }
-                  : undefined
-              }
-            />
-          )}
-          {pestana === "garajes" && (
-            <TablaGarajes
-              garajes={paginaGarajes.filas}
-              hoy={hoyEnGuayaquil()}
-              procesando={procesando}
-              resaltado={resaltadoAqui}
-              mensajeVacio={mensajeVacio()}
-              onEditar={(registro) => abrir({ tipo: "garaje", registro })}
-              onDarDeBaja={(registro) => setBaja({ tipo: "garaje", registro })}
-              onReactivar={(registro) => void reactivar("garajes", registro.id, registro.nombre)}
-            />
-          )}
-          </div>
-
-          {!cargando && (
-            <Paginacion
-              page={pagina.pagina}
-              pageSize={tamanoActual}
-              total={pagina.total}
-              etiqueta=""
-              opciones={[...TAMANOS]}
-              onPage={cambiarPagina}
-              onPageSize={cambiarTamano}
-            />
-          )}
+            {pestana === "vehiculos" && (
+              <>
+                <label className="flex items-center gap-2 text-sm text-app-label" htmlFor="fecha-estado">
+                  Estado el día
+                  <input
+                    id="fecha-estado"
+                    type="date"
+                    className="input input-bordered input-sm"
+                    value={fechaEstado}
+                    onChange={(evento) => {
+                      if (!evento.target.value) return;
+                      setFechaEstado(evento.target.value);
+                      setDesdeSemana(evento.target.value);
+                      aPrimeraPagina("vehiculos");
+                    }}
+                  />
+                </label>
+                <SelectorSegmentado
+                  id="vista-vehiculos"
+                  etiqueta="Vista"
+                  etiquetaOculta
+                  opciones={VISTAS}
+                  valor={vista}
+                  onCambiar={(valor) => cambiarVista(valor as VistaVehiculos)}
+                />
+              </>
+            )}
+            {pestana === "conductores" && !indicador && (resumen?.conductores.incompletos ?? 0) > 0 && (
+              <Boton
+                variante="enlace"
+                tamano="sm"
+                className="ml-auto"
+                onClick={() => irAIndicador("conductores", "incompletos")}
+              >
+                Ver datos incompletos
+              </Boton>
+            )}
+          </>
+        }
+        nota={configuracion.ayuda}
+        cuerpo={{
+          id: `panel-${pestana}`,
+          role: "tabpanel",
+          "aria-labelledby": `pestana-${pestana}`,
+        }}
+      >
+        <div
+          ref={refTabla}
+          className="scroll-mt-4"
+        >
+        {pestana === "vehiculos" && vista === "calendario" && (
+          <CalendarioTaller
+            desde={desdeSemana}
+            fechaElegida={fechaEstado}
+            filas={filasCalendario}
+            error={semana.error}
+            onCambiarDesde={setDesdeSemana}
+            onHoy={() => setDesdeSemana(hoyFlota)}
+          />
+        )}
+        {pestana === "vehiculos" && vista === "lista" && (
+          <TablaVehiculos
+            vehiculos={paginaVehiculos.filas}
+            conductores={conductores}
+            procesando={procesando}
+            kmMaximo={resumen?.kmMaximo ?? KM_MAXIMO_POR_DEFECTO}
+            resaltado={resaltadoAqui}
+            mensajeVacio={mensajeVacio()}
+            disponibilidad={disponibilidadPorVehiculo}
+            puedeProgramar={puedeProgramar}
+            onProgramar={(registro) => {
+              setEdicion(null);
+              setEnAusencias(null);
+              setEnMantenimiento(registro);
+            }}
+            onEditar={(registro) => abrir({ tipo: "vehiculo", registro })}
+            onDarDeBaja={(registro) => void pedirBaja({ tipo: "vehiculo", registro })}
+            onReactivar={(registro) => void reactivar("vehiculos", registro.id, normalizarPlaca(registro.placa))}
+          />
+        )}
+        {pestana === "conductores" && (
+          <TablaConductores
+            conductores={paginaConductores.filas}
+            vehiculos={vehiculos}
+            procesando={procesando}
+            resaltado={resaltadoAqui}
+            mensajeVacio={mensajeVacio()}
+            onEditar={(registro) => abrir({ tipo: "conductor", registro })}
+            onDarDeBaja={(registro) => void pedirBaja({ tipo: "conductor", registro })}
+            onReactivar={(registro) =>
+              void reactivar("conductores", registro.id, registro.nombreCompleto)
+            }
+            ausencias={puedeAusencias ? ausenciasPorConductor : undefined}
+            onAusencias={
+              puedeAusencias
+                ? (registro) => {
+                    setEdicion(null);
+                    setEnMantenimiento(null);
+                    setEnAusencias(registro);
+                  }
+                : undefined
+            }
+          />
+        )}
+        {pestana === "garajes" && (
+          <TablaGarajes
+            garajes={paginaGarajes.filas}
+            hoy={hoyEnGuayaquil()}
+            procesando={procesando}
+            resaltado={resaltadoAqui}
+            mensajeVacio={mensajeVacio()}
+            onEditar={(registro) => abrir({ tipo: "garaje", registro })}
+            onDarDeBaja={(registro) => setBaja({ tipo: "garaje", registro })}
+            onReactivar={(registro) => void reactivar("garajes", registro.id, registro.nombre)}
+          />
+        )}
         </div>
-      </section>
+
+        {!cargando && !calendarioAbierto && (
+          <Paginacion
+            page={pagina.pagina}
+            pageSize={tamanoActual}
+            total={pagina.total}
+            etiqueta=""
+            opciones={[...TAMANOS]}
+            onPage={cambiarPagina}
+            onPageSize={cambiarTamano}
+          />
+        )}
+      </PanelTabla>
 
       {edicion?.tipo === "vehiculo" && (
         <DrawerVehiculo
@@ -987,6 +1158,16 @@ const AdminFlotaPage = () => {
           onCerrar={() => setEnAusencias(null)}
         />
       )}
+      {enMantenimiento && (
+        <DrawerMantenimiento
+          key={enMantenimiento.id}
+          vehiculo={enMantenimiento}
+          desdeInicial={fechaEstado}
+          zonales={zonales}
+          onCambio={refrescarTaller}
+          onCerrar={() => setEnMantenimiento(null)}
+        />
+      )}
       {edicion?.tipo === "garaje" && (
         <DrawerGaraje
           key={apertura}
@@ -1005,7 +1186,7 @@ const AdminFlotaPage = () => {
         variante="peligro"
         titulo={baja ? `¿Dar de baja ${nombreDe(baja)}?` : ""}
         mensaje={baja ? mensajeBaja(baja) : ""}
-        textoPrincipal="Sí, dar de baja"
+        textoPrincipal="Dar de baja"
         tituloError="No se pudo dar de baja"
         onPrincipal={confirmarBaja}
         onSecundario={() => setBaja(null)}

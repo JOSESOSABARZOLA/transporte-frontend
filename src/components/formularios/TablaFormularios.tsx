@@ -18,6 +18,9 @@
  *
  * ESTÁNDAR DE BOTONES (2026-10-15): [✎ Editar] [⊘ Desactivar | ↺ Activar] a la vista, con
  * `AccionesFila`. El «⋮» se retiró: solo tenía esa acción. Pagina de a 10 en la página.
+ *
+ * PLANTILLA VISUAL (2026-10-24): `table table-sm table-zebra` con la cabecera de las demás tablas
+ * (`text-app-label`), el estado con `EtiquetaEstado` y las acciones en modo icono.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -26,6 +29,7 @@ import type { FC } from "react";
 import CuadroFormulario from "./CuadroFormulario.tsx";
 import Insignia from "../common/Insignia.tsx";
 import AccionesFila from "../common/AccionesFila.tsx";
+import EtiquetaEstado from "../common/EtiquetaEstado.tsx";
 import type { FormularioAdmin } from "../../interfaces/Formulario.ts";
 import { etiquetasComportamiento } from "../../utils/formularioAdmin.util.ts";
 import { NOMBRE_AREA, NOMBRE_DIRECCION } from "../../utils/personal.util.ts";
@@ -71,11 +75,11 @@ const TablaFormularios: FC<TablaFormulariosProps> = ({
   return (
     <div className="overflow-x-auto">
       <table
-        className="app-data-table table table-sm"
+        className="table table-sm table-zebra w-full text-sm"
         aria-label="Formularios del cuadro"
       >
         <thead>
-          <tr>
+          <tr className="text-xs uppercase tracking-wider text-app-label">
             <th scope="col">Formulario</th>
             <th scope="col">Dueño</th>
             <th scope="col">Áreas de personal</th>
@@ -98,7 +102,7 @@ const TablaFormularios: FC<TablaFormulariosProps> = ({
               <tr
                 key={fila.codigo}
                 data-resaltado={resaltada || undefined}
-                className={`transition-colors ${resaltada ? "bg-success/10" : ""}`}
+                className={`transition-colors ${resaltada ? "bg-success/10" : "hover:bg-primary/5"}`}
               >
                 <td>
                   <div className="flex items-center gap-3">
@@ -137,9 +141,9 @@ const TablaFormularios: FC<TablaFormulariosProps> = ({
                     : "—"}
                 </td>
                 <td>
-                  <Insignia variante={fila.activo ? "exito" : "neutro"}>
+                  <EtiquetaEstado tono={fila.activo ? "activo" : "inactivo"}>
                     {fila.activo ? "Vigente" : "Inactivo"}
-                  </Insignia>
+                  </EtiquetaEstado>
                 </td>
                 <td>
                   <AccionesFila

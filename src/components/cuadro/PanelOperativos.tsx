@@ -21,12 +21,17 @@
  * <ID>?» con «Se quitará del cuadro y se liberará al personal asignado.» y el botón en rojo,
  * siempre en un modal centrado. Quién borra y qué se dice al terminar lo decide cada página.
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * PLANTILLA VISUAL (2026-10-24). El panel es `PanelTabla`: cabecera azul `rounded-2xl` con el
+ * título en mayúsculas y, a la derecha, solo los botones de la pantalla (sin contadores: el total se
+ * lee en el pie «Mostrando X–Y de Z»). La ayuda de la pantalla va al pie, en `nota`.
  */
 
 import type { FC, ReactNode } from "react";
 
 import MensajeModal from "../common/MensajeModal.tsx";
 import Paginacion from "../common/Paginacion.tsx";
+import PanelTabla from "../common/PanelTabla.tsx";
 import TablaOperativos from "./TablaOperativos.tsx";
 import type { Operativo } from "../../interfaces/Operativo.ts";
 import type { TablaDeOperativos } from "../../hooks/useTablaOperativos.ts";
@@ -42,7 +47,7 @@ const COLUMNA_ACCIONES = { th: "w-[9.5rem] text-right", td: "text-right whitespa
 type PanelOperativosProps = {
   /** El rótulo de la cabecera azul. */
   titulo: string;
-  /** Lo que va a la derecha de la cabecera: enlaces y el contador de la pantalla. */
+  /** Los botones de la derecha de la cabecera (toman solos las variantes de la barra azul). */
   cabecera?: ReactNode;
   /** El estado de la tabla (filtros, página, resaltado): `useTablaOperativos`. */
   tabla: TablaDeOperativos;
@@ -58,6 +63,8 @@ type PanelOperativosProps = {
   agruparPorFecha?: boolean;
   /** Una línea bajo la paginación (P-02: «Ordenado por fecha…»). */
   pie?: ReactNode;
+  /** La nota de ayuda al pie del panel (`NotaPanel`). */
+  nota?: ReactNode;
   /** El operativo cuya baja espera confirmación, o `null`. */
   porRetirar: Operativo | null;
   /** Elimina el operativo. Si falla, lanza: el error se muestra en el mismo modal. */
@@ -77,6 +84,7 @@ const PanelOperativos: FC<PanelOperativosProps> = ({
   accionesFilaPatrulla,
   agruparPorFecha = false,
   pie,
+  nota,
   porRetirar,
   onConfirmarRetiro,
   onCancelarRetiro,
@@ -102,45 +110,36 @@ const PanelOperativos: FC<PanelOperativosProps> = ({
 
   return (
     <>
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            {titulo}
-          </h2>
-          {cabecera && <div className="flex flex-wrap items-center gap-2">{cabecera}</div>}
-        </div>
+      <PanelTabla titulo={titulo} acciones={cabecera} nota={nota}>
+        <TablaOperativos
+          operativos={tabla.paginaActual.filas}
+          columnas={columnas}
+          resaltadoId={tabla.resaltadoId}
+          filtros={tabla.filtros}
+          onFiltroChange={tabla.cambiarFiltro}
+          mensajeVacio={mensajeVacio}
+          acciones={acciones}
+          // La patrulla (Form 5/6): su acción principal en la cabeza y el menú en cada fila.
+          accionesFilaPatrulla={accionesFilaPatrulla}
+          columnaAcciones={COLUMNA_ACCIONES}
+          agruparPorFecha={agruparPorFecha}
+          conteoPorFecha={conteoPorFecha}
+          onVerOperativo={irAOperativo}
+          destacadoId={tabla.destacadoId}
+        />
 
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <TablaOperativos
-            operativos={tabla.paginaActual.filas}
-            columnas={columnas}
-            resaltadoId={tabla.resaltadoId}
-            filtros={tabla.filtros}
-            onFiltroChange={tabla.cambiarFiltro}
-            mensajeVacio={mensajeVacio}
-            acciones={acciones}
-            // La patrulla (Form 5/6): su acción principal en la cabeza y el menú en cada fila.
-            accionesFilaPatrulla={accionesFilaPatrulla}
-            columnaAcciones={COLUMNA_ACCIONES}
-            agruparPorFecha={agruparPorFecha}
-            conteoPorFecha={conteoPorFecha}
-            onVerOperativo={irAOperativo}
-            destacadoId={tabla.destacadoId}
+        {tabla.coincidentes.length > 0 && (
+          <Paginacion
+            page={tabla.paginaActual.pagina}
+            pageSize={tabla.tamanio}
+            total={tabla.paginaActual.total}
+            onPage={tabla.setPagina}
+            onPageSize={tabla.cambiarTamanio}
+            etiqueta="operativos"
           />
-
-          {tabla.coincidentes.length > 0 && (
-            <Paginacion
-              page={tabla.paginaActual.pagina}
-              pageSize={tabla.tamanio}
-              total={tabla.paginaActual.total}
-              onPage={tabla.setPagina}
-              onPageSize={tabla.cambiarTamanio}
-              etiqueta="operativos"
-            />
-          )}
-          {tabla.coincidentes.length > 0 && pie}
-        </div>
-      </div>
+        )}
+        {tabla.coincidentes.length > 0 && pie}
+      </PanelTabla>
 
       {/*
         Caso 2 del plan: la confirmación nombra el operativo, no pregunta en abstracto. Siempre se

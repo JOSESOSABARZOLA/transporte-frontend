@@ -128,7 +128,8 @@ import { PersonalService } from "../../services/personal.service.ts";
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
     id: 1,
     identificador: "OCPMO-004-31-JUL-2026",
-    grupoRegistro: null,
+    grupoRegistro: "registro-suelto",
+    esLote: false,
     secuencial: 4,
     cuadroFecha: "2026-07-31",
     esAdicional: false,
@@ -269,9 +270,9 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
   });
 
   /*
-    Con la ventana cerrada la fila solo se CONSULTA (2026-10-13): «Ver» abre el cajón en SOLO
-    LECTURA (sin «Guardar cambios») y «Eliminar», dentro del menú «⋮», queda apagado. «Adicional»
-    sigue su otra vara: se salta la ventana.
+    Con la ventana cerrada la fila solo se CONSULTA (2026-10-13): «Ver» abre el DETALLE (sin
+    «Guardar cambios» ni «Editar», 2026-10-27) y «Eliminar», dentro del menú «⋮», queda apagado.
+    «Adicional» sigue su otra vara: se salta la ventana.
   */
   it("con la ventana cerrada, «Eliminar» se oculta, «Agregar adicional» no, y «Ver detalle» abre en solo lectura", async () => {
     estado.ventanaAbierta = false;
@@ -289,12 +290,14 @@ describe("la ventana cerrada no bloquea el adicional, el cuadro cerrado sí", ()
     await userEvent.click(ver);
 
     const dialogo = await screen.findByRole("dialog", {
-      name: "Editar operativo",
+      name: "Detalle del operativo",
     });
-    expect(within(dialogo).getByText(/Solo lectura/)).toBeInTheDocument();
+    expect(dialogo.querySelector("[data-detalle-operativo]")).not.toBeNull();
     expect(
       within(dialogo).queryByRole("button", { name: "Guardar cambios" }),
     ).toBeNull();
+    // Con la ventana cerrada no se ofrece «Editar».
+    expect(within(dialogo).queryByRole("button", { name: "Editar" })).toBeNull();
     expect(
       within(dialogo).queryByRole("button", { name: "Cancelar" }),
     ).toBeNull();

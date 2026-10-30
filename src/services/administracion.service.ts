@@ -20,29 +20,28 @@
 
 import httpClient from "../api/httpClient";
 import type {
-  ActualizarParametro,
   ActualizarVentana,
+  CambioParametro,
   ParametroPolitica,
   VentanaActualizada,
   VentanaCarga,
 } from "../interfaces/Administracion";
 import type { RolDepartamental } from "../config/env";
 
-/** `GET /parametros`. Los siete umbrales, con su rango y su descripción. */
+/** `GET /parametros`. Los umbrales del alcance del rol, con su rango, su siembra y su descripción. */
 const listarParametros = async (): Promise<ParametroPolitica[]> => {
   const { data } = await httpClient.get<ParametroPolitica[]>("/parametros");
   return data;
 };
 
-/** `PUT /parametros/:clave`. Una sola propiedad: el rango lo fija el diseño, no quien edita. */
-const actualizarParametro = async (
-  clave: string,
-  cambio: ActualizarParametro,
-): Promise<ParametroPolitica> => {
-  const { data } = await httpClient.put<ParametroPolitica>(
-    `/parametros/${clave}`,
-    cambio,
-  );
+/**
+ * `PUT /parametros` (2026-10-24, guardado único). Todos o ninguno: si uno no es admisible, el
+ * servidor responde 400 con `detalles.errores` y no guarda nada. Devuelve la lista visible.
+ */
+const actualizarParametros = async (
+  cambios: CambioParametro[],
+): Promise<ParametroPolitica[]> => {
+  const { data } = await httpClient.put<ParametroPolitica[]>("/parametros", { cambios });
   return data;
 };
 
@@ -73,7 +72,7 @@ const actualizarVentana = async (
 
 export const AdministracionService = {
   listarParametros,
-  actualizarParametro,
+  actualizarParametros,
   listarVentanas,
   actualizarVentana,
 };

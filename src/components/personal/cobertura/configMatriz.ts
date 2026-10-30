@@ -9,8 +9,12 @@
  *
  * `MatrizCobertura` nació para Instrucción. Desde el 2026-10-06 la reutilizan los TURNOS DE
  * CONDUCTORES de la DAF: lo que difiere entre las dos —estados, textos, agrupación, servicio,
- * columnas de totales— entra por esta configuración. La de Instrucción es el valor por omisión,
- * de modo que su comportamiento no cambia (las pruebas de la cobertura lo vigilan).
+ * columnas de totales, horarios tipo— entra por esta configuración. La de Instrucción es el valor
+ * por omisión.
+ *
+ * SIMPLIFICADA EL 2026-10-24 (cobertura para el uso diario): las dos configuraciones comparten ya
+ * la misma plantilla, así que se retiraron las banderas de aspecto (`plantillaEstandar`,
+ * `subtotalCompacto`, `cerosAtenuados`), el banner azul y la ayuda del patrón libre.
  */
 
 import { CoberturaService } from "../../../services/cobertura.service.ts";
@@ -47,10 +51,11 @@ export interface ServicioMatriz {
 /** Formatos del reporte exportado. */
 export type FormatoReporte = "xlsx" | "pdf";
 
-/** Un estado editable con su color (token del tema, regla 2) y su texto de leyenda. */
+/** Un estado editable con su color (token del tema, regla 2) y lo que significa en palabras. */
 export interface EstadoConEstilo extends EstadoMatriz {
   clase: string;
-  leyenda: string;
+  /** La leyenda en lenguaje simple: «D Diurno: sale de día». */
+  significado: string;
   /** Nombre accesible del botón de la barra de selección si la letra no es legible («—»). */
   etiquetaBoton?: string;
 }
@@ -61,11 +66,19 @@ export interface EstadoAusencia {
   letra: string;
   nombre: string;
   clase: string;
-  leyenda: string;
+}
+
+/** Un horario tipo del cajón «Asignar turnos»: un ciclo que se repite. */
+export interface PatronRapido {
+  /** En español, como se lee en la tarjeta: «5 de día + 2 de descanso». */
+  nombre: string;
+  /** La línea bajo el nombre: «Ciclo de 7 días». */
+  descripcion: string;
+  /** Las teclas del ciclo: «DDDDD--». */
+  patron: string;
 }
 
 export interface ConfigMatriz {
-  titulo: string;
   /** Contexto en el subtítulo de sus cajones («Cobertura por turnos» / «Turnos de conductores»). */
   contexto: string;
   sujeto: {
@@ -73,18 +86,19 @@ export interface ConfigMatriz {
     plural: string;
     /** Encabezado de la columna fija. */
     columna: string;
-    /** Rótulo del buscador. */
+    /** Texto guía del buscador (y su nombre accesible). */
     buscar: string;
   };
   grupo: {
     singular: string;
     plural: string;
     sinGrupo: string;
-    /** Rótulo del filtro. */
+    /** Nombre accesible del filtro. */
     filtro: string;
   };
-  banner: string;
-  /** Nota bajo el banner (p. ej. quién la carga y cuándo). */
+  /** Qué significa la matriz, sin repetir la leyenda: va en la nota al pie. */
+  explicacion: string;
+  /** Nota que se suma a la explicación (p. ej. quién la carga y cuándo). */
   nota?: string;
   /** Qué significa publicar con celdas vacías. Sin él, la frase de Instrucción. */
   consecuenciaVacias?: string;
@@ -94,49 +108,46 @@ export interface ConfigMatriz {
   nombreGrilla: string;
   estados: EstadoConEstilo[];
   ausencias: EstadoAusencia[];
-  /** Estados que cuentan como «en servicio» en el subtotal de cada grupo. */
-  activos: string[];
+  /** «Lunes a viernes de día»: el estado de los días hábiles y el de sábado y domingo. */
+  estadoDia: string;
+  estadoDescanso: string;
   /**
-   * Filas del pie: un estado con su rótulo y la clave del atributo `data-total`. `minimo` dice qué
-   * marca de `bajoMinimo` del servidor resalta esa fila (solo la DAF).
+   * Filas del pie: un estado con su rótulo y la clave del atributo `data-total`. `principal` va
+   * siempre a la vista; el resto, tras «Ver todos los totales». `minimo` dice qué marca de
+   * `bajoMinimo` del servidor resalta esa fila (solo la DAF).
    */
-  pie: { valor: string; clave: string; rotulo: string; minimo?: "dia" | "noche" }[];
-  patronesRapidos: { nombre: string; patron: string }[];
-  ayudaPatron: string;
+  pie: {
+    valor: string;
+    clave: string;
+    rotulo: string;
+    principal?: boolean;
+    minimo?: "dia" | "noche";
+  }[];
+  patronesRapidos: PatronRapido[];
   conDenominacion: boolean;
   conCambiarGrupo: boolean;
   nombreArchivo: (mes: string, formato?: FormatoReporte) => string;
   servicio: ServicioMatriz;
   /**
-   * Opciones de los turnos de conductores (2026-10-06). Todas opcionales y APAGADAS en Instrucción,
-   * para que su comportamiento no cambie:
-   *   · `copiarMesAnterior`: con el mes vacío, el estado vacío ofrece «Copiar mes anterior»,
-   *     «Aplicar patrón» y «Continuar rotación» (no hay importación de Excel: se carga aquí).
-   *   · `avisoSinTurnoCompacto`: el aviso «N sin turno» va en una línea, no como alerta.
-   *   · `cerosAtenuados`: los ceros del pie se pintan en gris (`text-app-muted`).
-   *   · `subtotalCompacto`: el subtotal del grupo se lee «D1 · N2» (solo lo distinto de cero) y,
-   *     sin nadie, «—» en gris; Instrucción conserva «1/2».
-   *   · `exportarPublicado`: «Exportar» es un menú Excel / PDF y solo se habilita con el mes
+   * Opciones de los turnos de conductores (2026-10-06), APAGADAS en Instrucción:
+   *   · `copiarMesAnterior`: con el mes vacío, el estado vacío ofrece además «Copiar mes anterior».
+   *   · `exportarPublicado`: «Exportar Excel» y «Exportar PDF», que solo se habilitan con el mes
    *     publicado (el reporte es lo publicado; el servidor responde 409 si no).
    *   · `rutaParametros`: a dónde lleva «Parámetros sin configurar» en la propuesta del mes.
    */
   copiarMesAnterior?: boolean;
-  avisoSinTurnoCompacto?: boolean;
-  cerosAtenuados?: boolean;
-  subtotalCompacto?: boolean;
   exportarPublicado?: boolean;
   rutaParametros?: string;
 }
 
-/** La configuración de la cobertura de Instrucción: el comportamiento histórico de la matriz. */
+/** La configuración de la cobertura de Instrucción. */
 export const CONFIG_INSTRUCCION: ConfigMatriz = {
-  titulo: "Cobertura por turnos · Personal de Instrucción",
   contexto: "Cobertura por turnos",
   sujeto: {
     singular: "persona",
     plural: "personas",
-    columna: "Personal",
-    buscar: "Buscar persona",
+    columna: "Persona",
+    buscar: "Buscar persona por apellido o nombre",
   },
   grupo: {
     singular: "zona",
@@ -144,8 +155,8 @@ export const CONFIG_INSTRUCCION: ConfigMatriz = {
     sinGrupo: "Sin zona",
     filtro: "Zona",
   },
-  banner:
-    "En Instrucción esta matriz define quién puede salir: D/N solo dentro de la ventana de ese turno (también con nombramiento) · — no se asigna · vacía sin restricción.",
+  explicacion:
+    "Con D o N, la persona solo puede salir dentro del horario de ese turno, cualquiera que sea su jornada laboral. Con descanso no se le asigna nada ese día. Publicar el mes es informativo: el registro de operativos usa estos turnos desde que se guardan.",
   vacio:
     "No hay personal de Instrucción a su alcance. Registre personas con área «Personal de Instrucción» en el Maestro de personal.",
   cargando: "Cargando la cobertura…",
@@ -157,7 +168,7 @@ export const CONFIG_INSTRUCCION: ConfigMatriz = {
       nombre: "Diurno",
       teclas: ["D"],
       clase: "bg-success text-success-content",
-      leyenda: "D Diurno",
+      significado: "Diurno: sale de día",
     },
     {
       valor: "NOCTURNO",
@@ -165,7 +176,7 @@ export const CONFIG_INSTRUCCION: ConfigMatriz = {
       nombre: "Nocturno",
       teclas: ["N"],
       clase: "bg-info text-info-content",
-      leyenda: "N Nocturno",
+      significado: "Nocturno: sale de noche",
     },
     {
       valor: "DESCANSO",
@@ -173,48 +184,24 @@ export const CONFIG_INSTRUCCION: ConfigMatriz = {
       nombre: "Descanso",
       teclas: ["-", "—"],
       clase: "bg-base-300",
-      leyenda: "— Descanso (no se asigna)",
+      significado: "Descanso: ese día no sale",
       etiquetaBoton: "Descanso",
     },
   ],
   ausencias: [
-    {
-      valor: "VACACIONES",
-      letra: "V",
-      nombre: "Vacaciones",
-      clase: "bg-warning/40",
-      leyenda: "V Vacaciones",
-    },
-    {
-      valor: "REPOSO_MEDICO",
-      letra: "RM",
-      nombre: "Reposo médico",
-      clase: "bg-error/30",
-      leyenda: "RM Reposo médico",
-    },
-    {
-      valor: "CALAMIDAD",
-      letra: "C",
-      nombre: "Calamidad",
-      clase: "bg-error/20",
-      leyenda: "C Calamidad",
-    },
-    {
-      valor: "PERMISO",
-      letra: "P",
-      nombre: "Permiso",
-      clase: "bg-base-200 text-app-muted",
-      leyenda: "P Permiso",
-    },
+    { valor: "VACACIONES", letra: "V", nombre: "Vacaciones", clase: "bg-warning/40" },
+    { valor: "REPOSO_MEDICO", letra: "RM", nombre: "Reposo médico", clase: "bg-error/30" },
+    { valor: "CALAMIDAD", letra: "C", nombre: "Calamidad", clase: "bg-error/20" },
+    { valor: "PERMISO", letra: "P", nombre: "Permiso", clase: "bg-base-200 text-app-muted" },
   ],
-  activos: ["DIURNO", "NOCTURNO"],
+  estadoDia: "DIURNO",
+  estadoDescanso: "DESCANSO",
   pie: [
-    { valor: "DIURNO", clave: "diurno", rotulo: "Diurnos" },
-    { valor: "NOCTURNO", clave: "nocturno", rotulo: "Nocturnos" },
+    { valor: "DIURNO", clave: "diurno", rotulo: "De día", principal: true },
+    { valor: "NOCTURNO", clave: "nocturno", rotulo: "De noche", principal: true },
     { valor: "DESCANSO", clave: "descanso", rotulo: "Descansos" },
   ],
   patronesRapidos: PATRONES_RAPIDOS,
-  ayudaPatron: "Patrón libre (D, N y -; de 2 a 14 letras)",
   conDenominacion: true,
   conCambiarGrupo: true,
   nombreArchivo: (mes) => `cobertura-instruccion-${mes}.xlsx`,

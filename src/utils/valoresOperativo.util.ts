@@ -15,6 +15,7 @@
 
 import type { Operativo, TipoTransporte } from "../interfaces/Operativo";
 import { macroSegunTipo } from "./tipoTransporte.util.ts";
+import type { ZonaCaptura } from "./registroPorZonas.util.ts";
 
 /**
  * Opción del desplegable que activa la captura libre.
@@ -78,6 +79,12 @@ export type ValoresOperativo = {
    */
   tipoTransporte?: TipoTransporte;
   esMacrooperativo?: boolean;
+  /**
+   * REGISTRO POR ZONAS (2026-10-28, formulario 8): cada zona con su zonal, punto, instituciones,
+   * tipo de control y cantidad. Solo en el formulario con `cantidadPorZona`; ahí reemplaza a
+   * zonales, punto, instituciones y tipo de control del registro.
+   */
+  zonas?: ZonaCaptura[];
   /**
    * Transporte requerido (2026-10-07). Verdadero en cuanto quien registra elige el tipo A MANO: desde
    * ahí la sugerencia del formulario ya no lo pisa. Viaja en el borrador; no se envía al servidor.

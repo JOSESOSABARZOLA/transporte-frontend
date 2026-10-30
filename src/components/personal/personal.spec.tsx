@@ -30,6 +30,7 @@ import type {
   Funcionario,
 } from "../../interfaces/Personal.ts";
 import {
+  FILTRO_SIN_JORNADA,
   FILTROS_INICIALES,
   NOMBRE_ESTADO_DISPONIBILIDAD,
   SITUACIONES_DE_AUSENCIA,
@@ -37,6 +38,7 @@ import {
   esCorreoValido,
   esTelefonoValido,
   filtrarPersonal,
+  filtrosDesdeUrl,
   hayFiltrosDePersonal,
   rotuloDeDependencia,
   tieneFichaActiva,
@@ -52,7 +54,7 @@ const funcionario = (parcial: Partial<Funcionario> = {}): Funcionario => ({
   correoPersonal: null,
   cargo: "Agente de control metropolitano",
   area: "GENERAL",
-  tipoContrato: "OCASIONAL",
+  jornadaLaboralId: 2,
   direccion: "DMIP_OPERATIVOS",
   activo: true,
   ...parcial,
@@ -101,7 +103,7 @@ describe("la tabla del maestro · cabecera y columnas (2026-10-08)", () => {
       "Apellidos y nombres",
       "Área",
       "Zonal",
-      "Contrato",
+      "Jornada",
       "Teléfono",
       "Correos",
       "Estado",
@@ -186,7 +188,9 @@ describe("caso 3 · la ausencia se lee, no solo se ve", () => {
       />,
     );
     const distintivo = screen.getByText("Ausente 12/10–23/10");
+    // Plantilla visual (2026-10-24): `EtiquetaEstado` tono «aviso».
     expect(distintivo.className).toContain("badge-warning");
+    expect(distintivo.className).toContain("rounded-full");
     expect(distintivo).toHaveAttribute(
       "title",
       NOMBRE_ESTADO_DISPONIBILIDAD.REPOSO_MEDICO,
@@ -217,14 +221,18 @@ describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacid
     );
     const activo = screen.getByText("Activo");
     const inactivo = screen.getByText("Inactivo");
+    // Plantilla visual (2026-10-24): los dos son `EtiquetaEstado` (verde / gris).
     const sinVariante = (clase: string) =>
-      clase.replace(/badge-(success|ghost)/, "").trim();
+      clase.replace(/badge-success badge-outline|badge-ghost/, "").replace(/\s+/g, " ").trim();
     expect(sinVariante(activo.className)).toBe(sinVariante(inactivo.className));
+    expect(activo.className).toContain("badge-success");
+    expect(inactivo.className).toContain("badge-ghost");
+    expect(activo.className).toContain("rounded-full");
     // La fila no se atenúa: el estado lo dice el chip.
     expect(screen.getAllByRole("row")[2].className).not.toMatch(/opacity-/);
   });
 
-  it("la ficha inactiva ofrece «Activar» visible, no «Desactivar», y «Ausencias» se apaga con su motivo", async () => {
+  it("la ficha inactiva ofrece «Reactivar» visible, no «Desactivar», y «Ausencias» se apaga con su motivo", async () => {
     const reactivar = vi.fn();
     render(
       <TablaPersonal
@@ -236,10 +244,11 @@ describe("caso 4 · el funcionario inactivo se rotula, sin depender de la opacid
 
     const ausencias = screen.getByRole("button", { name: /Ausencias de/ });
     expect(ausencias).toHaveAttribute("aria-disabled", "true");
-    expect(ausencias).toHaveAttribute("title", expect.stringMatching(/actívela primero/));
+    // Modo icono: el motivo va en el tooltip, que describe al botón.
+    expect(ausencias).toHaveAccessibleDescription(expect.stringMatching(/actívela primero/));
     expect(screen.queryByRole("button", { name: /^Desactivar/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Más acciones de/ })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /^Activar/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^Reactivar/ }));
     expect(reactivar).toHaveBeenCalledWith(
       expect.objectContaining({ id: 1, activo: false }),
     );
@@ -265,7 +274,13 @@ describe("la tabla del maestro distingue quién administra", () => {
 
     const celda = screen.getAllByRole("cell").at(-1) as HTMLElement;
     const botones = within(celda).getAllByRole("button");
-    expect(botones.map((b) => b.textContent)).toEqual(["Editar", "Ausencias", "Desactivar"]);
+    // Plantilla visual (2026-10-24): solo icono; el nombre accesible no cambia.
+    expect(botones.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Editar YUNDA JESSICA",
+      "Ausencias de YUNDA JESSICA",
+      "Desactivar YUNDA JESSICA",
+    ]);
+    botones.forEach((boton) => expect(boton.textContent).toBe(""));
     expect(botones[0].className).toContain("app-accion-secundaria");
     expect(botones[1].className).toContain("btn-outline btn-primary");
     expect(botones[2].className).toContain("btn-error");
@@ -317,7 +332,7 @@ describe("los filtros del maestro", () => {
       apellidos: "REDROVÁN",
       nombres: "CARLA",
       area: "TECNICO",
-      tipoContrato: "NOMBRAMIENTO",
+      jornadaLaboralId: 1,
       activo: false,
     }),
   ];
@@ -340,9 +355,16 @@ describe("los filtros del maestro", () => {
     ).toHaveLength(1);
   });
 
-  it("el filtro de contrato distingue nombramiento de ocasional", () => {
+  it("abre filtrada por la jornada de la URL (el enlace de «Jornadas laborales», 2026-10-24)", () => {
+    expect(filtrosDesdeUrl("?jornada=2")).toEqual({ estado: "activos", jornada: "2" });
+    expect(filtrosDesdeUrl("?jornada=sin")).toEqual({ estado: "activos", jornada: "sin" });
+    expect(filtrosDesdeUrl("?jornada=x1")).toEqual({ estado: "activos" });
+    expect(filtrosDesdeUrl("")).toEqual({ estado: "activos" });
+  });
+
+  it("el filtro de jornada distingue cada jornada y a quien no tiene (2026-10-23)", () => {
     expect(
-      filtrarPersonal(maestro, { contrato: "NOMBRAMIENTO" }),
+      filtrarPersonal(maestro, { jornada: "1" }),
     ).toHaveLength(1);
   });
 
@@ -382,7 +404,7 @@ describe("teléfono y correo · espejo del servidor (2026-10-08)", () => {
       apellidos: "PEREZ",
       nombres: "JUAN",
       area: "OPERATIVOS",
-      tipoContrato: "NOMBRAMIENTO",
+      jornadaLaboralId: "1",
     };
     await expect(esquemaFuncionario.validate(base)).resolves.toBeTruthy();
     await expect(
@@ -501,5 +523,38 @@ describe("partirNombre · Auth guarda el nombre en un solo campo", () => {
       apellidos: "DE LA",
       nombres: "TORRE PEREZ JUAN",
     });
+  });
+});
+
+/**
+ * JORNADA LABORAL (2026-10-23): reemplaza al tipo de contrato. Sin jornada no se convoca a la
+ * persona, y la tabla lo dice; el filtro la encuentra.
+ */
+describe("la jornada laboral en el maestro", () => {
+  it("la columna dice el nombre de la jornada, o «⚠ Sin jornada» con su efecto", async () => {
+    render(
+      <TablaPersonal
+        {...propiedades}
+        personal={[
+          funcionario({ id: 1, jornadaLaboralId: 1 }),
+          funcionario({ id: 2, cedula: "1798765432", jornadaLaboralId: null }),
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText("Lunes a Viernes 8 horas")).toBeInTheDocument();
+    expect(screen.getByText(/⚠ Sin jornada/)).toHaveAttribute(
+      "title",
+      "Sin jornada laboral no se la convoca a ningún operativo. Asígnela con «Editar».",
+    );
+  });
+
+  it("el filtro «Sin jornada» deja solo a quien aún no la tiene", () => {
+    const maestro = [
+      funcionario({ id: 1, jornadaLaboralId: 1 }),
+      funcionario({ id: 2, jornadaLaboralId: null }),
+    ];
+    expect(filtrarPersonal(maestro, { jornada: FILTRO_SIN_JORNADA }).map((f) => f.id)).toEqual([2]);
+    expect(filtrarPersonal(maestro, { jornada: "1" }).map((f) => f.id)).toEqual([1]);
   });
 });

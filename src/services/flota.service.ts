@@ -44,6 +44,7 @@ import type {
   CrearConductor,
   CrearUbicacion,
   CrearVehiculo,
+  DisponibilidadFlota,
   ImpactoBaja,
   ResumenFlota,
 } from "../interfaces/Flota";
@@ -53,6 +54,13 @@ import type {
   UbicacionFlota,
   Vehiculo,
 } from "../interfaces/Transporte";
+
+/**
+ * La baja y la reactivación esperan hasta 15 s (2026-10-20, D7): la de un vehículo consulta sus
+ * traslados, sus paradas y sus conductores y escribe en una transacción. Con los 5 s generales, un
+ * servidor lento mostraba un error cuando la baja ya se había guardado.
+ */
+const ESPERA_BAJA = { timeout: 15_000 };
 
 // ─────────────────────────── Conductores ───────────────────────────
 
@@ -104,7 +112,7 @@ const desactivarConductor = async (
 ): Promise<BajaDeFlota<{ id: number; activo: boolean }>> => {
   const { data } = await httpClient.delete<
     BajaDeFlota<{ id: number; activo: boolean }>
-  >(`/administracion/conductores/${id}`);
+  >(`/administracion/conductores/${id}`, ESPERA_BAJA);
   return data;
 };
 
@@ -149,6 +157,7 @@ const desactivarVehiculo = async (
 ): Promise<BajaDeFlota<Vehiculo>> => {
   const { data } = await httpClient.delete<BajaDeFlota<Vehiculo>>(
     `/administracion/vehiculos/${id}`,
+    ESPERA_BAJA,
   );
   return data;
 };
@@ -157,6 +166,8 @@ const desactivarVehiculo = async (
 const reactivarConductor = async (id: number): Promise<ConductorCreado> => {
   const { data } = await httpClient.patch<ConductorCreado>(
     `/administracion/conductores/${id}/reactivar`,
+    undefined,
+    ESPERA_BAJA,
   );
   return data;
 };
@@ -165,6 +176,8 @@ const reactivarConductor = async (id: number): Promise<ConductorCreado> => {
 const reactivarVehiculo = async (id: number): Promise<Vehiculo> => {
   const { data } = await httpClient.patch<Vehiculo>(
     `/administracion/vehiculos/${id}/reactivar`,
+    undefined,
+    ESPERA_BAJA,
   );
   return data;
 };
@@ -180,9 +193,22 @@ const impactoBaja = async (
   return data;
 };
 
-/** `GET /administracion/flota/resumen`: los cuatro indicadores, en tres consultas del servidor. */
+/** `GET /administracion/flota/resumen`: los indicadores, en cuatro consultas del servidor. */
 const resumen = async (): Promise<ResumenFlota> => {
   const { data } = await httpClient.get<ResumenFlota>("/administracion/flota/resumen");
+  return data;
+};
+
+/**
+ * `GET /administracion/flota/vehiculos/disponibilidad?fecha=` (2026-10-20, D3): cada vehículo
+ * DISPONIBLE / EN_TALLER / DE_BAJA en la fecha y sus paradas de los siete días desde ella. Con el
+ * permiso de la pantalla (`flota:administrar`).
+ */
+const disponibilidad = async (fecha: string): Promise<DisponibilidadFlota> => {
+  const { data } = await httpClient.get<DisponibilidadFlota>(
+    "/administracion/flota/vehiculos/disponibilidad",
+    { params: { fecha } },
+  );
   return data;
 };
 
@@ -227,6 +253,7 @@ const actualizarUbicacion = async (
 const darDeBajaUbicacion = async (id: number): Promise<UbicacionFlota> => {
   const { data } = await httpClient.delete<UbicacionFlota>(
     `/administracion/ubicaciones-flota/${id}`,
+    ESPERA_BAJA,
   );
   return data;
 };
@@ -235,6 +262,8 @@ const darDeBajaUbicacion = async (id: number): Promise<UbicacionFlota> => {
 const reactivarUbicacion = async (id: number): Promise<UbicacionFlota> => {
   const { data } = await httpClient.patch<UbicacionFlota>(
     `/administracion/ubicaciones-flota/${id}/reactivar`,
+    undefined,
+    ESPERA_BAJA,
   );
   return data;
 };
@@ -289,6 +318,7 @@ const ausenciasDeLaFlota = async (desde?: string): Promise<AusenciaDeLaFlota[]> 
 
 export const FlotaService = {
   resumen,
+  disponibilidad,
   ausenciasDeConductor,
   registrarAusenciaConductor,
   retirarAusenciaConductor,

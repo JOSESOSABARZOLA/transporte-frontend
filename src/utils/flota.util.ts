@@ -23,10 +23,16 @@
  * `documentos` y de `faltantes`; `estadoDocumentos` es su ESPEJO y solo sirve al aviso en vivo
  * del cajón, sobre fechas que todavía no se guardaron. La placa sigue la misma regla que el
  * servidor: AAA-999 o AAA-9999, y el guion se agrega solo.
+ *
+ * MANTENIMIENTO EN LA PESTAÑA VEHÍCULOS (2026-10-20): la disponibilidad de la fecha elegida, el
+ * filtro «Solo en taller ese día», los motivos de una parada, su cruce con otra (espejo del 409
+ * `VEHICULO_OCUPADO`, para avisar antes de guardar) y el texto «Dado de baja el … por …».
  */
 
+import type { DisponibilidadDeVehiculo, EstadoParada } from "../interfaces/Flota.ts";
 import type {
   Conductor,
+  DatosDeBaja,
   EstadoDocumentos,
   FaltanteConductor,
   UbicacionFlota,
@@ -74,7 +80,12 @@ export type FiltroEstado = "activos" | "inactivos" | "todos";
  * `alertas-documentos` (2026-10-15) = vencidos, por vencer **y sin fechas**: un vehículo sin
  * matrícula ni SOAT registrados también hay que revisarlo.
  */
-export type FiltroIndicador = "alertas-documentos" | "sin-conductor" | "incompletos";
+export type FiltroIndicador =
+  | "alertas-documentos"
+  | "sin-conductor"
+  | "incompletos"
+  /** «Solo en taller ese día» (2026-10-20): la tarjeta «En taller hoy». */
+  | "en-taller";
 
 export interface FiltrosFlota {
   busqueda: string;
@@ -101,15 +112,18 @@ export const documentosEnAlerta = (vehiculo: Vehiculo): boolean =>
 /**
  * Vehículos que satisfacen los filtros. Se busca por placa (con o sin guion) y descripción.
  * «Sin conductor habitual» mira solo a los conductores activos, como el indicador del servidor.
+ * «En taller» (2026-10-20) deja los que `enTaller` (los ids EN_TALLER de la fecha elegida) trae.
  */
 export const filtrarVehiculos = (
   vehiculos: Vehiculo[],
   filtros: FiltrosFlota,
   conductores: Conductor[],
+  enTaller: ReadonlySet<number> = new Set(),
 ): Vehiculo[] => {
   const buscado = normalizar(filtros.busqueda.trim());
   return vehiculos.filter((vehiculo) => {
     if (!pasaEstado(vehiculo.activo, filtros.estado)) return false;
+    if (filtros.indicador === "en-taller" && !enTaller.has(vehiculo.id)) return false;
     if (filtros.indicador === "alertas-documentos" && !documentosEnAlerta(vehiculo)) return false;
     if (
       filtros.indicador === "sin-conductor" &&
@@ -307,7 +321,7 @@ export const secuenciaPatron = (patron: string): string =>
 /** Lo que falta, en palabras, para el indicador y el distintivo. */
 const NOMBRE_FALTANTE: Record<FaltanteConductor, string> = {
   VEHICULO_HABITUAL: "vehículo habitual",
-  TIPO_CONTRATO: "tipo de contrato",
+  JORNADA_LABORAL: "jornada laboral",
   PATRON_ROTACION: "patrón",
 };
 
@@ -324,17 +338,17 @@ export const tieneVehiculoUtil = (conductor: Conductor): boolean =>
 /**
  * Qué le falta a la ficha de un conductor para PLANIFICAR con él (2026-10-06). ESPEJO de
  * `faltantesDeConductor` del servidor que alimenta el paso 1 de «Planificar el día»: sin sector,
- * sin contrato, o con parqueadero autorizado y sin acta VIGENTE en `fecha`. Lo usa la ficha que
- * se abre desde allí para señalar los campos. No es el `faltantes` de la flota (vehículo,
- * contrato, patrón): son dos preguntas distintas.
+ * sin jornada laboral, o con parqueadero autorizado y sin acta VIGENTE en `fecha`. Lo usa la ficha
+ * que se abre desde allí para señalar los campos. No es el `faltantes` de la flota (vehículo,
+ * jornada, patrón): son dos preguntas distintas.
  */
 export const faltantesDeConductor = (
   conductor: Conductor,
   fecha: string = hoyEnGuayaquil(),
-): ("sector" | "contrato" | "parqueadero")[] => {
-  const faltan: ("sector" | "contrato" | "parqueadero")[] = [];
+): ("sector" | "jornada" | "parqueadero")[] => {
+  const faltan: ("sector" | "jornada" | "parqueadero")[] = [];
   if (!conductor.sector) faltan.push("sector");
-  if (!conductor.tipoContrato) faltan.push("contrato");
+  if (conductor.jornadaLaboralId == null) faltan.push("jornada");
   const actaVigente =
     !!conductor.actaParqueaderoNumero &&
     !!conductor.actaParqueaderoDesde &&
@@ -367,4 +381,81 @@ export const ultimaVez = (fecha: string, hoy: string): string => {
   if (dias === 0) return "hoy";
   if (dias === 1) return "ayer";
   return fechaLarga(fecha);
+};
+
+// ─────────── Mantenimiento en la pestaña Vehículos (2026-10-20) ───────────
+
+/** Los motivos de una parada que ofrece «Programar mantenimiento». */
+export const MOTIVOS_PARADA = [
+  "Mantenimiento preventivo",
+  "Cambio de frenos",
+  "Revisión técnica",
+  "Reparación",
+] as const;
+
+/** El estado de una parada en palabras (regla 6). */
+export const NOMBRE_ESTADO_PARADA: Record<EstadoParada, string> = {
+  PROGRAMADO: "Programado",
+  EN_TALLER: "En taller",
+  LISTO: "Listo",
+};
+
+const DIAS_SEMANA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+
+/** «2026-10-23» → «jue 23/10». En UTC: la fecha de calendario no tiene huso (regla 12). */
+export const diaCorto = (fecha: string): string => {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  const semana = new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay();
+  return `${DIAS_SEMANA[semana]} ${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}`;
+};
+
+/**
+ * «Descripción del vehículo»: el tipo y la descripción real («Camioneta · doble cabina blanca»).
+ * Sin descripción, o si repite el tipo, solo el tipo; sin ninguno, «—».
+ */
+export const descripcionDelVehiculo = (vehiculo: {
+  descripcion?: string | null;
+  tipo?: string | null;
+}): string => {
+  const tipo = vehiculo.tipo?.trim() || null;
+  const descripcion = descripcionVisible(vehiculo);
+  if (tipo && descripcion) return `${tipo} · ${descripcion}`;
+  return tipo ?? descripcion ?? "—";
+};
+
+/** La celda «Disponibilidad»: «Disponible», «En taller hasta jue 23/10» o «—» (de baja). */
+export const textoDisponibilidad = (fila: DisponibilidadDeVehiculo | undefined): string => {
+  if (!fila || fila.disponibilidad === "DE_BAJA") return "—";
+  if (fila.disponibilidad === "EN_TALLER" && fila.enTaller) {
+    return `En taller hasta ${diaCorto(fila.enTaller.hasta)}`;
+  }
+  return "Disponible";
+};
+
+/**
+ * La parada del mismo vehículo que se cruza con [desde, hasta], o `null`. Es el espejo del 409
+ * `VEHICULO_OCUPADO` del servidor (que compara con todas las paradas, también las LISTO).
+ */
+export const paradaQueSeCruza = <T extends { desde: string; hasta: string }>(
+  paradas: readonly T[],
+  desde: string,
+  hasta: string,
+): T | null => paradas.find((parada) => parada.desde <= hasta && parada.hasta >= desde) ?? null;
+
+/** «Se cruza con la parada del 20/10/2026 al 23/10/2026 (Cambio de frenos)». */
+export const textoCruceParada = (parada: {
+  desde: string;
+  hasta: string;
+  motivo: string | null;
+}): string =>
+  `Se cruza con la parada del ${fechaLarga(parada.desde)} al ${fechaLarga(parada.hasta)}${parada.motivo ? ` (${parada.motivo})` : ""}`;
+
+/** «Dado de baja el 14/10/2026 por Ana Pérez», con lo que conste; `null` si no consta nada. */
+export const textoDeBaja = (registro: DatosDeBaja): string | null => {
+  if (!registro.bajaEn && !registro.bajaPorNombre) return null;
+  const cuando = registro.bajaEn
+    ? ` el ${fechaLarga(hoyEnGuayaquil(new Date(registro.bajaEn)))}`
+    : "";
+  const quien = registro.bajaPorNombre ? ` por ${registro.bajaPorNombre}` : "";
+  return `Dado de baja${cuando}${quien}`;
 };

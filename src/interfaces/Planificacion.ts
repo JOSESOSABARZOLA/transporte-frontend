@@ -15,6 +15,7 @@
  */
 
 import type { TipoTransporte } from "./Operativo.ts";
+import type { RegistroDaf } from "./JornadaDaf.ts";
 
 export type TipoTramo = "DEJAR" | "RETIRAR" | "COMPLETO" | "TAREA";
 export type TurnoConductor = "DIA" | "NOCHE" | "ECU_NOCHE" | "LIBRE" | "ADMINISTRATIVO";
@@ -53,6 +54,10 @@ export interface OperativoPlanificado {
   /** El código del rol que lo registró (para decidir, no para mostrar). */
   departamentoCodigo?: string;
   zonal: ZonalCorta | null;
+  /** Punto de encuentro de la zona principal (2026-10-28). */
+  punto?: string | null;
+  /** Registro por zonas del 8 (2026-10-28): un solo operativo con todos sus identificadores. */
+  registro?: RegistroDaf | null;
   funcionarios: { id: number; nombre: string }[];
   bloque: number | null;
 }
@@ -98,7 +103,11 @@ export interface ConductorPlanificado {
   id: number;
   nombre: string;
   sector: string | null;
-  tipoContrato: string | null;
+  /**
+   * Su JORNADA LABORAL (2026-10-23), que reemplaza al tipo de contrato: nombre, días y, si tiene
+   * horario, su ventana en la línea (con la tolerancia del conductor). `null` = sin jornada.
+   */
+  jornada?: { nombre: string; dias: number[]; ventana: FranjaLinea | null } | null;
   parqueaderoAutorizado: boolean;
   actaVigente: boolean;
   turno: TurnoConductor | null;
@@ -127,7 +136,6 @@ export interface Planificacion {
    * Franjas en MINUTOS DESDE `inicioJornada` (la misma escala que `minutoEnLinea`), ya convertidas
    * por el servidor: el navegador las dibuja tal cual, sin volver a restar el inicio.
    */
-  ventanaNombramiento?: FranjaLinea;
   ventanasTurno?: { DIA: FranjaLinea; NOCHE: FranjaLinea; ECU_NOCHE: FranjaLinea };
   operativos: OperativoPlanificado[];
   bloques: BloquePlanificado[];

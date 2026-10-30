@@ -23,6 +23,10 @@
  * ámbar oscuro del plugin (5,92:1 en claro, 10,56:1 en oscuro). Un dato que falta, no un estado
  * neutro ni una alerta.
  *
+ * La variante `info` (2026-10-28, el trámite de Inspección en el detalle del operativo) usa la
+ * familia de información de los mensajes estándar (`--app-msg-info-*`, 5,6 : 1 en claro): un dato
+ * de contexto, distinto del azul de la `suave`. Sin clases nuevas.
+ *
  * SOBRE UNA BARRA AZUL (2026-10-15, cajón estándar): dentro de `BarraOscuraContexto` —la cabecera y
  * el pie de `DrawerLateral`— toda variante se pinta translúcida (`app-insignia-barra`: fondo blanco
  * al 14 %, borde blanco al 35 %, texto blanco). La palabra sigue siendo la señal.
@@ -36,7 +40,14 @@ import { useContext, type FC, type ReactNode } from "react";
 
 import { BarraOscuraContexto } from "./barraOscura.ts";
 
-export type VarianteInsignia = "exito" | "neutro" | "aviso" | "avisoSuave" | "error" | "suave";
+export type VarianteInsignia =
+  | "exito"
+  | "neutro"
+  | "aviso"
+  | "avisoSuave"
+  | "error"
+  | "suave"
+  | "info";
 
 const CLASE_VARIANTE: Record<VarianteInsignia, string> = {
   exito: "badge-success badge-outline",
@@ -45,6 +56,7 @@ const CLASE_VARIANTE: Record<VarianteInsignia, string> = {
   avisoSuave: "badge-soft badge-warning border-warning/40",
   error: "badge-error",
   suave: "app-insignia-suave",
+  info: "border-transparent bg-[var(--app-msg-info-bg)] text-[var(--app-msg-info-fg)]",
 };
 
 type InsigniaProps = {

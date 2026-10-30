@@ -21,6 +21,8 @@ import {
   contarEstados,
   partesResumenCabecera,
   resumenEstado,
+  textoFormato,
+  textoSinFormato,
 } from "./ordenes.util.ts";
 import type { OrdenServicio } from "../interfaces/Documento.ts";
 
@@ -49,6 +51,7 @@ const hoja = (
     directorNombre: "DIRECTOR",
     esPropia: true,
     plantillaVersion: 1,
+    formato: null,
   }) as OrdenServicio;
 
 describe("resumenEstado · el chip único de la columna «Órdenes» y del panel", () => {
@@ -152,5 +155,24 @@ describe("partesResumenCabecera · resumen de la jornada sin estados en 0", () =
     expect(
       partesResumenCabecera({ pendiente: 0, borrador: 0, vigente: 0, reemplazada: 0 }),
     ).toEqual([]);
+  });
+});
+
+describe("formato de la orden (2026-10-27)", () => {
+  it("textoFormato dice el departamento, o que es de la plantilla anterior", () => {
+    expect(
+      textoFormato({ departamento: "DMIT_INSTRUCTOR", nombre: "DMIT · Instrucción" }),
+    ).toBe("Formato: DMIT · Instrucción");
+    expect(textoFormato(null)).toBe("Formato: plantilla anterior (por Director)");
+  });
+
+  it("textoSinFormato cuenta las personas y junta los avisos sin repetirlos", () => {
+    const aviso =
+      "No hay formato de orden para DMIT · Instrucción. Configúrelo en Editar plantilla.";
+    const uno = { funcionarioId: 1, funcionario: "A", area: "INSTRUCCION", mensaje: aviso };
+    expect(textoSinFormato([])).toBe("");
+    expect(textoSinFormato([uno, { ...uno, funcionarioId: 2 }])).toBe(
+      `2 personas sin orden: ${aviso}`,
+    );
   });
 });

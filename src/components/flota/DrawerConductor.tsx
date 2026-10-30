@@ -19,10 +19,10 @@
  * resto de errores aparece solo después de intentar guardar. Cerrar con cambios pregunta.
  *
  * Al editar a un conductor activo con la ficha incompleta, arriba se dice qué le falta (los
- * `faltantes` del servidor: vehículo habitual, contrato, patrón), que es por lo que se abre.
+ * `faltantes` del servidor: vehículo habitual, jornada laboral, patrón), que es por lo que se abre.
  *
  * LO QUE FALTA SE SEÑALA (`senalarFaltantes`, 2026-10-06, desde «Planificar el día»). Sector,
- * contrato y acta de parqueadero vigente (`faltantesDeConductor`, espejo del paso 1) llevan borde
+ * jornada laboral y acta de parqueadero vigente (`faltantesDeConductor`, espejo del paso 1) llevan borde
  * de error y «Falta este dato» (regla 6), y el foco va al primero. Es una SEÑAL, no una
  * validación: se puede guardar sin completarlos. Se apaga en cuanto el campo cambia.
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -52,7 +52,7 @@ const camposFaltantes = (conductor: Conductor | null): (keyof ValoresConductor)[
   const faltan = faltantesDeConductor(conductor);
   const campos: (keyof ValoresConductor)[] = [];
   if (faltan.includes("sector")) campos.push("sector");
-  if (faltan.includes("contrato")) campos.push("tipoContrato");
+  if (faltan.includes("jornada")) campos.push("jornadaLaboralId");
   if (faltan.includes("parqueadero")) {
     campos.push("actaParqueaderoNumero", "actaParqueaderoDesde", "actaParqueaderoHasta");
   }

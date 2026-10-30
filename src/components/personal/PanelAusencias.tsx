@@ -60,6 +60,10 @@ const textoOperativos = (operativos: OperativoDeLaPersona[]): string =>
         .map((op) => `el ${fechaLarga(op.fecha)} (${op.identificador})`)
         .join(", ")}. La ausencia no los retira: avise al responsable para reemplazarlos.`;
 
+/** El choque con otra ausencia: el mismo texto del 409 `AUSENCIA_SOLAPADA` del servidor. */
+const textoSolape = (desde: string, hasta: string): string =>
+  `La persona ya tiene registrado un período del ${desde} al ${hasta}, que se cruza con el que intenta registrar. Retire el anterior o ajuste las fechas.`;
+
 const PanelAusencias: FC<PanelAusenciasProps> = ({ funcionario, ...resto }) => {
   // Los operativos que la persona YA TIENE en el rango, para avisar antes de registrar.
   const consultarImpacto = useCallback(
@@ -77,6 +81,8 @@ const PanelAusencias: FC<PanelAusenciasProps> = ({ funcionario, ...resto }) => {
       identificacion={funcionario.cedula}
       situaciones={SITUACIONES_DE_AUSENCIA}
       descripcionRegistradas="Mientras esté ausente no aparecerá como disponible al asignar personal a operativos ni en la cobertura por turnos."
+      ayudaFechas="Ambas fechas se incluyen. Esos días se bloquean en la Cobertura por turnos y la persona no se ofrece al registrar operativos."
+      textoSolape={textoSolape}
       consultarImpacto={consultarImpacto}
     />
   );

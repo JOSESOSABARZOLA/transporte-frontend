@@ -4,7 +4,7 @@
  * Feature: Acciones de fila
  * Archivo: accionesFila.spec.tsx
  * Responsabilidad: Verificar el grupo de acciones de fila del estándar: orden fijo, variantes del
- *                  estado, apagado con motivo y el «⋮» con el borrado en rojo.
+ *                  estado, apagado con motivo, texto o icono, «Eliminar» visible y el «⋮».
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-15
  */
@@ -75,9 +75,49 @@ describe("AccionesFila", () => {
     );
     const boton = screen.getByRole("button", { name: "Ausencias ZAMORA ANA" });
     expect(boton).toHaveAttribute("aria-disabled", "true");
-    expect(boton).toHaveAttribute("title", "Una ficha desactivada no registra ausencias.");
+    // El motivo va en el Tooltip (2026-10-24), igual que en modo icono.
+    expect(boton).toHaveAccessibleDescription("Una ficha desactivada no registra ausencias.");
     await usuario.click(boton);
     expect(ausencias).not.toHaveBeenCalled();
+  });
+
+  it("en modo texto se lee el rótulo de cada acción; en modo icono, solo el tooltip", () => {
+    const acciones = {
+      editar: { onClick: vi.fn() },
+      estado: { tipo: "desactivar" as const, onClick: vi.fn() },
+    };
+    const { unmount } = render(<AccionesFila nombre="Zonal Calderón" {...acciones} />);
+    expect(screen.getByRole("button", { name: "Editar Zonal Calderón" })).toHaveTextContent("Editar");
+    expect(screen.getByRole("button", { name: "Desactivar Zonal Calderón" })).toHaveTextContent(
+      "Desactivar",
+    );
+    unmount();
+
+    render(<AccionesFila nombre="Zonal Calderón" modo="icono" {...acciones} />);
+    const editar = screen.getByRole("button", { name: "Editar Zonal Calderón" });
+    expect(editar).toHaveTextContent("");
+    expect(editar).toHaveAccessibleDescription("Editar");
+  });
+
+  it("«Eliminar» visible va al final, en rojo, y apagado dice su motivo en el tooltip", async () => {
+    const usuario = userEvent.setup();
+    const eliminar = vi.fn();
+    render(
+      <AccionesFila
+        nombre="Zonal Calderón"
+        editar={{ onClick: vi.fn() }}
+        estado={{ tipo: "desactivar", onClick: vi.fn() }}
+        eliminar={{ onClick: eliminar, motivo: "Ya se usó en un cuadro: solo se puede desactivar." }}
+      />,
+    );
+    const botones = screen.getAllByRole("button");
+    expect(botones.map((b) => b.textContent)).toEqual(["Editar", "Desactivar", "Eliminar"]);
+    const borrar = screen.getByRole("button", { name: "Eliminar Zonal Calderón" });
+    expect(borrar.className).toContain("btn-outline");
+    expect(borrar).toHaveAttribute("aria-disabled", "true");
+    expect(borrar).toHaveAccessibleDescription("Ya se usó en un cuadro: solo se puede desactivar.");
+    await usuario.click(borrar);
+    expect(eliminar).not.toHaveBeenCalled();
   });
 
   it("el «⋮» guarda el borrado en rojo con su papelera, y apagado conserva el motivo", async () => {

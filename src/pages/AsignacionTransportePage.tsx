@@ -25,6 +25,10 @@
  * LA VENTANA CIERRA LA ESCRITURA, NO LA CONSULTA. Con la ventana cerrada todo se ve en solo
  * lectura y cada botón deshabilitado dice por qué (`motivoBloqueo`). La emisión de hojas de ruta y
  * la confirmación de vehículos no dependen de la ventana.
+ *
+ * PLANTILLA VISUAL (2026-10-24). Encabezado con `EncabezadoPagina` (módulo «Transporte · DAF» y la
+ * fecha de la jornada a la derecha); en el paso 1, el requisito de la ventana va como aviso justo
+ * debajo (`AvisoVentanaJornada`), y cada paso se pinta con `PanelTabla` (ver `TarjetaPaso`).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -34,7 +38,9 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "../utils/mensaje.ts";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import Stepper from "../components/common/Stepper.tsx";
+import AvisoVentanaJornada from "../components/transporte/planificar/AvisoVentanaJornada.tsx";
 import PasoAsignar, {
   type VistaConductores,
 } from "../components/transporte/planificar/PasoAsignar.tsx";
@@ -46,7 +52,6 @@ import { useFechaDaf } from "../context/FechaDafContext.tsx";
 import { useVentanaCarga } from "../hooks/useVentanaCarga.ts";
 import type { Paso, ResumenJornadaDaf } from "../interfaces/JornadaDaf.ts";
 import { JornadaDafService } from "../services/jornadaDaf.service.ts";
-import { ANTETITULO_DAF } from "../utils/daf.util.ts";
 import { presentarError } from "../utils/errorApi.util.ts";
 import { comoHoraInstitucional } from "../utils/horario.util.ts";
 import {
@@ -171,12 +176,11 @@ const AsignacionTransportePage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="flex flex-col gap-2">
-          <p className="page-heading-kicker font-semibold uppercase">{ANTETITULO_DAF}</p>
-          <h1 className="page-heading-title">Planificar el día</h1>
-        </div>
-        <div className="app-page-header-actions flex">
+      <EncabezadoPagina
+        modulo="Transporte · DAF"
+        titulo="Planificar el día"
+        subtitulo="Prepare, asigne y emita el transporte de la jornada en cuatro pasos."
+        contexto={
           <div className="form-control">
             <label className="label" htmlFor="fechaCuadro">
               <span className="text-app-label text-xs uppercase tracking-[0.12em]">
@@ -191,8 +195,11 @@ const AsignacionTransportePage = () => {
               onChange={(evento) => setFecha(evento.target.value)}
             />
           </div>
-        </div>
-      </header>
+        }
+      />
+
+      {/* El requisito de la ventana, bajo el encabezado (antes, renglón de la lista del paso 1). */}
+      {!cargando && resumen && paso === 1 && <AvisoVentanaJornada resumen={resumen} />}
 
       {derivado && (
         <div className="rounded-3xl border border-base-300 bg-base-100 px-6 py-4">

@@ -9,10 +9,9 @@
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * UNA MATRIZ, DOS INSTRUMENTOS. La cobertura de Instrucción (D/N/—) y los turnos de conductores
- * de la DAF (D/N/E/L/A) se planifican con la MISMA grilla: rotar, rango, teclado, patrones,
- * continuar rotación, deshacer, publicar y exportar. Lo único que cambia son los ESTADOS —su
- * valor, su letra, su orden de rotación y sus teclas—, y eso vive aquí como parámetro, no
- * cableado en la grilla.
+ * de la DAF (D/N/E/L/A) se planifican con la MISMA grilla: selección, teclado, «Asignar turnos»,
+ * deshacer, publicar y exportar. Lo único que cambia son los ESTADOS —su valor, su letra, su
+ * orden y sus teclas—, y eso vive aquí como parámetro, no cableado en la grilla.
  *
  * La LETRA es la información (regla 6); el color solo acompaña y se elige por token del tema.
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -32,7 +31,7 @@ export interface EstadoMatriz {
   teclas: string[];
 }
 
-/** Al pulsar en modo «Rotar»: vacía → primero → … → último → vacía. */
+/** El clic en una celda: vacía → primero → … → último → vacía, en el orden de la configuración. */
 export const rotarEstado = (
   estado: string | null,
   estados: EstadoMatriz[],

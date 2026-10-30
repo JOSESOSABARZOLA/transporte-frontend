@@ -79,12 +79,12 @@ export const turnoDeLetra = (letra: string): EstadoTurno | null => {
   return null;
 };
 
-/** Patrones rápidos del modal «Aplicar patrón». */
-export const PATRONES_RAPIDOS: { nombre: string; patron: string }[] = [
-  { nombre: "5D + 2—", patron: "DDDDD--" },
-  { nombre: "2D + 2N + 2—", patron: "DDNN--" },
-  { nombre: "3D + 2N + 2—", patron: "DDDNN--" },
-  { nombre: "5N + 2—", patron: "NNNNN--" },
+/** Horarios tipo del cajón «Asignar turnos» (los patrones de siempre, con su nombre en español). */
+export const PATRONES_RAPIDOS: { nombre: string; descripcion: string; patron: string }[] = [
+  { nombre: "5 de día + 2 de descanso", descripcion: "Ciclo de 7 días", patron: "DDDDD--" },
+  { nombre: "2 día · 2 noche · 2 descanso", descripcion: "Rotativo de 6 días", patron: "DDNN--" },
+  { nombre: "3 día · 2 noche · 2 descanso", descripcion: "Rotativo de 7 días", patron: "DDDNN--" },
+  { nombre: "5 noches + 2 de descanso", descripcion: "Ciclo de 7 días", patron: "NNNNN--" },
 ];
 
 /** Un patrón libre válido: solo D, N y - (o —), de 2 a 14 letras. */

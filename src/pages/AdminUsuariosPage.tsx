@@ -23,13 +23,18 @@
  * SE CONSULTAN LOS ROLES DE AUTH TAMBIÉN, y no es un adorno: avisa cuando el rol elegido no
  * tiene ningún rol de Transporte en Auth. Sin ese aviso, el alta parecería correcta y la
  * persona descubriría que no puede entrar cuando lo intentara.
+ *
+ * PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina` y `PanelTabla` «Cuentas» sin el contador
+ * «N registradas»; «+ Nueva cuenta» en la cabecera y la ayuda, al pie como nota.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import MensajeModal from "../components/common/MensajeModal.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
 import DrawerFlujoCuenta, {
   type DatosCuenta,
 } from "../components/administracion/DrawerFlujoCuenta.tsx";
@@ -233,16 +238,11 @@ const AdminUsuariosPage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Administración
-        </p>
-        <h1 className="page-heading-title">Cuentas del cuadro</h1>
-        <p className="page-heading-subtitle text-sm">
-          Quién entra al Cuadro de Colores y con qué rol. Auth central acredita la
-          identidad; esta lista decide el perfil dentro del módulo.
-        </p>
-      </header>
+      <EncabezadoPagina
+        modulo="Administración"
+        titulo="Cuentas del cuadro"
+        subtitulo="Quién entra al Cuadro de Colores y con qué rol. Auth central acredita la identidad; esta lista decide el perfil dentro del módulo."
+      />
 
       {aviso && (
         <AvisoEnLinea
@@ -266,49 +266,40 @@ const AdminUsuariosPage = () => {
         </AvisoEnLinea>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Cuentas
-          </h2>
-          <div className="flex items-center gap-3">
-            <span className="badge badge-ghost badge-sm">
-              {cargando ? "Cargando…" : `${usuarios.length} registradas`}
-            </span>
-            <Boton
-              variante="primario"
-              tamano="sm"
-              enBarraOscura
-              onClick={abrirAlta}
-              deshabilitado={cargando || guardando}
-            >
-              + Nueva cuenta
-            </Boton>
-          </div>
-        </div>
-
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-app-muted">
+      <PanelTabla
+        titulo="Cuentas"
+        acciones={
+          <Boton
+            variante="primario"
+            tamano="sm"
+            onClick={abrirAlta}
+            deshabilitado={cargando || guardando}
+          >
+            + Nueva cuenta
+          </Boton>
+        }
+        nota={
+          <>
             Desactivar una cuenta no la borra: las trazas de auditoría guardan
             quién hizo cada cambio, y borrarla las dejaría apuntando a nadie. Una
-            cuenta desactivada se vuelve a activar con «Activar», en su fila.
-          </p>
-
-          <TablaUsuarios
-            nombreDe={nombreDe}
-            usuarios={usuarios}
-            cargando={cargando}
-            procesando={guardando}
-            onEditar={(usuario) => {
-              setFlujo({ modo: "edicion", usuario });
-              setAvisoModal(null);
-            }}
-            onDesactivar={setPorDesactivar}
-            onActivar={(usuario) => void activar(usuario)}
-            resaltadoId={resaltadoId}
-          />
-        </div>
-      </div>
+            cuenta desactivada se vuelve a activar con «Reactivar», en su fila.
+          </>
+        }
+      >
+        <TablaUsuarios
+          nombreDe={nombreDe}
+          usuarios={usuarios}
+          cargando={cargando}
+          procesando={guardando}
+          onEditar={(usuario) => {
+            setFlujo({ modo: "edicion", usuario });
+            setAvisoModal(null);
+          }}
+          onDesactivar={setPorDesactivar}
+          onActivar={(usuario) => void activar(usuario)}
+          resaltadoId={resaltadoId}
+        />
+      </PanelTabla>
 
       {/*
         LA MISMA VENTANA QUE P-07, CON OTRO VOCABULARIO. Ver `PropositoDirectorio`. `PARA_CUENTA`

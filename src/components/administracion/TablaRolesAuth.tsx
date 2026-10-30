@@ -14,11 +14,15 @@
  *
  * EL ESTADO LLEVA COLOR **Y** PALABRA, regla 6 de CLAUDE.md: en un sistema llamado
  * cuadro de colores, ninguna información puede depender solo del color.
+ *
+ * PLANTILLA VISUAL (2026-10-24): el estado con `EtiquetaEstado`, las acciones en modo icono y el
+ * cambio de estado se lee «Desactivar» (antes «Retirar»): misma acción, mismo `onDesactivar`.
  */
 
 import type { FC } from "react";
 
 import AccionesFila from "../common/AccionesFila.tsx";
+import EtiquetaEstado from "../common/EtiquetaEstado.tsx";
 import Paginacion from "../common/Paginacion.tsx";
 import { usePaginaLocal } from "../../hooks/usePaginaLocal.ts";
 import type { RolAuth } from "../../interfaces/RolAuth.ts";
@@ -53,7 +57,7 @@ const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
   return (
     <div className="flex flex-col">
       <div className="overflow-x-auto">
-        <table className="table table-sm table-zebra">
+        <table className="table table-sm table-zebra w-full text-sm">
           <thead>
             <tr className="text-xs uppercase tracking-wider text-app-label">
               <th scope="col">Id en Auth</th>
@@ -99,13 +103,9 @@ const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
                   </td>
 
                   <td className="px-3 py-2 align-top">
-                    <span
-                      className={`badge badge-sm ${
-                        rol.activo ? "badge-success" : "badge-ghost"
-                      }`}
-                    >
-                      {rol.activo ? "Vigente" : "Retirada"}
-                    </span>
+                    <EtiquetaEstado tono={rol.activo ? "activo" : "inactivo"}>
+                      {rol.activo ? "Vigente" : "Desactivada"}
+                    </EtiquetaEstado>
                   </td>
 
                   <td className="px-3 py-2 align-top">
@@ -116,7 +116,7 @@ const TablaRolesAuth: FC<TablaRolesAuthProps> = ({
                       estado={
                         rol.activo
                           ? {
-                              tipo: "retirar",
+                              tipo: "desactivar",
                               onClick: () => onDesactivar(rol),
                             }
                           : null

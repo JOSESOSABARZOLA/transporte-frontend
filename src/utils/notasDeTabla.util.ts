@@ -18,7 +18,25 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import type { AreaPersonal } from "../interfaces/Formulario.ts";
 import type { NotaOperativo, Operativo } from "../interfaces/Operativo.ts";
+import { NOMBRE_AREA } from "./personal.util.ts";
+
+/**
+ * LA NOTA INFORMATIVA DE COMPOSICIÓN (2026-10-22, decisión del negocio). Qué áreas del formulario
+ * no tiene ningún operativo del registro, dicho para quien registra, que decide si agrega a esa
+ * persona. No es un pendiente: por eso va en Observaciones y no en el aviso de arriba.
+ * Sin áreas, `null`: no se pinta nada.
+ */
+export const notaDeComposicion = (
+  areas: readonly AreaPersonal[] | undefined,
+): string | null => {
+  if (!areas || areas.length === 0) return null;
+  const nombres = areas.map((area) => NOMBRE_AREA[area]).join(", ");
+  return areas.length === 1
+    ? `Sin ${nombres}. Puede agregarlo si corresponde.`
+    : `Sin ${nombres}. Puede agregarlos si corresponde.`;
+};
 
 /** Cuántas notas se ven sin desplegar. La compartida cuenta como una más. */
 export const NOTAS_VISIBLES = 2;

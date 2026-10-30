@@ -22,6 +22,9 @@
  *     «Activar», todas visibles con `AccionesFila`; sin «⋮».
  *
  * NI LA AUSENCIA NI LA BAJA DEPENDEN DEL COLOR (regla 6): cada distintivo lleva su texto.
+ *
+ * PLANTILLA VISUAL (2026-10-24): cabecera con `text-app-label`, el estado y la ausencia con
+ * `EtiquetaEstado` y las acciones en modo icono (mismo nombre accesible, el rótulo en el tooltip).
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * LA CÉDULA Y EL TELÉFONO SE MUESTRAN AQUÍ Y EN NINGÚN OTRO SITIO. Es la única pantalla
@@ -32,6 +35,11 @@
 import type { FC } from "react";
 
 import AccionesFila from "../common/AccionesFila.tsx";
+import EtiquetaEstado from "../common/EtiquetaEstado.tsx";
+import Insignia from "../common/Insignia.tsx";
+import Tooltip from "../common/Tooltip.tsx";
+import { useJornadasLaborales } from "../../hooks/useJornadasLaborales.ts";
+import { nombreDeJornada } from "../../utils/jornadaLaboral.util.ts";
 
 import type {
   AusenciaDelMaestro,
@@ -40,11 +48,13 @@ import type {
 import type { Zonal } from "../../interfaces/Formulario.ts";
 import {
   NOMBRE_AREA,
-  NOMBRE_CONTRATO,
   NOMBRE_ESTADO_DISPONIBILIDAD,
   nombreCompleto,
 } from "../../utils/personal.util.ts";
 import { fechaCorta } from "../../utils/ausencias.util.ts";
+
+const AYUDA_SIN_JORNADA =
+  "Sin jornada laboral no se la convoca a ningún operativo. Asígnela con «Editar».";
 
 type TablaPersonalProps = {
   personal: Funcionario[];
@@ -68,6 +78,13 @@ type TablaPersonalProps = {
    */
   puedeAdministrar: boolean;
   mensajeVacio: string;
+  /**
+   * ENLACES A LA COBERTURA (2026-10-24), solo para el personal de Instrucción y solo si la página
+   * tiene la pestaña: «Ver turnos» en la fila y la etiqueta «Ausente …» como enlace a esos días.
+   * Sin ellos, la fila queda como siempre.
+   */
+  onVerTurnos?: (funcionario: Funcionario) => void;
+  onVerAusenciaEnCobertura?: (funcionario: Funcionario, ausencia: AusenciaDelMaestro) => void;
 };
 
 const COLUMNAS = [
@@ -75,7 +92,7 @@ const COLUMNAS = [
   "Apellidos y nombres",
   "Área",
   "Zonal",
-  "Contrato",
+  "Jornada",
   "Teléfono",
   "Correos",
   "Estado",
@@ -94,15 +111,24 @@ const TablaPersonal: FC<TablaPersonalProps> = ({
   onReactivar,
   puedeAdministrar,
   mensajeVacio,
+  onVerTurnos,
+  onVerAusenciaEnCobertura,
 }) => {
-  const nombreZonal = new Map(zonales.map((zonal) => [zonal.id, zonal.nombre]));
+  // La jornada laboral (2026-10-23): la ficha guarda el id y aquí se pinta el nombre.
+  const { jornadas } = useJornadasLaborales();
+  const nombreZonal = new Map(
+    zonales.map((zonal) => [
+      zonal.id,
+      zonal.activo === false ? `${zonal.nombre} (desactivada)` : zonal.nombre,
+    ]),
+  );
 
 
   return (
     <div className="max-h-[70vh] overflow-auto rounded-md border border-base-300">
-      <table className="table table-sm table-zebra">
+      <table className="table table-sm table-zebra w-full text-sm">
         <thead className="sticky top-0 z-10 bg-base-100">
-          <tr className="text-xs uppercase tracking-wider">
+          <tr className="text-xs uppercase tracking-wider text-app-label">
             {COLUMNAS.map((columna) => (
               <th
                 key={columna}
@@ -128,6 +154,8 @@ const TablaPersonal: FC<TablaPersonalProps> = ({
             personal.map((funcionario) => {
               const ausencia = ausencias[funcionario.id];
               const nombre = nombreCompleto(funcionario);
+              // Solo el personal de Instrucción tiene turnos en la cobertura.
+              const conCobertura = funcionario.area === "INSTRUCCION";
 
               return (
                 <tr
@@ -161,9 +189,14 @@ const TablaPersonal: FC<TablaPersonalProps> = ({
                       ? (nombreZonal.get(funcionario.zonalId) ?? "—")
                       : "—"}
                   </td>
+                  {/* Jornada laboral (2026-10-23): sin ella no se la convoca, y se dice. */}
                   <td className="px-3 py-1 align-top">
-                    {NOMBRE_CONTRATO[funcionario.tipoContrato] ??
-                      funcionario.tipoContrato}
+                    {nombreDeJornada(funcionario.jornadaLaboralId, jornadas) ?? (
+                      <Insignia variante="aviso" title={AYUDA_SIN_JORNADA}>
+                        ⚠ Sin jornada
+                        <span className="sr-only">: {AYUDA_SIN_JORNADA}</span>
+                      </Insignia>
+                    )}
                   </td>
                   <td className="px-3 py-1 align-top font-mono">
                     {funcionario.telefono ?? "—"}
@@ -184,41 +217,69 @@ const TablaPersonal: FC<TablaPersonalProps> = ({
                     )}
                   </td>
                   <td className="px-3 py-1 align-top">
-                    <span
-                      className={`badge badge-sm whitespace-nowrap ${
-                        funcionario.activo ? "badge-success" : "badge-ghost"
-                      }`}
-                    >
+                    <EtiquetaEstado tono={funcionario.activo ? "activo" : "inactivo"}>
                       {funcionario.activo ? "Activo" : "Inactivo"}
-                    </span>
+                    </EtiquetaEstado>
                     {ausencia && (
                       <span className="mt-1 block">
-                        <span
-                          className="badge badge-warning badge-sm whitespace-nowrap"
-                          title={NOMBRE_ESTADO_DISPONIBILIDAD[ausencia.estado]}
-                        >
-                          {`Ausente ${fechaCorta(ausencia.desde)}–${fechaCorta(ausencia.hasta)}`}
-                        </span>
+                        {conCobertura && onVerAusenciaEnCobertura ? (
+                          <Tooltip texto="Ver esos días en Cobertura por turnos">
+                            <button
+                              type="button"
+                              className="cursor-pointer"
+                              aria-label={`Ver la ausencia de ${nombre} en Cobertura por turnos`}
+                              onClick={() => onVerAusenciaEnCobertura(funcionario, ausencia)}
+                            >
+                              <EtiquetaEstado tono="aviso">
+                                <span className="underline">
+                                  {`Ausente ${fechaCorta(ausencia.desde)}–${fechaCorta(ausencia.hasta)}`}
+                                </span>
+                              </EtiquetaEstado>
+                            </button>
+                          </Tooltip>
+                        ) : (
+                          <EtiquetaEstado
+                            tono="aviso"
+                            title={NOMBRE_ESTADO_DISPONIBILIDAD[ausencia.estado]}
+                          >
+                            {`Ausente ${fechaCorta(ausencia.desde)}–${fechaCorta(ausencia.hasta)}`}
+                          </EtiquetaEstado>
+                        )}
                       </span>
                     )}
                   </td>
                   <td className="px-3 py-1 align-top">
                     <AccionesFila
                       nombre={nombre}
+                      modo="icono"
                       editar={
                         puedeAdministrar
                           ? { onClick: () => onEditar(funcionario) }
                           : null
                       }
-                      propia={{
-                        texto: "Ausencias",
-                        icono: "ausencias",
-                        etiqueta: "Ausencias de",
-                        onClick: () => onAusencias(funcionario),
-                        motivo: funcionario.activo
-                          ? null
-                          : "Una ficha inactiva no registra ausencias: actívela primero.",
-                      }}
+                      propia={[
+                        // Orden: Editar · Ver turnos · Ausencias · Desactivar.
+                        ...(conCobertura && onVerTurnos
+                          ? [
+                              {
+                                texto: "Ver turnos",
+                                icono: "verTurnos" as const,
+                                etiqueta: "Ver turnos de",
+                                variante: "secundario" as const,
+                                onClick: () => onVerTurnos(funcionario),
+                              },
+                            ]
+                          : []),
+                        {
+                          texto: "Ausencias",
+                          icono: "ausencias",
+                          etiqueta: "Ausencias de",
+                          onClick: () => onAusencias(funcionario),
+                          motivo: funcionario.activo
+                            ? null
+                            : "Una ficha inactiva no registra ausencias: actívela primero.",
+                        },
+                      ]}
                       estado={
                         puedeAdministrar
                           ? funcionario.activo

@@ -77,3 +77,17 @@ export const cambiaronZonales = (
   const antes = new Set(originales);
   return actuales.some((id) => !antes.has(id));
 };
+
+/**
+ * ¿El borrador es un «Reemplazar»? (2026-10-28). En un formulario de un solo tipo de personal (el
+ * 8), una baja y un alta son el MISMO puesto con otro ocupante: se guardan con
+ * `reemplazarPersonal`, que conserva el código y el turno en una transacción. En los demás, `null`.
+ */
+export const reemplazoDelBorrador = <T>(
+  bajas: readonly T[],
+  altas: readonly T[],
+  elegirUnaArea: boolean,
+): { saliente: T; entrante: T } | null =>
+  elegirUnaArea && bajas.length === 1 && altas.length === 1
+    ? { saliente: bajas[0], entrante: altas[0] }
+    : null;

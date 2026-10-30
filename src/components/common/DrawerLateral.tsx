@@ -117,6 +117,8 @@ type DrawerLateralProps = {
   /** Modo lectura: rótulo y acción del botón principal («Listo»). */
   textoAccionLectura?: string;
   onAccionLectura?: () => void;
+  /** Fondo propio del cuerpo, que el contenido no puede dar sin márgenes negativos (la ficha gris). */
+  claseCuerpo?: string;
   children: ReactNode;
 };
 
@@ -153,6 +155,7 @@ const DrawerLateral: FC<DrawerLateralProps> = ({
   mensajeDescarte = "Los cambios que no se guardaron se perderán.",
   textoAccionLectura = "Listo",
   onAccionLectura,
+  claseCuerpo,
   children,
 }) => {
   const tarjeta = useRef<HTMLDivElement>(null);
@@ -253,6 +256,7 @@ const DrawerLateral: FC<DrawerLateralProps> = ({
             <Boton
               variante="primario"
               tamano="lg"
+              cargando={guardando}
               motivoDeshabilitado={motivoGuardar}
               onClick={onAccionLectura}
             >
@@ -341,7 +345,9 @@ const DrawerLateral: FC<DrawerLateralProps> = ({
         <div
           ref={cuerpo}
           inert={guardando || undefined}
-          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-3.5 pb-5"
+          className={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pt-3.5 pb-5${
+            claseCuerpo ? ` ${claseCuerpo}` : ""
+          }`}
         >
           {ayuda && <p className="text-xs text-app-muted">{ayuda}</p>}
           {children}

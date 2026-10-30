@@ -25,13 +25,18 @@
  * en Auth. Hoy es `FUNCIONARIO`, y significa que quien recibe una orden de servicio no
  * puede elegir el módulo en el portal: P-06 le resulta inaccesible. Verlo aquí evita
  * descubrirlo cuando esa persona no logra entrar.
+ *
+ * PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina` y `PanelTabla` «Correspondencias» sin el
+ * contador «N registradas»; «+ Nuevo rol» en la cabecera y la ayuda, al pie como nota.
  */
 
 import { useCallback, useEffect, useState } from "react";
 
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import MensajeModal from "../components/common/MensajeModal.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
 import ModalRolAuth from "../components/administracion/ModalRolAuth.tsx";
 import TablaRolesAuth from "../components/administracion/TablaRolesAuth.tsx";
 import type { RolDepartamental } from "../config/env.ts";
@@ -156,18 +161,11 @@ const AdminRolesAuthPage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Administración
-        </p>
-        <h1 className="page-heading-title">
-          Roles de Auth central
-        </h1>
-        <p className="page-heading-subtitle text-sm">
-          A qué rol del Cuadro de Colores corresponde cada rol de Auth. Es lo que
-          decide qué formularios ve una persona cuando entra desde el portal.
-        </p>
-      </header>
+      <EncabezadoPagina
+        modulo="Administración"
+        titulo="Roles de Auth central"
+        subtitulo="A qué rol del Cuadro de Colores corresponde cada rol de Auth. Es lo que decide qué formularios ve una persona cuando entra desde el portal."
+      />
 
       {aviso && (
         <AvisoEnLinea
@@ -197,52 +195,43 @@ const AdminRolesAuthPage = () => {
         </AvisoEnLinea>
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Correspondencias
-          </h2>
-          <div className="flex items-center gap-3">
-            <span className="badge badge-ghost badge-sm">
-              {cargando ? "Cargando…" : `${roles.length} registradas`}
-            </span>
-            <Boton
-              variante="primario"
-              tamano="sm"
-              enBarraOscura
-              onClick={() => {
-                setEdicion({ modo: "alta" });
-                setAvisoModal(null);
-              }}
-              deshabilitado={cargando || guardando}
-            >
-              + Nuevo rol
-            </Boton>
-          </div>
-        </div>
-
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-app-muted">
-            Retirar una correspondencia no la borra: se conserva porque explica
+      <PanelTabla
+        titulo="Correspondencias"
+        acciones={
+          <Boton
+            variante="primario"
+            tamano="sm"
+            onClick={() => {
+              setEdicion({ modo: "alta" });
+              setAvisoModal(null);
+            }}
+            deshabilitado={cargando || guardando}
+          >
+            + Nuevo rol
+          </Boton>
+        }
+        nota={
+          <>
+            Desactivar una correspondencia no la borra: se conserva porque explica
             por qué una cuenta dada de alta en su día recibió el rol que recibió.
             Varias filas pueden apuntar al mismo rol del cuadro, si Auth divide
             un área en zonas.
-          </p>
-
-          <TablaRolesAuth
-            nombreDe={nombreDe}
-            roles={roles}
-            cargando={cargando}
-            procesando={guardando}
-            onEditar={(rolAuth) => {
-              setEdicion({ modo: "edicion", rolAuth });
-              setAvisoModal(null);
-            }}
-            onDesactivar={setPorRetirar}
-            resaltadoId={resaltadoId}
-          />
-        </div>
-      </div>
+          </>
+        }
+      >
+        <TablaRolesAuth
+          nombreDe={nombreDe}
+          roles={roles}
+          cargando={cargando}
+          procesando={guardando}
+          onEditar={(rolAuth) => {
+            setEdicion({ modo: "edicion", rolAuth });
+            setAvisoModal(null);
+          }}
+          onDesactivar={setPorRetirar}
+          resaltadoId={resaltadoId}
+        />
+      </PanelTabla>
 
       {edicion && (
         <ModalRolAuth
@@ -260,13 +249,13 @@ const AdminRolesAuthPage = () => {
       {porRetirar && (
         <MensajeModal
           variante="peligro"
-          titulo={`¿Retirar el rol ${porRetirar.idAuth}?`}
+          titulo={`¿Desactivar el rol ${porRetirar.idAuth}?`}
           mensaje={
             `El rol ${porRetirar.idAuth} de Auth dejará de dar acceso como ` +
-            `${nombreDe(porRetirar.rol)}. La fila se conserva y puede volver a activarse.`
+            `${nombreDe(porRetirar.rol)}. La fila se conserva y puede reactivarse.`
           }
-          textoPrincipal="Sí, retirar"
-          tituloError="No se pudo retirar el rol"
+          textoPrincipal="Sí, desactivar"
+          tituloError="No se pudo desactivar el rol"
           onPrincipal={retirar}
           onSecundario={() => setPorRetirar(null)}
         />

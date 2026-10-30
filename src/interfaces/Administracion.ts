@@ -36,14 +36,26 @@ export interface ParametroPolitica {
   /** Extremos del rango admisible. Nulos cuando el tipo no los tiene. */
   minimo: string | null;
   maximo: string | null;
+  /** Valor con que se sembró (2026-10-24): «Modificado» y «Restaurar». `null` = sin siembra conocida. */
+  valorSiembra: string | null;
+  /** Valores admitidos de un parámetro de lista (`select`); `null` si el valor es libre. */
+  opciones: string[] | null;
   /** Caso 5: quién y cuándo. La traza completa vive en la auditoría del servidor. */
   modificadoPor: number | null;
+  /** Nombre de esa cuenta (2026-10-24; antes la pantalla decía «Usuario 14»). */
+  modificadoPorNombre: string | null;
   modificadoEn: string;
 }
 
-/** Cuerpo de `PUT /parametros/:clave`. **Una sola propiedad.** */
-export interface ActualizarParametro {
+/** Un cambio del guardado único: `PUT /parametros` con `{ cambios }`, todos o ninguno. */
+export interface CambioParametro {
+  clave: string;
   valor: string;
+}
+
+/** `detalles` del 400 del guardado único: el motivo de cada clave rechazada. */
+export interface ErroresDeParametros {
+  errores: { clave: string; motivo: string }[];
 }
 
 /**

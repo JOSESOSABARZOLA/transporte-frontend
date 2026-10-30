@@ -31,14 +31,20 @@
  * quitan (el servidor responde 409 `AUSENCIA_PASADA`). FECHAS COMO TEXTO `AAAA-MM-DD` (regla 12).
  *
  * CAJÓN ESTÁNDAR (2026-10-15): `DrawerLateral` `lg` en modo LECTURA. Cada ausencia se registra o
- * se quita al instante, así que el pie es solo [Cerrar]. Con algo escrito sin registrar, cerrar
- * pregunta «¿Descartar cambios?».
+ * se quita al instante. Con algo escrito sin registrar, cerrar pregunta «¿Descartar cambios?».
+ *
+ * PIE ESTÁNDAR (2026-10-24, Personal y Flota): «Registrar ausencia» salió del formulario y es la
+ * acción principal del pie, junto a [Cerrar]. A la izquierda, el estado: «✓ Se bloquearán N días
+ * (dd/mm al dd/mm)» con un rango válido, o «Revise las fechas» —y el botón apagado— con uno que no
+ * lo es. El porqué va EN LÍNEA bajo el formulario, con los textos del servidor (`textoSolape`). Una
+ * ausencia «Pasada» ya no ofrece «Quitar» apagado: dice «Historial».
  */
 
 import { useEffect, useMemo, useState, type FC } from "react";
 
 import Boton from "../common/Boton.tsx";
-import DrawerLateral from "../common/DrawerLateral.tsx";
+import DrawerLateral, { type EstadoPie } from "../common/DrawerLateral.tsx";
+import Tooltip from "../common/Tooltip.tsx";
 import SeccionDrawer from "../common/SeccionDrawer.tsx";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 import type {
@@ -51,6 +57,7 @@ import {
   VARIANTE_MOMENTO,
   diagnosticarRango,
   estadoDeAusencia,
+  fechaCorta,
   fechaLarga,
 } from "../../utils/ausencias.util.ts";
 
@@ -85,6 +92,10 @@ export type PanelAusenciasBaseProps = {
   aviso: string | null;
   /** Bajo «Registradas (N)»: qué deja de pasar mientras esté ausente. */
   descripcionRegistradas: string;
+  /** Bajo las fechas: qué significa el rango. Por omisión, «Ambas fechas se incluyen.». */
+  ayudaFechas?: string;
+  /** El choque con otra ausencia, con el texto del servidor de cada uno (persona o conductor). */
+  textoSolape: (desde: string, hasta: string) => string;
   /** Aviso previo con un rango válido (Personal). Su fallo no impide registrar. */
   consultarImpacto?: (desde: string, hasta: string) => Promise<string | null>;
   /** Aviso posterior a registrar (Flota: tramos por reasignar). */
@@ -112,6 +123,8 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
   hoy,
   aviso,
   descripcionRegistradas,
+  ayudaFechas = "Ambas fechas se incluyen.",
+  textoSolape,
   consultarImpacto,
   avisoImpacto = null,
   onRegistrar,
@@ -162,38 +175,32 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
     }
   };
 
-  /** El mensaje en vivo bajo el formulario. */
-  const mensajeEnVivo = (() => {
-    switch (diagnostico.tipo) {
-      case "incompleto":
-        return intento ? (
-          <span className="text-error">Indique desde y hasta.</span>
-        ) : (
-          <span className="text-app-muted">Ambas fechas se incluyen.</span>
-        );
-      case "invertido":
-        return (
-          <span className="text-error">
-            «Hasta» no puede ser anterior a «Desde».
-          </span>
-        );
-      case "solapado":
-        return (
-          <span className="text-error">
-            Se cruza con una ausencia ya registrada (del{" "}
-            {fechaLarga(diagnostico.con.desde)} al{" "}
-            {fechaLarga(diagnostico.con.hasta)}).
-          </span>
-        );
-      case "valido":
-        return (
-          <span className="text-app-strong">
-            {diagnostico.dias === 1 ? "1 día" : `${diagnostico.dias} días`} · del{" "}
-            {fechaLarga(valores.desde)} al {fechaLarga(valores.hasta)}
-          </span>
-        );
-    }
-  })();
+  /** Por qué el rango no sirve, en línea bajo el formulario (los textos del servidor). */
+  const errorRango =
+    diagnostico.tipo === "invertido"
+      ? "La ausencia no puede terminar antes de empezar."
+      : diagnostico.tipo === "solapado"
+        ? textoSolape(fechaLarga(diagnostico.con.desde), fechaLarga(diagnostico.con.hasta))
+        : diagnostico.tipo === "incompleto" && intento
+          ? "Indique desde y hasta."
+          : null;
+
+  /** El estado del pie, a la izquierda, y el motivo del botón apagado. */
+  const estadoPie: EstadoPie =
+    diagnostico.tipo === "valido"
+      ? {
+          tono: "listo",
+          texto: `Se bloquearán ${diagnostico.dias === 1 ? "1 día" : `${diagnostico.dias} días`} (${fechaCorta(valores.desde)} al ${fechaCorta(valores.hasta)})`,
+        }
+      : diagnostico.tipo === "incompleto"
+        ? { tono: intento ? "error" : "pendiente", texto: "Indique desde y hasta" }
+        : { tono: "error", texto: "Revise las fechas" };
+  const motivoRegistrar =
+    diagnostico.tipo === "valido"
+      ? null
+      : diagnostico.tipo === "incompleto"
+        ? "Indique desde y hasta."
+        : "Revise las fechas.";
 
   /** Hay algo escrito sin registrar: cerrar pregunta antes. */
   const sucio =
@@ -219,6 +226,10 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
       mensajeDescarte="La ausencia que escribió y no registró se perderá."
       onCerrar={onCerrar}
       errorServidor={aviso}
+      estadoPie={estadoPie}
+      textoAccionLectura={guardando ? "Registrando…" : "Registrar ausencia"}
+      onAccionLectura={() => void registrar()}
+      motivoGuardar={motivoRegistrar}
     >
       <SeccionDrawer titulo="Registrar ausencia" rejilla={false}>
         <form
@@ -291,6 +302,7 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
               </label>
             ))}
           </div>
+          <p className="text-xs text-app-muted">{ayudaFechas}</p>
           <label className="form-control w-full">
             <span className="label-text mb-1">Motivo (opcional)</span>
             <input
@@ -303,25 +315,11 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
             />
           </label>
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p
-              className="text-sm"
-              role="status"
-              aria-live="polite"
-            >
-              {mensajeEnVivo}
+          {errorRango && (
+            <p className="text-sm text-error" role="alert">
+              {errorRango}
             </p>
-            <Boton
-              variante="acento"
-              tamano="md"
-              type="submit"
-              cargando={guardando}
-              deshabilitado={!valido}
-              onClickApagado={() => void registrar()}
-            >
-              {guardando ? "Registrando…" : "Registrar ausencia"}
-            </Boton>
-          </div>
+          )}
 
           {valido && impacto && (
             <AvisoEnLinea variante="advertencia">{impacto}</AvisoEnLinea>
@@ -417,6 +415,13 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
                               No
                             </Boton>
                           </div>
+                        ) : pasada ? (
+                          // Ya terminó: es historial y el servidor no la deja quitar (409).
+                          <Tooltip texto="Ya terminó: forma parte del historial y no se puede quitar">
+                            <span className="text-xs text-app-muted" tabIndex={0}>
+                              Historial
+                            </span>
+                          </Tooltip>
                         ) : (
                           <Boton
                             variante="peligroTexto"
@@ -424,11 +429,6 @@ const PanelAusenciasBase: FC<PanelAusenciasBaseProps> = ({
                             icono="eliminar"
                             onClick={() => setPorQuitar(periodo.id)}
                             deshabilitado={guardando}
-                            motivoDeshabilitado={
-                              pasada
-                                ? "Una ausencia que ya terminó es historial: no se quita."
-                                : null
-                            }
                           >
                             Quitar
                           </Boton>

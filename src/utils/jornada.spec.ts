@@ -16,6 +16,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  esperaDeLaJornada,
   fechaDeJornadaPorDefecto,
   laJornadaSeAbriraSola,
 } from "./jornada.util.ts";
@@ -83,5 +84,43 @@ describe("laJornadaSeAbriraSola", () => {
   it("compara como calendario, no como texto suelto: el cambio de mes", () => {
     expect(laJornadaSeAbriraSola("2026-09-01", "2026-08-31")).toBe(true);
     expect(laJornadaSeAbriraSola("2026-08-31", "2026-09-01")).toBe(false);
+  });
+});
+
+/**
+ * EL AVISO SE CUENTA UNA VEZ POR REGISTRO (2026-10-22). Una patrulla de tres códigos a la que le
+ * falta Instrucción se anunciaba como «3 operativos esperan personal».
+ */
+describe("esperaDeLaJornada", () => {
+  // `null`: un registro de un solo operativo, con su propio id (2026-10-27: todos tienen uno).
+  const fila = (
+    id: number,
+    grupoRegistro: string | null,
+    areasPendientesDelRol: ("INSTRUCCION" | "TECNICO")[],
+  ) => ({ grupoRegistro: grupoRegistro ?? `registro-${id}`, areasPendientesDelRol });
+
+  it("los códigos de una misma patrulla cuentan como uno", () => {
+    expect(
+      esperaDeLaJornada([
+        fila(1, "P1", ["INSTRUCCION"]),
+        fila(2, "P1", ["INSTRUCCION"]),
+        fila(3, "P1", ["INSTRUCCION"]),
+      ]),
+    ).toEqual({ operativos: 1, areas: ["INSTRUCCION"] });
+  });
+
+  it("dos patrullas y un operativo suelto son tres, y las áreas se juntan sin repetir", () => {
+    expect(
+      esperaDeLaJornada([
+        fila(1, "P1", ["INSTRUCCION"]),
+        fila(2, "P2", ["INSTRUCCION"]),
+        fila(3, null, ["TECNICO"]),
+        fila(4, null, []),
+      ]),
+    ).toEqual({ operativos: 3, areas: ["INSTRUCCION", "TECNICO"] });
+  });
+
+  it("sin nada pendiente, cero", () => {
+    expect(esperaDeLaJornada([fila(1, "P1", [])])).toEqual({ operativos: 0, areas: [] });
   });
 });

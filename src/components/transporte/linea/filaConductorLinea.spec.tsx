@@ -19,7 +19,7 @@ const CONDUCTOR: ConductorPlanificado = {
   id: 52,
   nombre: "SOSA JOSE LUIS",
   sector: "NORTE",
-  tipoContrato: "OCASIONAL",
+  jornada: { nombre: "Lunes a Domingo 24/7", dias: [1, 2, 3, 4, 5, 6, 7], ventana: null },
   parqueaderoAutorizado: false,
   actaVigente: false,
   turno: "DIA",
@@ -58,7 +58,6 @@ const fila = (tramos: TramoPlanificado[]) =>
         avisos={[]}
         inicioJornada="05:00"
         ventanaTurno={null}
-        ventanaNombramiento={null}
         tabla={null}
         soloLectura={false}
         onTramo={vi.fn()}

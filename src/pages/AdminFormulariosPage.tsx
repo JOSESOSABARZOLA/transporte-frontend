@@ -23,6 +23,10 @@
  * (`DrawerFormulario`); confirmación solo para desactivar (reactivar no la pide); aviso breve y
  * fila resaltada tras cada cambio. Las ÁREAS ya no se tocan aquí: se configuran en Catálogos del
  * cuadro, y tras un alta el aviso lleva directo allí con la barra de áreas abierta.
+ *
+ * PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina` y `PanelTabla` con cabecera azul
+ * «Formularios», «+ Nuevo formulario» en ella, buscador y estado en la barra blanca y la nota al
+ * pie. El contador «N formularios · X vigentes de Y» se retiró: el total lo dice el paginador.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -33,7 +37,9 @@ import MensajeModal from "../components/common/MensajeModal.tsx";
 import SelectorSegmentado from "../components/forms/SelectorSegmentado.tsx";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
 import Paginacion from "../components/common/Paginacion.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
 import DrawerFormulario from "../components/formularios/DrawerFormulario.tsx";
 import TablaFormularios from "../components/formularios/TablaFormularios.tsx";
 import type { ColorPaleta, FormularioAdmin } from "../interfaces/Formulario.ts";
@@ -112,7 +118,6 @@ const AdminFormulariosPage = () => {
     return () => window.clearTimeout(espera);
   }, [resaltado]);
 
-  const vigentes = formularios.filter((fila) => fila.activo).length;
 
   const filas = useMemo(() => {
     const texto = normalizar(busqueda.trim());
@@ -201,20 +206,14 @@ const AdminFormulariosPage = () => {
   // Paginado en el navegador (estándar de tablas): la fila recién guardada abre su página.
   const pagina0 = usePaginaLocal(filas, resaltado, (fila) => fila.codigo);
 
-  const contador = `${filas.length} ${filas.length === 1 ? "formulario" : "formularios"} · ${vigentes} vigentes de ${formularios.length}`;
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="page-heading-kicker font-semibold uppercase">Administración</p>
-          <h1 className="page-heading-title">Formularios del cuadro</h1>
-          <p className="page-heading-subtitle text-sm">
-            Tipos de operativo que se registran en el cuadro: su color, dueño y cómo se comportan al
-            registrar.
-          </p>
-        </div>
-      </header>
+      <EncabezadoPagina
+        modulo="Administración"
+        titulo="Formularios del cuadro"
+        subtitulo="Tipos de operativo que se registran en el cuadro: su color, dueño y cómo se comportan al registrar."
+      />
 
       {avisoPagina && (
         <AvisoEnLinea
@@ -230,48 +229,44 @@ const AdminFormulariosPage = () => {
         </AvisoEnLinea>
       )}
 
-      <section
-        aria-label="Formularios"
-        className="app-shell-surface flex flex-col gap-4 rounded-3xl border border-base-300 bg-base-100 px-4 py-4 shadow-[0_12px_32px_rgba(15,23,42,0.12)] md:px-6"
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            type="search"
-            className="input input-bordered w-full sm:w-80"
-            placeholder="Buscar por número, código o nombre…"
-            aria-label="Buscar por número, código o nombre"
-            value={busqueda}
-            onChange={(evento) => {
-              setBusqueda(evento.target.value);
-            }}
-          />
-          <SelectorSegmentado
-            id="filtro-vigencia-formularios"
-            etiqueta="Estado"
-            etiquetaOculta
-            opciones={OPCIONES_VIGENCIA}
-            valor={vigencia}
-            onCambiar={(valor) => {
-              setVigencia(valor as FiltroVigencia);
-            }}
-          />
-          <span
-            className="text-sm text-app-strong"
-            role="status"
-          >
-            {contador}
-          </span>
-          {/* Estándar de botones (D4): «+ Nuevo» a la derecha de la barra de su tabla. */}
+      <PanelTabla
+        etiqueta="Formularios"
+        titulo="Formularios"
+        acciones={
           <Boton
             variante="primario"
-            className="sm:ml-auto"
             deshabilitado={cargando || procesando}
             onClick={() => abrir("nuevo")}
           >
             + Nuevo formulario
           </Boton>
-        </div>
-
+        }
+        filtros={
+          <>
+            <input
+              type="search"
+              className="input input-bordered input-sm min-w-[320px]"
+              placeholder="Buscar por número, código o nombre…"
+              aria-label="Buscar por número, código o nombre"
+              value={busqueda}
+              onChange={(evento) => {
+                setBusqueda(evento.target.value);
+              }}
+            />
+            <SelectorSegmentado
+              id="filtro-vigencia-formularios"
+              etiqueta="Estado"
+              etiquetaOculta
+              opciones={OPCIONES_VIGENCIA}
+              valor={vigencia}
+              onCambiar={(valor) => {
+                setVigencia(valor as FiltroVigencia);
+              }}
+            />
+          </>
+        }
+        nota={NOTA_PIE}
+      >
         {cargando ? (
           <div className="flex justify-center py-6">
             <span
@@ -281,36 +276,31 @@ const AdminFormulariosPage = () => {
           </div>
         ) : (
           <>
-          <TablaFormularios
-            filas={pagina0.filas}
-            procesando={procesando}
-            resaltado={resaltado}
-            mensajeVacio={
-              busqueda.trim()
-                ? "Ningún formulario coincide con la búsqueda."
-                : vigencia === "inactivos"
-                  ? "No hay formularios inactivos."
-                  : "Todavía no hay formularios."
-            }
-            onEditar={(fila) => abrir(fila)}
-            onDesactivar={(fila) => setBaja(fila)}
-            onReactivar={(fila) => void cambiarActivo(fila, true)}
-          />
-          <Paginacion
-            page={pagina0.pagina}
-            pageSize={pagina0.tamano}
-            total={pagina0.total}
-            onPage={pagina0.irA}
-            etiqueta="formularios"
-          />
+            <TablaFormularios
+              filas={pagina0.filas}
+              procesando={procesando}
+              resaltado={resaltado}
+              mensajeVacio={
+                busqueda.trim()
+                  ? "Ningún formulario coincide con la búsqueda."
+                  : vigencia === "inactivos"
+                    ? "No hay formularios inactivos."
+                    : "Todavía no hay formularios."
+              }
+              onEditar={(fila) => abrir(fila)}
+              onDesactivar={(fila) => setBaja(fila)}
+              onReactivar={(fila) => void cambiarActivo(fila, true)}
+            />
+            <Paginacion
+              page={pagina0.pagina}
+              pageSize={pagina0.tamano}
+              total={pagina0.total}
+              onPage={pagina0.irA}
+              etiqueta="formularios"
+            />
           </>
         )}
-
-        <p className="text-xs text-app-muted">
-          <span aria-hidden="true">ⓘ </span>
-          {NOTA_PIE}
-        </p>
-      </section>
+      </PanelTabla>
 
       {edicion !== null && (
         <DrawerFormulario

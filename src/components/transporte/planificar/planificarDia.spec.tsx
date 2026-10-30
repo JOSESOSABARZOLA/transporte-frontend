@@ -33,6 +33,7 @@ import type {
 } from "../../../interfaces/JornadaDaf.ts";
 import type { Planificacion } from "../../../interfaces/Planificacion.ts";
 import AsignacionTransportePage from "../../../pages/AsignacionTransportePage.tsx";
+import { toast } from "../../../utils/mensaje.ts";
 
 const permisos = vi.hoisted(() => ({ concedidos: new Set<string>(["flota:capacidad:declarar"]) }));
 vi.mock("../../../hooks/usePermiso.ts", () => ({
@@ -245,7 +246,7 @@ const PLAN: Planificacion = {
       id: 10,
       nombre: "ESCALERAS KEVIN",
       sector: "CENTRO",
-      tipoContrato: "OCASIONAL",
+      jornada: { nombre: "Lunes a Domingo 24/7", dias: [1, 2, 3, 4, 5, 6, 7], ventana: null },
       parqueaderoAutorizado: false,
       actaVigente: false,
       turno: "DIA",
@@ -303,7 +304,7 @@ describe("Paso 1 · Preparar", () => {
     },
   });
 
-  it("bloquea «Continuar» hasta completar los requisitos y cuenta los pendientes", () => {
+  it("bloquea «Continuar» hasta completar los requisitos, sin distintivo de pendientes", () => {
     enRouter(
       <PasoPreparar
         fecha={FECHA}
@@ -315,7 +316,31 @@ describe("Paso 1 · Preparar", () => {
     );
 
     expect(screen.getByRole("button", { name: "Continuar a asignar →" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByText("2 pendientes")).toBeInTheDocument();
+    // Plantilla visual (2026-10-24): la cabecera ya no cuenta los pendientes; lo dice el pie.
+    expect(screen.queryByText("2 pendientes")).not.toBeInTheDocument();
+    expect(screen.getByText("Resuelva los puntos pendientes para continuar.")).toBeInTheDocument();
+    // «Confirmar» y «Corregir» siguen siendo secundarios: el único primario es «Continuar».
+    expect(screen.getByRole("button", { name: "Confirmar" })).toHaveClass("app-accion-secundaria");
+    expect(screen.getByRole("button", { name: "Corregir" })).toHaveClass("app-accion-secundaria");
+  });
+
+  it("el título del paso va en la cabecera azul, en mayúsculas, y la ventana sale de la lista", () => {
+    const { container } = enRouter(
+      <PasoPreparar
+        fecha={FECHA}
+        resumen={resumen()}
+        onRecargar={vi.fn()}
+        onContinuar={vi.fn()}
+        onAviso={vi.fn()}
+      />,
+    );
+
+    const titulo = screen.getByRole("heading", { level: 2, name: "Paso 1 · Preparar la jornada" });
+    expect(titulo).toHaveClass("uppercase");
+    expect(container.querySelector(".app-section-header")).toContainElement(titulo);
+    // El requisito `VENTANA` lo pinta la página bajo su encabezado, no la lista del paso.
+    expect(screen.queryByText("Ventana de asignación abierta")).not.toBeInTheDocument();
+    expect(screen.getByText("Cuadro del día aprobado")).toBeInTheDocument();
   });
 
   it("con todo listo, «Continuar» lleva al paso 2", async () => {
@@ -331,7 +356,8 @@ describe("Paso 1 · Preparar", () => {
       />,
     );
 
-    expect(screen.getByText("Listo para asignar")).toBeInTheDocument();
+    expect(screen.queryByText("Listo para asignar")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuar a asignar →" })).toHaveClass("btn-primary");
     await usuario.click(screen.getByRole("button", { name: "Continuar a asignar →" }));
     expect(onContinuar).toHaveBeenCalled();
   });
@@ -580,6 +606,33 @@ describe("Paso 2 · Asignar", () => {
     );
     expect(within(tarjeta).getByText("Transporte liberado")).toBeInTheDocument();
     expect(within(tarjeta).getByText("14H00–18H00 · Quitumbe · Completo")).toBeInTheDocument();
+  });
+
+  it("un registro por zonas del 8 es UNA tarjeta con el rango y «También atiende» (2026-10-28)", () => {
+    pasoAsignar(
+      resumen({
+        operativos: [
+          operativo({
+            identificador: "IG-030-28-OCT-2026",
+            registro: {
+              grupoRegistro: "registro-nicole",
+              identificadores: [
+                ...Array.from({ length: 13 }, (_, i) => `IG-0${30 + i}-28-OCT-2026`),
+                "IG-043-28-OCT-2026",
+              ],
+              tambienAtiende: [{ zonal: "Calderón", punto: "AMC Calderón" }],
+            },
+          }),
+        ],
+      }),
+    );
+
+    const tarjeta = screen.getByTestId("sin-conductor-1");
+    expect(within(tarjeta).getByText("IG-030 a IG-043")).toBeInTheDocument();
+    expect(
+      within(tarjeta).getByText("También atiende: Calderón (AMC Calderón)"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^sin-conductor-/)).toHaveLength(1);
   });
 
   it("los avisos del conductor van como chips bajo su nombre en la línea de tiempo", async () => {
@@ -1648,6 +1701,95 @@ describe("Stepper de «Planificar el día»", () => {
   });
 });
 
+// ─────────────────────── Plantilla visual (2026-10-24) ───────────────────────
+
+describe("Plantilla visual de «Planificar el día»", () => {
+  const pagina = () =>
+    render(
+      <MemoryRouter initialEntries={[`/home/cuadro/transporte?fecha=${FECHA}`]}>
+        <FechaDafProvider>
+          <AsignacionTransportePage />
+        </FechaDafProvider>
+      </MemoryRouter>,
+    );
+
+  /** Paso 1 con la ventana todavía cerrada: el servidor manda el requisito `VENTANA` en espera. */
+  const enEspera = () =>
+    resumen({
+      preparacion: {
+        ...resumen().preparacion,
+        listos: false,
+        pendientes: 1,
+        requisitos: [
+          {
+            clave: "CUADRO",
+            estado: "PENDIENTE",
+            titulo: "Cuadro del día sin aprobar",
+            detalle: "La Dirección aún no aprueba el cuadro.",
+            accion: { tipo: "VER_MATRIZ" },
+          },
+          {
+            clave: "VENTANA",
+            estado: "ESPERA",
+            titulo: "La asignación abre a las 15H00",
+            detalle: "Mientras tanto puede revisar todo en modo lectura.",
+            accion: null,
+          },
+        ],
+      },
+      ventana: {
+        abierta: false,
+        horaApertura: "15:00",
+        horaCierre: "16:50",
+        mensaje: "",
+        zonaHoraria: "America/Guayaquil",
+      },
+    });
+
+  it("el encabezado dice el módulo, el título, el subtítulo y lleva la fecha a la derecha", async () => {
+    vi.mocked(JornadaDafService.resumen).mockResolvedValue(enEspera());
+    pagina();
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Planificar el día" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Transporte · DAF")).toHaveClass("page-heading-kicker");
+    expect(
+      screen.getByText("Prepare, asigne y emita el transporte de la jornada en cuatro pasos."),
+    ).toHaveClass("page-heading-subtitle");
+    expect(screen.getByLabelText("Fecha de la jornada")).toHaveValue(FECHA);
+  });
+
+  it("la ventana en espera va como aviso informativo bajo el encabezado, con la cuenta regresiva", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // 11:53 en Quito: faltan 03:07 para las 15:00.
+    vi.setSystemTime(new Date("2026-10-09T16:53:00Z"));
+    try {
+      vi.mocked(JornadaDafService.resumen).mockResolvedValue(enEspera());
+      pagina();
+
+      const titulo = await screen.findByRole("heading", { name: "Paso 1 · Preparar la jornada" });
+      const aviso = screen
+        .getAllByRole("status")
+        .find((nodo) => nodo.textContent?.includes("La asignación abre a las 15H00"));
+      expect(aviso).toBeDefined();
+      expect(aviso).toHaveAttribute("data-variante", "info");
+      expect(aviso).toHaveTextContent(
+        "La asignación abre a las 15H00 · faltan 03:07. Mientras tanto puede revisar todo en modo lectura.",
+      );
+      expect(within(aviso as HTMLElement).getByText("03:07")).toHaveClass("font-mono");
+      // Va ANTES del paso (bajo el encabezado) y ya no es un renglón de la lista.
+      expect(
+        (aviso as HTMLElement).compareDocumentPosition(titulo) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const paso = screen.getByRole("region", { name: "Paso 1 · Preparar la jornada" });
+      expect(within(paso).queryByText(/La asignación abre/)).toBeNull();
+      expect(within(paso).getByText("Cuadro del día sin aprobar")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 // ─────────────────────── Compartir unidad (2026-10-19) ───────────────────────
 
 describe("Compartir unidad · la DAF ejecuta lo que pidió quien registró", () => {
@@ -1958,5 +2100,106 @@ describe("El «completo» deja y retira en su punto (2026-10-21)", () => {
         "OCDMIT-001 comparte la unidad de OCPMO-001 (SOSA JOSE LUIS · PMA-3370).",
       ),
     );
+  });
+});
+
+// ─────────────────────── Reparto de carga de los conductores (2026-10-30) ───────────────────────
+
+/** Los mismos candidatos con las señales de carga que calcula el servidor. */
+const CANDIDATOS_CON_CARGA: RespuestaCandidatos = {
+  ...CANDIDATOS,
+  candidatos: CANDIDATOS.candidatos.map((candidato) =>
+    candidato.conductorId === 10
+      ? {
+          ...candidato,
+          indiceCarga: 14,
+          nivelFatiga: "ROJO",
+          operativosAsignados: 6,
+          cuotaJusta: 8,
+          desviacionCarga: 6,
+          nivelEquidad: "ENCIMA",
+        }
+      : {
+          ...candidato,
+          indiceCarga: 2,
+          nivelFatiga: "VERDE",
+          operativosAsignados: 1,
+          cuotaJusta: 8,
+          desviacionCarga: -6,
+          nivelEquidad: "DEBAJO",
+        },
+  ),
+};
+
+describe("Cajón de candidatos · reparto de carga (2026-10-30)", () => {
+  it("cada candidato lleva su etiqueta de carga y «Ver reparto de carga» abre la vista en el mismo cajón", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(JornadaDafService.candidatos).mockResolvedValue(CANDIDATOS_CON_CARGA);
+    dialogo();
+
+    const alto = await screen.findByTestId("candidato-10");
+    expect(within(alto).getByText("Carga Alta")).toBeInTheDocument();
+    expect(within(screen.getByTestId("candidato-12")).getByText("Carga Baja")).toBeInTheDocument();
+
+    await usuario.click(screen.getByRole("button", { name: "Ver reparto de carga" }));
+
+    // Una VISTA del mismo cajón (un solo diálogo), en modo consulta: sin «Agregar/Asignar» en el reparto.
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByText(/Solo consulta: asigne al conductor/)).toBeInTheDocument();
+    expect(screen.queryByTestId("candidato-10")).not.toBeInTheDocument();
+    expect(screen.getByText(/No disponible: Ocupado 08H00–16H30 con OCPMO-001/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Asignar/ })).not.toBeInTheDocument();
+
+    await usuario.click(screen.getByRole("button", { name: "Volver a los conductores" }));
+    expect(await screen.findByTestId("candidato-10")).toBeInTheDocument();
+  });
+
+  it("sin carga calculada (contrato anterior) no se ofrece el reparto", async () => {
+    vi.mocked(JornadaDafService.candidatos).mockResolvedValue(CANDIDATOS);
+    dialogo();
+
+    await screen.findByTestId("candidato-10");
+    expect(screen.queryByRole("button", { name: "Ver reparto de carga" })).not.toBeInTheDocument();
+  });
+
+  it("asignar a un conductor con «Carga Alta» asigna igual y avisa (informativo); con carga baja no avisa", async () => {
+    const usuario = userEvent.setup();
+    const info = vi.spyOn(toast, "info");
+    const onHecho = vi.fn();
+    vi.mocked(JornadaDafService.candidatos).mockResolvedValue(CANDIDATOS_CON_CARGA);
+    vi.mocked(PlanificacionService.asignar).mockResolvedValue();
+    dialogo({ onHecho });
+
+    await usuario.click(await screen.findByRole("button", { name: "Asignar a ESCALERAS KEVIN" }));
+
+    await waitFor(() =>
+      expect(onHecho).toHaveBeenCalledWith("OCDMIT-001 asignado a ESCALERAS KEVIN."),
+    );
+    expect(info).toHaveBeenCalledWith("Carga alta de operativos", {
+      texto:
+        "ESCALERAS KEVIN tiene una carga alta de operativos (6 operativos esta semana). Considere repartir con quien tenga menos carga.",
+    });
+
+    info.mockClear();
+    await usuario.click(screen.getByRole("button", { name: "Asignar igual a TOAPANTA MARCO" }));
+    await waitFor(() => expect(PlanificacionService.asignar).toHaveBeenCalledTimes(2));
+    expect(info).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+
+  it("RN-40 sigue intacta: la carga no viaja en lo que se envía", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(JornadaDafService.candidatos).mockResolvedValue(CANDIDATOS_CON_CARGA);
+    vi.mocked(PlanificacionService.asignar).mockResolvedValue();
+    dialogo();
+
+    await usuario.click(await screen.findByRole("button", { name: "Asignar a ESCALERAS KEVIN" }));
+
+    expect(PlanificacionService.asignar).toHaveBeenCalledWith({
+      fecha: FECHA,
+      operativoIds: [1],
+      conductorId: 10,
+      vehiculoId: 100,
+    });
   });
 });

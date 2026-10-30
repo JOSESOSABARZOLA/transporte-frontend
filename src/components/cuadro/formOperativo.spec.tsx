@@ -379,3 +379,27 @@ describe("FormOperativo · misma salida en el Registro y en el cajón", () => {
     expect(edicion).toMatchSnapshot("edicion");
   });
 });
+
+/**
+ * VEHÍCULO DE OTRA INSTITUCIÓN (2026-10-23). Es solo el tipo, como Propios medios: no pide un campo
+ * aparte (cuál institución, si hace falta, va en las observaciones).
+ */
+describe("FormOperativo · vehículo de otra institución", () => {
+  it("se elige como cualquier otro tipo, sin campos extra, y viaja con el registro", async () => {
+    const onGuardar = vi.fn();
+    montar({
+      onGuardar,
+      personalAgregado: [{ funcionarioId: 3, nombre: "ANA PÉREZ", telefono: null }],
+      valores: { zonalesIds: [1], punto: "4", institucionesIds: [7], tiposControlIds: [30] },
+    });
+
+    await userEvent.click(screen.getByRole("combobox", { name: /Transporte requerido/ }));
+    await userEvent.click(screen.getByRole("option", { name: /^Vehículo de otra institución/ }));
+    expect(screen.queryByText(/Institución del vehículo/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+
+    await vi.waitFor(() => expect(onGuardar).toHaveBeenCalled());
+    const [valores] = onGuardar.mock.calls[0] as [ValoresOperativo];
+    expect(valores.tipoTransporte).toBe("OTRA_INSTITUCION");
+  });
+});

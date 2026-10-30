@@ -25,10 +25,13 @@ import { useRef, type KeyboardEvent } from "react";
 export type DefinicionPestana<T extends string> = {
   id: T;
   titulo: string;
-  /** El número del distintivo (activos, vigentes…). */
-  cuenta: number;
+  /**
+   * El número del distintivo (activos, vigentes…). OPCIONAL desde el 2026-10-24 (plantilla
+   * visual): sin él la pestaña muestra solo su nombre, y el total se lee en el pie de la tabla.
+   */
+  cuenta?: number;
   /** Cómo se lee el número: «3 activos», «6 vigentes». */
-  etiquetaCuenta: string;
+  etiquetaCuenta?: string;
 };
 
 type PestanasProps<T extends string> = {
@@ -37,21 +40,35 @@ type PestanasProps<T extends string> = {
   pestanas: DefinicionPestana<T>[];
   activa: T;
   onElegir: (id: T) => void;
+  /**
+   * Sobre una cabecera azul (2026-10-24, «Ventanas y parámetros»): inactiva en blanco al 75 %,
+   * activa en blanco sombreado con texto #1E2E78 y contador azul sólido (`ui/componentes-propios.css`).
+   */
+  sobreBarra?: boolean;
 };
 
 const BASE =
   "tab gap-2 rounded-t-lg rounded-b-none transition-colors duration-150 cursor-pointer";
 const ELEGIDA = "tab-active bg-primary/10 font-bold";
 const OTRA = "bg-transparent font-semibold hover:bg-base-200";
+const ELEGIDA_BARRA = "tab-active app-pestana-barra-activa";
+const OTRA_BARRA = "app-pestana-barra";
 
-function Pestanas<T extends string>({ etiqueta, pestanas, activa, onElegir }: PestanasProps<T>) {
+function Pestanas<T extends string>({
+  etiqueta,
+  pestanas,
+  activa,
+  onElegir,
+  sobreBarra = false,
+}: PestanasProps<T>) {
   const refs = useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
 
   const alTeclear = (evento: KeyboardEvent<HTMLButtonElement>) => {
     const indice = pestanas.findIndex((una) => una.id === activa);
     let destino = -1;
     if (evento.key === "ArrowRight") destino = (indice + 1) % pestanas.length;
-    else if (evento.key === "ArrowLeft") destino = (indice - 1 + pestanas.length) % pestanas.length;
+    else if (evento.key === "ArrowLeft")
+      destino = (indice - 1 + pestanas.length) % pestanas.length;
     else if (evento.key === "Home") destino = 0;
     else if (evento.key === "End") destino = pestanas.length - 1;
     if (destino < 0) return;
@@ -62,7 +79,11 @@ function Pestanas<T extends string>({ etiqueta, pestanas, activa, onElegir }: Pe
   };
 
   return (
-    <div role="tablist" aria-label={etiqueta} className="tabs tabs-border">
+    <div
+      role="tablist"
+      aria-label={etiqueta}
+      className={sobreBarra ? "tabs" : "tabs tabs-border"}
+    >
       {pestanas.map((una) => {
         const elegida = una.id === activa;
         return (
@@ -77,17 +98,33 @@ function Pestanas<T extends string>({ etiqueta, pestanas, activa, onElegir }: Pe
             aria-selected={elegida}
             aria-controls={`panel-${una.id}`}
             tabIndex={elegida ? 0 : -1}
-            className={`${BASE} ${elegida ? ELEGIDA : OTRA}`}
+            className={`${BASE} ${
+              sobreBarra
+                ? elegida
+                  ? ELEGIDA_BARRA
+                  : OTRA_BARRA
+                : elegida
+                  ? ELEGIDA
+                  : OTRA
+            }`}
             onClick={() => onElegir(una.id)}
             onKeyDown={alTeclear}
           >
             {una.titulo}
-            <span
-              className={`badge badge-sm ${elegida ? "badge-primary" : "badge-ghost"}`}
-              aria-label={`${una.cuenta} ${una.etiquetaCuenta}`}
-            >
-              {una.cuenta}
-            </span>
+            {una.cuenta !== undefined && (
+              <span
+                className={`badge badge-sm ${
+                  sobreBarra
+                    ? "app-pestana-barra-cuenta"
+                    : elegida
+                      ? "badge-primary"
+                      : "badge-ghost"
+                }`}
+                aria-label={`${una.cuenta} ${una.etiquetaCuenta}`}
+              >
+                {una.cuenta}
+              </span>
+            )}
           </button>
         );
       })}

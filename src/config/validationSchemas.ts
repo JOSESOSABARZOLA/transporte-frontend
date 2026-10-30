@@ -124,6 +124,15 @@ export const esquemaOperativo = Yup.object().shape({
 export type OperativoFormValues = Yup.InferType<typeof esquemaOperativo>;
 
 /**
+ * REGISTRO POR ZONAS (2026-10-28, formulario 8). Zonal, punto, instituciones y tipo de control van
+ * por zona y los valida `FormOperativo.validate` con `faltantesDeZonas`; aquí solo queda lo común.
+ */
+export const esquemaOperativoPorZonas = esquemaOperativo.pick([
+  "formularioCodigo",
+  "observaciones",
+]);
+
+/**
  * Alta y edición de un funcionario. Pantalla P-07 (M-27).
  *
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -197,9 +206,9 @@ export const esquemaFuncionario = Yup.object({
   */
   zonalId: Yup.string(),
 
-  // De este campo depende RN-26: quién puede salir de noche y en fin de semana.
-  tipoContrato: Yup.string().required(
-    "Indique el tipo de contrato: de él depende si la persona puede salir de noche o en fin de semana.",
+  // De este campo depende RN-26 (2026-10-23): en qué días y horas se puede convocar a la persona.
+  jornadaLaboralId: Yup.string().required(
+    "Indique la jornada laboral: de ella depende en qué días y horas se puede convocar a la persona.",
   ),
 
   /*
@@ -333,7 +342,11 @@ export const esquemaMantenimiento = Yup.object({
     message: "La hora de la cita se escribe como HH:MM.",
   }),
 
-  motivo: Yup.string().max(220, "El motivo no supera los 220 caracteres."),
+  // Obligatorio desde el 2026-10-20 (Programar mantenimiento en la pestaña Vehículos): se elige de
+  // `MOTIVOS_PARADA`. El servidor lo sigue admitiendo vacío, por las paradas de antes.
+  motivo: Yup.string()
+    .required("Elija el motivo de la parada.")
+    .max(220, "El motivo no supera los 220 caracteres."),
 });
 
 /**

@@ -60,6 +60,7 @@ import {
   useState,
   type FC,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 
@@ -70,6 +71,7 @@ import { useTramitesInspeccion } from "../../hooks/useTramitesInspeccion.ts";
 import Boton from "../common/Boton.tsx";
 import DrawerLateral from "../common/DrawerLateral.tsx";
 import Iconos from "../common/Iconos.tsx";
+import Insignia from "../common/Insignia.tsx";
 import MensajeModal from "../common/MensajeModal.tsx";
 import Paginacion from "../common/Paginacion.tsx";
 import {
@@ -83,8 +85,12 @@ import {
   cruzaMedianoche,
 } from "../../utils/horario.util.ts";
 import {
+  pideConfirmarCarga,
+  sugerenciaDeMenorCarga,
+  textoModalCargaAlta,
   compararPorCarga,
   conteoSemaforo as contarSemaforo,
+  filaDePersona,
   cuantosCompletar,
   hayCargaCalculada,
   NOMBRE_AREA,
@@ -213,11 +219,11 @@ type SelectorPersonalProps = {
    */
   listaCompacta?: boolean;
   /**
-   * SOLO en `listaCompacta`: si asignar/retirar/turno se guardan al instante (edición de P-02) o no
-   * (el adicional, cuyo personal entra con él al registrar). Gobierna el rótulo «Se guarda al
-   * instante» de la cabecera: no se pinta cuando el guardado es diferido, para no mentir (regla 6).
+   * Si lo elegido se confirma con «Guardar cambios» (la edición y el aporte) en lugar de entrar con
+   * el registro. Solo cambia los textos del reparto y de «Quitar todos». Desde el 2026-10-29 ningún
+   * cajón guarda al instante: el rótulo «Se guarda al instante» se retiró.
    */
-  guardadoInmediato?: boolean;
+  conGuardarCambios?: boolean;
   /**
    * EN EL CAJÓN: la etiqueta «Personal asignado» la pone la cabecera de la sección
    * (`app-section-heading`), así que aquí se oculta su texto para no repetirla. Los controles del
@@ -279,6 +285,53 @@ type SelectorPersonalProps = {
    * exigido de efectivos, así que nadie lo pasa: no se inventa.
    */
   cupo?: number | null;
+  /**
+   * BORRADOR DEL APORTE (2026-10-28). Quienes se agregaron y aún no se guardan: llevan la etiqueta
+   * «Nuevo» junto al nombre hasta «Guardar cambios».
+   */
+  idsNuevos?: ReadonlySet<number>;
+  /**
+   * El rótulo de cada persona nueva, si no es «Nuevo» (2026-10-29): en la patrulla, el código que
+   * tendrá al guardar («Nuevo código INECU… al guardar»).
+   */
+  rotulosNuevos?: ReadonlyMap<number, string>;
+  /**
+   * Junto a quien no se puede tocar (`editable === false`), por qué (2026-10-29): en el aporte,
+   * «Del dueño del formulario · lectura».
+   */
+  rotuloLectura?: string;
+  /**
+   * Un dato más junto al nombre de cada persona elegida (2026-10-28): en el registro por zonas,
+   * «Zonal en el Maestro: La Delicia». Lo arma quien conoce el catálogo.
+   */
+  detalleDePersona?: (persona: PersonaAgregada) => ReactNode;
+  /**
+   * UNA PERSONA Y UN TIPO DE PERSONAL (2026-10-28): formularios con `elegirUnaArea` y
+   * `maxPersonas = 1` (hoy el 8). Antes de la lista va «Tipo de personal», obligatorio y sin «Todas»;
+   * la lista, el buscador y «No disponibles» muestran solo ese tipo; con una persona elegida, las
+   * demás dicen «Reemplazar». Sin «Completar con N de menor carga» y con «1 persona» por contador.
+   * Solo en la lista compacta.
+   */
+  tipoUnico?: TipoUnicoDePersonal;
+  /**
+   * «Reemplazar»: la persona nueva toma el lugar de la elegida conservando horario y cantidad
+   * (`conPersonaReemplazada`). Sin él, se quita a la elegida y se agrega a la nueva.
+   */
+  onReemplazar?: (salienteId: number, entrante: PersonaElegible) => void;
+};
+
+/** Configuración del modo «un solo tipo de personal» (2026-10-28). */
+export type TipoUnicoDePersonal = {
+  /** Los tipos que se ofrecen, con su prefijo ordinario (IG/IT) si el formulario lo tiene. */
+  opciones: readonly { area: AreaPersonal; prefijo: string | null }[];
+  /** Al editar, el tipo de la persona registrada: no se cambia (el identificador ya lo lleva). */
+  fijo: AreaPersonal | null;
+};
+
+/** «Inspector General - DMIP» → [«Inspector General», «DMIP»]: el tipo y su unidad, por separado. */
+const partesDeArea = (codigo: AreaPersonal): [string, string | null] => {
+  const [nombre, unidad] = NOMBRE_AREA[codigo].split(" - ");
+  return [nombre, unidad ?? null];
 };
 
 const SelectorPersonal: FC<SelectorPersonalProps> = ({
@@ -297,7 +350,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   onCambiarCantidad,
   bandejaSinTope = false,
   listaCompacta = false,
-  guardadoInmediato = false,
+  conGuardarCambios = false,
   ocultarEtiqueta = false,
   repartoEnCajon = false,
   repartoSubtitulo,
@@ -312,6 +365,12 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   faltaTrasIntento = false,
   idPersonaRechazada = null,
   cupo = null,
+  idsNuevos,
+  rotulosNuevos,
+  rotuloLectura,
+  detalleDePersona,
+  tipoUnico,
+  onReemplazar,
 }) => {
   // El verbo de las acciones de asignación: «Agregar» en el borrador del alta, «Asignar» al editar.
   const verboAsignar = horarioInline ? "Agregar" : "Asignar";
@@ -397,11 +456,8 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
 
   // ── Reparto de carga (2026-10-01) ────────────────────────────────────────────────
   // El modo solo cambia los TEXTOS del reparto; las acciones reusan onAgregar/onRetirar del selector.
-  const modoReparto: ModoReparto = guardadoInmediato
-    ? "inmediato"
-    : repartoEnCajon
-      ? "diferido"
-      : "borrador";
+  const modoReparto: ModoReparto =
+    conGuardarCambios || repartoEnCajon ? "diferido" : "borrador";
   const idsAgregados = useMemo(
     () => agregadas.map((persona) => persona.funcionarioId),
     [agregadas],
@@ -409,10 +465,13 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   const cuotaReparto = candidatos.find(
     (persona) => persona.cuotaJusta !== undefined,
   )?.cuotaJusta;
+  const filasReparto = useMemo(() => candidatos.map(filaDePersona), [candidatos]);
+
+
   // `RepartoCarga` agrega por id; el selector espera la persona completa.
   const agregarDesdeReparto = (id: number) => {
     const persona = candidatos.find((candidato) => candidato.id === id);
-    if (persona) onAgregar(persona);
+    if (persona) agregarUna(persona);
   };
   const cerrarReparto = () => setVerReparto(false);
   const volverDelReparto = () => {
@@ -462,6 +521,106 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   const [area, setArea] = useState<AreaPersonal | null>(null);
 
   /*
+    UN SOLO TIPO DE PERSONAL (2026-10-28). El tipo lo fija, en este orden: la persona registrada (al
+    editar), la persona elegida y, sin nadie, la opción marcada. Así nunca se contradicen la lista y
+    la franja de seleccionados. Cambiarlo con alguien elegido pide confirmar y la quita.
+  */
+  const [tipoMarcado, setTipoMarcado] = useState<AreaPersonal | null>(null);
+  const [tipoPorConfirmar, setTipoPorConfirmar] = useState<AreaPersonal | null>(null);
+  const idTipo = useId();
+  const tipo: AreaPersonal | null = tipoUnico
+    ? (tipoUnico.fijo ?? agregadas[0]?.area ?? tipoMarcado)
+    : null;
+  /** El filtro de área efectivo: el tipo elegido en ese modo; si no, la pestaña. */
+  const areaFiltro = tipoUnico ? tipo : area;
+  /** Sin tipo elegido no hay lista: solo el texto que pide elegirlo. */
+  const ocultarLista = Boolean(tipoUnico) && tipo === null;
+  /** La persona que «Reemplazar» sustituye: la elegida, en el modo de un solo tipo. */
+  const saliente = tipoUnico ? agregadas[0] : undefined;
+
+  /** «+ Agregar» o, con alguien elegido en el modo de un solo tipo, «Reemplazar». */
+  const aplicarEleccion = (persona: PersonaElegible) => {
+    if (!saliente) {
+      onAgregar(persona);
+      return;
+    }
+    if (onReemplazar) {
+      onReemplazar(saliente.funcionarioId, persona);
+      return;
+    }
+    onRetirar(saliente.funcionarioId);
+    onAgregar(persona);
+  };
+
+  /**
+   * CARGA ALTA ANTES DE AGREGAR (2026-10-30; reemplaza al aviso breve, que tapaba el pie del alta).
+   * «+ Agregar» o «Reemplazar» sobre alguien con «Carga Alta» NO agrega todavía: deja la elección
+   * pendiente y abre un `MensajeModal` advertencia con [Elegir a <sugerida>] · [Agregar igual] ·
+   * [Cancelar]. Es solo un aviso: «Agregar igual» siempre está y ninguna regla de elegibilidad
+   * cambia. «Completar con N de menor carga» y «Asignar visibles» no pasan por aquí.
+   *
+   * `via` recuerda qué botón se pulsó: «elegir» respeta el reemplazo del modo de un solo tipo;
+   * «agregar» suma sin más, como el «+ Agregar» de siempre.
+   */
+  const [pendienteCarga, setPendienteCarga] = useState<{
+    persona: PersonaElegible;
+    via: "agregar" | "elegir";
+  } | null>(null);
+  const aplicar = (persona: PersonaElegible, via: "agregar" | "elegir") => {
+    if (via === "elegir") aplicarEleccion(persona);
+    else onAgregar(persona);
+  };
+  const conAvisoDeCarga = (persona: PersonaElegible, via: "agregar" | "elegir") => {
+    if (pideConfirmarCarga(persona)) setPendienteCarga({ persona, via });
+    else aplicar(persona, via);
+  };
+  const agregarUna = (persona: PersonaElegible) => conAvisoDeCarga(persona, "agregar");
+  const sugeridaCarga = pendienteCarga
+    ? sugerenciaDeMenorCarga(pendienteCarga.persona, candidatos, idsAgregados)
+    : null;
+  const textosCarga = pendienteCarga
+    ? textoModalCargaAlta(pendienteCarga.persona, sugeridaCarga)
+    : null;
+  /** Resuelve el modal: agrega a quien se indique (o a nadie, con `null`) y lo cierra. */
+  const resolverCarga = (persona: PersonaElegible | null) => {
+    if (pendienteCarga && persona) aplicar(persona, pendienteCarga.via);
+    setPendienteCarga(null);
+  };
+  const modalCarga = pendienteCarga && textosCarga && (
+    <MensajeModal
+      variante="advertencia"
+      titulo={textosCarga.titulo}
+      mensaje={
+        <>
+          <span className="block">{textosCarga.mensaje}</span>
+          {textosCarga.sugerencia && (
+            <span className="mt-1 block font-medium text-app-strong">
+              {textosCarga.sugerencia}
+            </span>
+          )}
+        </>
+      }
+      textoPrincipal={
+        sugeridaCarga ? `Elegir a ${nombreDePersona(sugeridaCarga)}` : "Agregar igual"
+      }
+      onPrincipal={() =>
+        resolverCarga(sugeridaCarga ?? pendienteCarga.persona)
+      }
+      accionExtra={
+        sugeridaCarga
+          ? {
+              texto: "Agregar igual",
+              onClick: () => resolverCarga(pendienteCarga.persona),
+            }
+          : undefined
+      }
+      textoSecundario="Cancelar"
+      onSecundario={() => resolverCarga(null)}
+    />
+  );
+  const elegir = (persona: PersonaElegible) => conAvisoDeCarga(persona, "elegir");
+
+  /*
    * Cambiar el filtro —búsqueda o área— vuelve la caja a la primera página: la lista es
    * otra y quedarse en una página que ya no existe dejaría la vista en blanco. Se hace
    * en el propio manejador, no en un efecto, para no encadenar renders.
@@ -476,6 +635,23 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     setArea(siguiente);
     setPaginaCandidatos(0);
     setPaginaNoDisponibles(0);
+  };
+
+  const elegirTipo = (siguiente: AreaPersonal) => {
+    if (siguiente === tipo) return;
+    if (agregadas.length > 0) {
+      setTipoPorConfirmar(siguiente);
+      return;
+    }
+    setTipoMarcado(siguiente);
+    filtrarPorBusqueda("");
+  };
+
+  const confirmarCambioDeTipo = () => {
+    for (const persona of agregadas) onRetirar(persona.funcionarioId);
+    setTipoMarcado(tipoPorConfirmar);
+    setTipoPorConfirmar(null);
+    filtrarPorBusqueda("");
   };
 
   /**
@@ -532,7 +708,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     const texto = normalizar(busqueda);
 
     return disponibles
-      .filter((persona) => area === null || persona.area === area)
+      .filter((persona) => areaFiltro === null || persona.area === areaFiltro)
       .filter((persona) => {
         if (texto === "") return true;
 
@@ -556,7 +732,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
 
         return donde.includes(texto);
       });
-  }, [busqueda, area, disponibles]);
+  }, [busqueda, areaFiltro, disponibles]);
 
   /** Los que «Asignar visibles» agregaría: los de la lista que además pueden salir. */
   const asignables = useMemo(
@@ -589,7 +765,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     const primero = asignables[0];
     if (!primero) return;
 
-    onAgregar(primero);
+    elegir(primero);
     filtrarPorBusqueda("");
   };
 
@@ -701,13 +877,14 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
           Volver al operativo
         </Boton>
         <RepartoCarga
-          personas={candidatos}
+          personas={filasReparto}
           cuota={cuotaReparto}
           idsAgregados={idsAgregados}
           onAgregar={agregarDesdeReparto}
           onQuitar={onRetirar}
           modo={modoReparto}
         />
+        {modalCarga}
       </div>
     );
   }
@@ -734,7 +911,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
       onAccionLectura={cerrarReparto}
     >
       <RepartoCarga
-        personas={candidatos}
+        personas={filasReparto}
         cuota={cuotaReparto}
         idsAgregados={idsAgregados}
         onAgregar={agregarDesdeReparto}
@@ -788,9 +965,25 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             ? "Cupo completo"
             : null
       }
-      onClick={() => onAgregar(persona)}
+      onClick={() => agregarUna(persona)}
     >
       + {verboAsignar}
+    </Boton>
+  );
+
+  /** «Reemplazar» (2026-10-28): con una persona elegida en el modo de un solo tipo. */
+  const botonReemplazar = (persona: PersonaElegible) => (
+    <Boton
+      variante="secundario"
+      tamano="sm"
+      icono="cambiarZona"
+      className="shrink-0"
+      deshabilitado={deshabilitado}
+      motivoDeshabilitado={!persona.elegible ? (persona.motivo ?? "No disponible") : null}
+      title={saliente ? `Cambia a ${saliente.nombre} por ${nombreDePersona(persona)}` : undefined}
+      onClick={() => elegir(persona)}
+    >
+      Reemplazar
     </Boton>
   );
 
@@ -848,7 +1041,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             <p className="mt-0.5 text-xs text-warning">{persona.motivo}</p>
           )}
         </div>
-        {botonAgregar(persona)}
+        {saliente ? botonReemplazar(persona) : botonAgregar(persona)}
       </div>
     );
   };
@@ -893,7 +1086,11 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             className={`inline-flex items-center gap-1.5 text-sm font-semibold ${tonoContador}`}
           >
             <Iconos nombre={sinNadie ? "alerta" : "check"} />
-            {agregadas.length} de {totalEfectivos} efectivos
+            {tipoUnico
+              ? sinNadie
+                ? "Sin persona elegida"
+                : `${agregadas.length} ${agregadas.length === 1 ? "persona" : "personas"}`
+              : `${agregadas.length} de ${totalEfectivos} efectivos`}
             {sinNadie && faltaTrasIntento ? " · agregue al menos una persona" : ""}
           </span>
           <span className="flex items-center gap-2">
@@ -908,18 +1105,79 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             {botonRepartoPropioVisible}
           </span>
         </div>
-        {guardadoInmediato && (
-          <p
-            role="status"
-            className="text-xs text-app-muted"
-          >
-            Se guarda al instante: no necesita pulsar «Guardar cambios».
-          </p>
-        )}
         {repartoAparte}
+        {modalCarga}
         {listaDeHoras}
 
+        {/* TIPO DE PERSONAL (2026-10-28): obligatorio y sin «Todas»; al editar queda fijo. */}
+        {tipoUnico && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-xs font-semibold text-app-label">
+              1 · Tipo de personal <span aria-hidden="true">*</span>
+            </legend>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(tipoUnico.opciones.length > 0
+                ? tipoUnico.opciones
+                : areas.map(([codigo]) => ({ area: codigo, prefijo: null }))
+              ).map(({ area: codigo, prefijo }) => {
+                const [nombreTipo, unidad] = partesDeArea(codigo);
+                const marcado = tipo === codigo;
+                const tipoBloqueado = deshabilitado || tipoUnico.fijo !== null;
+                const cuantos = disponibles.filter(
+                  (persona) => persona.area === codigo && persona.elegible,
+                ).length;
+                const detalleTipo = [
+                  unidad,
+                  `${cuantos} ${cuantos === 1 ? "disponible" : "disponibles"}`,
+                  prefijo ? `identificador ${prefijo}-` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
+                  <label
+                    key={codigo}
+                    className={`flex items-start gap-2 rounded-box border p-3 ${
+                      marcado ? "border-primary bg-base-200" : "border-base-300"
+                    } ${tipoBloqueado ? "cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <input
+                      type="radio"
+                      name={idTipo}
+                      className="radio radio-primary radio-sm mt-0.5"
+                      checked={marcado}
+                      disabled={tipoBloqueado}
+                      onChange={() => elegirTipo(codigo)}
+                    />
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-sm font-semibold">{nombreTipo}</span>
+                      <span className="text-xs text-app-muted">{detalleTipo}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            {tipoUnico.fijo !== null && (
+              <p className="text-xs text-app-muted">
+                El tipo lo fija la persona registrada: el identificador ya lleva su prefijo.
+              </p>
+            )}
+            <p className="mt-1 text-xs font-semibold text-app-label">
+              2 · Persona <span aria-hidden="true">*</span>
+            </p>
+          </fieldset>
+        )}
+
+        {ocultarLista && (
+          <p
+            role="status"
+            className="rounded-box border border-dashed border-base-300 bg-base-200 p-3 text-sm text-app-muted"
+          >
+            Elija el tipo de personal para ver los disponibles
+          </p>
+        )}
+
         {/* SELECCIONADOS. */}
+        {!ocultarLista && (
         <div className="flex flex-col gap-2 rounded-box border border-dashed border-base-300 bg-base-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold text-app-label">
@@ -939,7 +1197,9 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
 
           {sinNadie ? (
             <p className="text-sm text-app-muted">
-              Aún no agrega personal. Use «+ Agregar» o «Completar con los de menor carga».
+              {tipoUnico
+                ? "Aún no elige a nadie. Use «+ Agregar» en la persona de la lista."
+                : "Aún no agrega personal. Use «+ Agregar» o «Completar con los de menor carga»."}
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
@@ -982,15 +1242,32 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                     <div
                       className={`grid ${conCantidad ? "grid-cols-3" : "grid-cols-2"} items-center gap-2`}
                     >
-                      <span
-                        className="badge badge-primary min-w-0 max-w-full"
-                        title={
-                          persona.telefono
-                            ? `${persona.nombre} · ${persona.telefono}`
-                            : persona.nombre
-                        }
-                      >
-                        <span className="min-w-0 truncate">{persona.nombre}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className="badge badge-primary min-w-0 max-w-full"
+                          title={
+                            persona.telefono
+                              ? `${persona.nombre} · ${persona.telefono}`
+                              : persona.nombre
+                          }
+                        >
+                          <span className="min-w-0 truncate">{persona.nombre}</span>
+                        </span>
+                        {idsNuevos?.has(persona.funcionarioId) && (
+                          <Insignia variante="info" className="shrink-0">
+                            {rotulosNuevos?.get(persona.funcionarioId) ?? "Nuevo"}
+                          </Insignia>
+                        )}
+                        {rotuloLectura && persona.editable === false && (
+                          <span className="shrink-0 text-xs text-app-muted">
+                            {rotuloLectura}
+                          </span>
+                        )}
+                        {detalleDePersona && (
+                          <span className="min-w-0 truncate text-xs text-app-muted">
+                            {detalleDePersona(persona)}
+                          </span>
+                        )}
                       </span>
 
                       <div className="flex min-w-0 items-center gap-2">
@@ -1102,6 +1379,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             </ul>
           )}
         </div>
+        )}
 
         {/* El rechazo que no es de una persona de la franja, y la confirmación, encima de la lista. */}
         {avisoRechazo && !rechazoEnPersona && (
@@ -1109,19 +1387,25 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         )}
         {confirmacion && <AvisoEnLinea variante="exito">{confirmacion}</AvisoEnLinea>}
 
-        {/* El buscador y «Completar con N de menor carga». */}
+        {/* El buscador y «Completar con N de menor carga» (este, no en el modo de un solo tipo). */}
+        {!ocultarLista && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
             id="busquedaPersonal"
             type="search"
             aria-label="Buscar personal"
             className="input input-bordered w-full"
-            placeholder="Buscar por apellido, unidad o cargo…"
+            placeholder={
+              tipo && tipoUnico
+                ? `Buscar ${partesDeArea(tipo)[0].toLocaleLowerCase("es")} por apellido o cargo…`
+                : "Buscar por apellido, unidad o cargo…"
+            }
             value={busqueda}
             disabled={deshabilitado}
             onChange={(e) => filtrarPorBusqueda(e.target.value)}
             onKeyDown={alTeclear}
           />
+          {!tipoUnico && (
           <Boton
             variante="secundario"
             tamano="sm"
@@ -1133,10 +1417,12 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
           >
             Completar con {nCompletar} de menor carga
           </Boton>
+          )}
         </div>
+        )}
 
         {/* PESTAÑAS DE UNIDAD solo si hay MÁS de una unidad; con una sola, filtrarían por nada. */}
-        {!cargando && areas.length > 1 && (
+        {!tipoUnico && !cargando && areas.length > 1 && (
           <div
             role="tablist"
             aria-label="Filtrar disponibles por unidad"
@@ -1171,13 +1457,24 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         )}
 
         {/* DISPONIBLES. */}
+        {!ocultarLista && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs text-app-muted">
-            <span className="font-semibold text-app-label">
-              Disponibles ({asignables.length})
-            </span>{" "}
-            · sugeridos primero, luego de menor a mayor carga
-          </p>
+          {tipoUnico && tipo ? (
+            <p className="text-xs text-app-muted">
+              <span className="font-semibold text-app-label">
+                {saliente ? "Otros disponibles" : "Disponibles"} ({asignables.length})
+              </span>{" "}
+              · {partesDeArea(tipo)[0]}
+              {saliente ? " · «Reemplazar» cambia a la persona elegida" : ""}
+            </p>
+          ) : (
+            <p className="text-xs text-app-muted">
+              <span className="font-semibold text-app-label">
+                Disponibles ({asignables.length})
+              </span>{" "}
+              · sugeridos primero, luego de menor a mayor carga
+            </p>
+          )}
           {cargando && (
             <p className="text-sm text-app-muted">Consultando personal disponible…</p>
           )}
@@ -1206,9 +1503,10 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             />
           )}
         </div>
+        )}
 
         {/* NO DISPONIBLES, plegado al final. */}
-        {!cargando && noDisponibles.length > 0 && (
+        {!ocultarLista && !cargando && noDisponibles.length > 0 && (
           <div className="flex flex-col gap-2">
             <Boton
               variante="enlace"
@@ -1246,17 +1544,24 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
           abierto={confirmandoQuitarTodos}
           variante="peligro"
           titulo={`¿Quitar a los ${retirables.length} asignados?`}
-          mensaje={
-            guardadoInmediato
-              ? "Se retiran todos del operativo. Este cambio se guarda al instante."
-              : "Se retiran todos del operativo. Puede volver a agregarlos antes de guardar."
-          }
+          mensaje="Se retiran todos del operativo. Puede volver a agregarlos antes de guardar."
           textoPrincipal="Quitar todos"
           onPrincipal={() => {
             quitarTodos();
             setConfirmandoQuitarTodos(false);
           }}
           onSecundario={() => setConfirmandoQuitarTodos(false)}
+        />
+
+        {/* Cambiar el tipo con alguien elegido (2026-10-28): se pregunta y se la quita. */}
+        <MensajeModal
+          abierto={tipoPorConfirmar !== null}
+          variante="advertencia"
+          titulo={tipoPorConfirmar ? `¿Cambiar a ${partesDeArea(tipoPorConfirmar)[0]}?` : ""}
+          mensaje={saliente ? `Se quitará a ${saliente.nombre}.` : ""}
+          textoPrincipal="Cambiar"
+          onPrincipal={confirmarCambioDeTipo}
+          onSecundario={() => setTipoPorConfirmar(null)}
         />
       </div>
     );
@@ -1335,6 +1640,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
       </div>
 
       {repartoAparte}
+      {modalCarga}
 
       {/*
         ═══════════════════════════════════════════════════════════════════════════════
@@ -1364,8 +1670,8 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
               Va acompañado del nombre completo, no solo, para que el `title` se sostenga
               por sí mismo al leerlo.
             */
+            <span key={persona.funcionarioId} className="flex min-w-0 items-center gap-1">
             <span
-              key={persona.funcionarioId}
               /*
                 `min-w-0` deja que el distintivo se encoja por debajo de su contenido
                 cuando un nombre largo excede la fila; sin él, el distintivo se saldría
@@ -1399,6 +1705,15 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                   {...propsRetirar(persona.funcionarioId)}
                 />
               )}
+            </span>
+            {idsNuevos?.has(persona.funcionarioId) && (
+              <Insignia variante="info" className="shrink-0">
+                {rotulosNuevos?.get(persona.funcionarioId) ?? "Nuevo"}
+              </Insignia>
+            )}
+            {rotuloLectura && persona.editable === false && (
+              <span className="shrink-0 text-xs text-app-muted">{rotuloLectura}</span>
+            )}
             </span>
           ))}
         </div>
@@ -1834,7 +2149,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                   // El motivo también en `title`: en una lista larga es lo que se lee al
                   // pasar por encima, sin tener que buscar la línea correspondiente.
                   title={persona.motivo ?? undefined}
-                  onClick={() => onAgregar(persona)}
+                  onClick={() => agregarUna(persona)}
                   className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-base-200"
                 >
                   {detalleCandidato(persona)}

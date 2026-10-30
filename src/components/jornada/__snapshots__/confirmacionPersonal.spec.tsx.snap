@@ -1,12 +1,13 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`P-13 · cajón estándar y reparto de carga (H7) > es un cajón de consulta: [Cerrar], sin «Guardar» 1`] = `
+exports[`P-13 · cajón estándar y reparto de carga (H7) > es un cajón estándar con [Cancelar] [Guardar cambios] (2026-10-28) 1`] = `
 {
   "ancho": "lg",
   "botonesPie": [
-    "Cerrar",
+    "Cancelar",
+    "Guardar cambios (apagado: Sin cambios)",
   ],
-  "estadoPie": "",
+  "estadoPie": "Sin cambios pendientes",
   "secciones": [],
   "subtitulo": "4. Patrulla ECU Diurna · 08H00 A 12H00",
   "titulo": "Personal de OCECU-001-02-SEP-2026",

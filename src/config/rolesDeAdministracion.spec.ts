@@ -107,7 +107,6 @@ describe("ruta y menú declaran los mismos permisos", () => {
   const CASOS: { ruta: string; permisos: string[] }[] = [
     { ruta: "administracion/personal", permisos: ["personal:administrar"] },
     { ruta: "administracion/flota", permisos: ["flota:administrar"] },
-    { ruta: "administracion/mantenimiento", permisos: ["flota:mantenimiento"] },
     // Rediseño de la DAF (2026-10-06): las dos pantallas nuevas, con el permiso de la flota.
     { ruta: "administracion/traslados", permisos: ["flota:administrar"] },
     { ruta: "administracion/turnos-conductores", permisos: ["flota:administrar"] },
@@ -115,7 +114,7 @@ describe("ruta y menú declaran los mismos permisos", () => {
     { ruta: "administracion/carga-inicial", permisos: ["carga-inicial:administrar"] },
     {
       ruta: "administracion/ventanas",
-      permisos: ["ventanas:administrar", "parametros:administrar"],
+      permisos: ["ventanas:administrar", "parametros:administrar", "jornadas:administrar"],
     },
   ];
 

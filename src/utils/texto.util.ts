@@ -3,10 +3,14 @@
  * Módulo: Cuadro de Colores
  * Feature: Transversal
  * Archivo: texto.util.ts
- * Responsabilidad: Utilidades de texto — comparar sin tildes ni mayúsculas, y capitalizar
- *   el día y el mes de una fecha en palabras para las cabeceras.
+ * Responsabilidad: Utilidades de texto — comparar sin tildes ni mayúsculas, la fecha del cuadro
+ *   en palabras y el horario legible de las cabeceras y las tablas.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-07
+ *
+ * PLANTILLA VISUAL (2026-10-24): `conDiaYMesEnMayuscula` se retiró. Capitalizaba la `fechaNatural`
+ * del servidor para los chips de la Jornada, la Matriz y Órdenes; ahora las cinco pantallas del
+ * cuadro dicen la fecha con `fechaEnPalabras`, a partir de la fecha `AAAA-MM-DD`.
  *
  * ESTABA REPETIDA EN DOS SITIOS, Y AL ESCRIBIR EL TERCERO SE EXTRAJO. `personal.util.ts`
  * y `listadoOperativos.util.ts` declaraban cada uno su `normalizar` idéntica. Tres copias
@@ -27,15 +31,24 @@ export const normalizar = (texto: string): string =>
     .trim();
 
 /**
- * Inicial en mayúscula de cada palabra salvo los conectores —«martes 8 de septiembre de
- * 2026» → «Martes 8 de Septiembre de 2026»—, para las cabeceras del cuadro. El servidor
- * entrega `fechaNatural` en minúscula, que es la norma del español; poner la mayúscula es
- * una preferencia de presentación del negocio y NO altera el dato: solo la vista cambia.
+ * LA FECHA EN UN SOLO FORMATO EN TODAS LAS PANTALLAS (plantilla visual, 2026-10-24): «Sábado 24 de
+ * octubre de 2026». Recibe la fecha del cuadro `AAAA-MM-DD` (sin hora, así que no hay zona que la
+ * corra de día) y solo pone en mayúscula la primera letra.
  */
-const CONECTORES_DE_FECHA = new Set(["de", "del", "y"]);
-export const conDiaYMesEnMayuscula = (fecha: string): string =>
-  fecha.replace(/\p{L}+/gu, (palabra) =>
-    CONECTORES_DE_FECHA.has(palabra.toLowerCase())
-      ? palabra
-      : palabra.charAt(0).toUpperCase() + palabra.slice(1),
-  );
+export const fechaEnPalabras = (fecha: string): string => {
+  const [anio, mes, dia] = fecha.split("-").map(Number);
+  if (!anio || !mes || !dia) return fecha;
+  const texto = new Intl.DateTimeFormat("es-EC", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+    .format(new Date(Date.UTC(anio, mes - 1, dia)))
+    .replace(",", "");
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+};
+
+/** «08H00 A 16H30» → «08H00 a 16H30»: la «a» siempre en minúscula (plantilla visual, 2026-10-24). */
+export const horarioLegible = (horario: string): string => horario.replace(/\s+A\s+/g, " a ");

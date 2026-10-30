@@ -10,10 +10,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * SUSTITUYE A `SelectorFormularioAdmin` (un `<select>` sin color). Rediseño del 2026-10-12.
  *
- * Todo lo que se ve debajo depende de esta elección, así que va arriba y destacado: 48 px, borde
- * del color primario y la barrita del COLOR DEL FORMULARIO. El color lo entrega el servidor
- * (`colorFondo`, regla 3) y nunca va solo: el número y el nombre se escriben siempre (regla 6).
- * Se usa `colorFondo` porque el acento es negro en los diez y no distingue a ninguno.
+ * Todo lo que se ve debajo depende de esta elección, así que va arriba y destacado. Desde el
+ * 2026-10-24 va BAJO EL TÍTULO de la página: rótulo en azul y mayúsculas, caja de 44 px con borde
+ * azul de 2 px y, pegado a su izquierda, el CUADRO del formulario (`CuadroFormulario`: su color y su
+ * número). El color lo entrega el servidor (`colorFondo`, regla 3) y nunca va solo: el número y el
+ * nombre se escriben siempre (regla 6). Se usa `colorFondo` porque el acento es negro en los diez.
  *
  * ES UN LISTBOX DE ARIA, NO UN `<select>`: un `<option>` no puede llevar la barrita de color.
  * Teclado: ↓/↑ abren y recorren, Inicio/Fin, Enter o Espacio eligen, Escape cierra y devuelve el
@@ -34,6 +35,7 @@ import {
 } from "react";
 
 import Iconos from "../common/Iconos.tsx";
+import CuadroFormulario from "../formularios/CuadroFormulario.tsx";
 import type { Formulario } from "../../interfaces/Formulario.ts";
 
 type SelectorFormularioCabeceraProps = {
@@ -42,15 +44,6 @@ type SelectorFormularioCabeceraProps = {
   onSeleccionar: (codigo: string) => void;
   deshabilitado?: boolean;
 };
-
-/** La barrita de color: decorativa, el nombre ya dice cuál es. */
-const Barrita: FC<{ color: string }> = ({ color }) => (
-  <span
-    aria-hidden="true"
-    className="inline-block h-5 w-1.5 shrink-0 rounded-full border border-base-300"
-    style={{ backgroundColor: color }}
-  />
-);
 
 const SelectorFormularioCabecera: FC<SelectorFormularioCabeceraProps> = ({
   formularios,
@@ -141,46 +134,48 @@ const SelectorFormularioCabecera: FC<SelectorFormularioCabeceraProps> = ({
   return (
     <div
       ref={contenedor}
-      className="relative flex w-full flex-col gap-1 md:w-96"
+      className="relative flex w-full flex-col gap-1.5 md:w-auto"
     >
       <span
         id={idEtiqueta}
-        className="text-app-label text-sm font-semibold"
+        className="text-xs font-bold uppercase tracking-wide text-[var(--app-msg-info-fg)]"
       >
         Formulario que está configurando
       </span>
-      <button
-        ref={boton}
-        type="button"
-        // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
-        className="btn h-12 w-full justify-between gap-3 border-2 border-primary bg-base-100 text-left font-semibold"
-        aria-haspopup="listbox"
-        aria-expanded={abierto}
-        aria-labelledby={`${idEtiqueta} ${idLista}-valor`}
-        aria-controls={abierto ? idLista : undefined}
-        aria-activedescendant={abierto ? idOpcion(activo) : undefined}
-        disabled={deshabilitado || formularios.length === 0}
-        onClick={() => (abierto ? setAbierto(false) : abrir())}
-        onKeyDown={alTeclear}
-      >
-        <span className="flex min-w-0 items-center gap-3">
-          {elegido && <Barrita color={elegido.colorFondo} />}
+      <span className="flex items-center gap-2">
+        {elegido && (
+          <CuadroFormulario numero={elegido.numero} colorFondo={elegido.colorFondo} tamano="lg" />
+        )}
+        <button
+          ref={boton}
+          type="button"
+          // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
+          className="btn h-11 w-full justify-between gap-3 rounded-lg border-2 border-[color:var(--app-msg-info-fg)] bg-base-100 text-left text-[0.9375rem] font-bold text-secondary shadow-sm md:w-[420px]"
+          aria-haspopup="listbox"
+          aria-expanded={abierto}
+          aria-labelledby={`${idEtiqueta} ${idLista}-valor`}
+          aria-controls={abierto ? idLista : undefined}
+          aria-activedescendant={abierto ? idOpcion(activo) : undefined}
+          disabled={deshabilitado || formularios.length === 0}
+          onClick={() => (abierto ? setAbierto(false) : abrir())}
+          onKeyDown={alTeclear}
+        >
           <span
             id={`${idLista}-valor`}
-            className="truncate"
+            className="min-w-0 truncate"
           >
             {elegido ? `${elegido.numero}. ${elegido.nombre}` : "Cargando formularios…"}
           </span>
-        </span>
-        <Iconos nombre="desplegar" />
-      </button>
+          <Iconos nombre="desplegar" />
+        </button>
+      </span>
 
       {abierto && (
         <ul
           id={idLista}
           role="listbox"
           aria-labelledby={idEtiqueta}
-          className="app-shell-surface absolute top-full right-0 z-30 mt-1 w-full rounded-md border border-base-300 bg-base-100 p-1 text-sm shadow-[0_20px_45px_rgba(15,23,42,0.20)]"
+          className="app-shell-surface absolute top-full left-0 z-30 mt-1 w-full rounded-md border border-base-300 bg-base-100 p-1 text-sm shadow-[0_20px_45px_rgba(15,23,42,0.20)]"
         >
           {formularios.map((formulario, indice) => {
             const esElegido = formulario.codigo === seleccionado;
@@ -198,7 +193,7 @@ const SelectorFormularioCabecera: FC<SelectorFormularioCabeceraProps> = ({
                 onMouseDown={(evento) => evento.preventDefault()}
                 onClick={() => elegir(indice)}
               >
-                <Barrita color={formulario.colorFondo} />
+                <CuadroFormulario numero={formulario.numero} colorFondo={formulario.colorFondo} />
                 <span className="min-w-0 flex-1">
                   {formulario.numero}. {formulario.nombre}
                 </span>

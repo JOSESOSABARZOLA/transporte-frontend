@@ -3,8 +3,8 @@
  * Módulo: Cuadro de Colores
  * Feature: Órdenes de servicio
  * Archivo: EditorPlantillaOrden.tsx
- * Responsabilidad: Editar la plantilla ÚNICA de la orden de servicio a pantalla completa, con la
- *                  vista previa EN VIVO del PDF real a la derecha.
+ * Responsabilidad: Editar los TRES formatos de la orden de servicio (uno por departamento) a
+ *                  pantalla completa, con la vista previa EN VIVO del PDF real a la derecha.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-01
  *
@@ -33,6 +33,11 @@
  * datos de la orden salen como marcadores grises). Si la vista previa falla, el aviso va DENTRO de su
  * panel con «Reintentar» y no bloquea el editor; el banner rojo global queda solo para cargar o
  * guardar la plantilla, diciendo QUÉ falló y con su código de seguimiento.
+ *
+ * UN FORMATO POR DEPARTAMENTO (2026-10-27). Arriba, las pestañas DMIT · Instrucción / DMIP · Unidad
+ * de Operativos / DMIP · Inspecciones Técnicas y Generales: cada una con sus datos generales, su tabla
+ * de control, sus apartados y su versión. La vista previa es la del formato elegido. Cambiar de
+ * pestaña con cambios sin guardar pregunta «¿Descartar cambios?». Guardar uno no toca los otros.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -48,12 +53,15 @@ import {
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 import Boton from "../common/Boton.tsx";
 import MensajeModal from "../common/MensajeModal.tsx";
+import Pestanas from "../common/Pestanas.tsx";
 import VisorPdf from "./VisorPdf.tsx";
 import type {
   Apartado,
   DatosGeneralesPlantilla,
+  DepartamentoFormato,
   TipoApartado,
 } from "../../interfaces/Documento.ts";
+import { FORMATOS_ORDEN } from "../../utils/ordenes.util.ts";
 import { DocumentoService } from "../../services/documento.service.ts";
 import { esCancelacion, presentarError } from "../../utils/errorApi.util.ts";
 import { useUser } from "../../hooks/useUser.ts";
@@ -194,9 +202,16 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
   const { user } = useUser();
   // F23: el firmante es el Director en sesión; se muestra en la barra para que quede claro.
   const esDirector = user?.rolCodes.includes("DIRECTOR") ?? false;
+  // El FORMATO que se edita (2026-10-27): la primera pestaña al abrir.
+  const [departamento, setDepartamento] = useState<DepartamentoFormato>(
+    FORMATOS_ORDEN[0].departamento,
+  );
+  // La pestaña elegida mientras hay cambios sin guardar: espera a «Descartar».
+  const [pestanaPendiente, setPestanaPendiente] =
+    useState<DepartamentoFormato | null>(null);
   const [apartados, setApartados] = useState<Apartado[]>([]);
   const [original, setOriginal] = useState<Apartado[]>([]);
-  // Versión de la plantilla del Director en sesión (2026-10-05): sube en cada «Guardar plantilla».
+  // Versión del formato elegido: sube en cada «Guardar plantilla» (0 = aún sin configurar).
   const [version, setVersion] = useState<number | null>(null);
   // Datos generales del Director (2026-10-02): se cargan y guardan con la plantilla; «original» es lo
   // que vino del servidor, para detectar cambios y para no marcar «cambios sin guardar» falsos.
@@ -237,7 +252,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
       setCargando(true);
       setErrorCarga(null);
       try {
-        const plantilla = await DocumentoService.obtenerPlantilla();
+        const plantilla = await DocumentoService.obtenerPlantilla(departamento);
         if (vigente) {
           setApartados(plantilla.apartados);
           setOriginal(plantilla.apartados);
@@ -294,10 +309,10 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
     return () => {
       vigente = false;
     };
-    // Al montar y en cada «Reintentar»: el nombre del Director en sesión es estable mientras el
-    // editor está abierto, así que la sugerencia del firmante no re-dispara la carga.
+    // Al montar, en cada «Reintentar» y al cambiar de formato: el nombre del Director en sesión es
+    // estable mientras el editor está abierto, así que la sugerencia del firmante no re-dispara la carga.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intentoCarga]);
+  }, [intentoCarga, departamento]);
 
   const hayCambios = useMemo(
     () =>
@@ -331,6 +346,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
     };
     const temporizador = setTimeout(() => {
       void DocumentoService.previsualizarPlantilla(
+        departamento,
         borrador.apartados,
         borrador.datosGenerales,
         controlador.signal,
@@ -353,7 +369,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
       clearTimeout(temporizador);
       controlador.abort();
     };
-  }, [claveBorrador, cargando, errorCarga, intentoPreview]);
+  }, [claveBorrador, cargando, errorCarga, intentoPreview, departamento]);
 
   /**
    * Datos GENERALES sin completar (D17): los que están vacíos y el documento usa —porque la
@@ -476,6 +492,7 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
     setErrorGuardar(null);
     try {
       const guardada = await DocumentoService.guardarPlantilla(
+        departamento,
         apartados,
         datosGenerales,
       );
@@ -491,6 +508,20 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
       setGuardando(false);
     }
   };
+
+  /** Cambia de formato; con cambios sin guardar, primero pregunta. */
+  const elegirFormato = (destino: DepartamentoFormato): void => {
+    if (destino === departamento) return;
+    if (hayCambios) {
+      setPestanaPendiente(destino);
+      return;
+    }
+    setDepartamento(destino);
+  };
+
+  const nombreDelFormato =
+    FORMATOS_ORDEN.find((formato) => formato.departamento === departamento)
+      ?.nombre ?? "";
 
   const intentarSalir = (): void => {
     if (hayCambios) {
@@ -528,8 +559,9 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
             </span>
           )}
           <p className="text-xs text-app-muted">
-            Es TU plantilla: tus órdenes se generan con ella. Guardar la aplica a
-            tus borradores; las órdenes vigentes no cambian.
+            Formato de {nombreDelFormato}: lo usan las órdenes del personal de esa
+            área. Guardar lo aplica a sus borradores; las órdenes vigentes no
+            cambian.
           </p>
           {user && (
             <p className="text-xs font-medium text-base-content">
@@ -567,6 +599,17 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
           </Boton>
         </div>
       </div>
+
+      {/* LOS TRES FORMATOS (2026-10-27): la vista previa y lo que se guarda son del elegido. */}
+      <Pestanas
+        etiqueta="Formato de la orden"
+        pestanas={FORMATOS_ORDEN.map((formato) => ({
+          id: formato.departamento,
+          titulo: formato.nombre,
+        }))}
+        activa={departamento}
+        onElegir={elegirFormato}
+      />
 
       {/*
         BANNER GLOBAL: solo para cargar o guardar la plantilla, diciendo QUÉ falló, con el mensaje del
@@ -1117,6 +1160,20 @@ const EditorPlantillaOrden: FC<EditorPlantillaOrdenProps> = ({ onVolver }) => {
           onVolver();
         }}
         onSecundario={() => setConfirmandoSalir(false)}
+      />
+
+      <MensajeModal
+        abierto={pestanaPendiente !== null}
+        variante="peligro"
+        titulo="¿Descartar cambios?"
+        mensaje={`Se perderá lo editado en el formato de ${nombreDelFormato}. Las órdenes ya emitidas no se ven afectadas.`}
+        textoPrincipal="Descartar"
+        textoSecundario="Seguir editando"
+        onPrincipal={() => {
+          if (pestanaPendiente) setDepartamento(pestanaPendiente);
+          setPestanaPendiente(null);
+        }}
+        onSecundario={() => setPestanaPendiente(null)}
       />
     </section>
   );

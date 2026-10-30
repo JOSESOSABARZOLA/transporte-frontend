@@ -296,6 +296,28 @@ describe("cabecera · formulario que se está configurando", () => {
     expect(screen.queryByText("AMC")).toBeNull();
   });
 
+  it("el selector va bajo el título con el cuadro de color y número, y las áreas en la misma línea", async () => {
+    abrirPantalla();
+    await screen.findByText("Zonal Calderón");
+
+    const encabezado = screen.getByRole("heading", { level: 1, name: "Catálogos del cuadro" }).closest("header") as HTMLElement;
+    expect(
+      within(encabezado).getByText("Opciones que verá el registro de operativos. Cada formulario tiene las suyas."),
+    ).toBeInTheDocument();
+    const selector = within(encabezado).getByRole("button", { name: /Formulario que está configurando/ });
+    // El cuadro del formulario, pegado al selector: su número sobre su color (regla 3: lo da el servidor).
+    const cuadro = selector.previousElementSibling as HTMLElement;
+    expect(cuadro).toHaveTextContent("1");
+    expect(cuadro.style.backgroundColor).not.toBe("");
+    // Las áreas, en línea y sin el panel azul aparte.
+    const areas = within(encabezado).getByRole("group", { name: "Áreas de personal admitidas" });
+    expect(within(areas).getByRole("button", { name: /Cambiar/ })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Áreas de personal admitidas" })).toBeNull();
+
+    await elegirFormulario(/2. Control de Punto/);
+    await waitFor(() => expect((selector.previousElementSibling as HTMLElement).textContent).toBe("2"));
+  });
+
   it("al cambiar de formulario se limpia la búsqueda y se cierran los acordeones", async () => {
     abrirPantalla();
     await waitFor(() =>
@@ -340,23 +362,48 @@ describe("cabecera · formulario que se está configurando", () => {
   });
 });
 
-describe("pestañas y contadores", () => {
-  it("cada pestaña dice cuántos activos tiene, y las flechas cambian de pestaña", async () => {
+describe("pestañas en la cabecera azul, sin contadores (plantilla visual, 2026-10-24)", () => {
+  it("las pestañas van en la cabecera, sin número, y las flechas cambian de pestaña", async () => {
     abrirPantalla();
     await screen.findByText("Zonal Calderón");
 
-    const puntos = screen.getByRole("tab", { name: /Puntos de encuentro y zonales/ });
-    expect(within(puntos).getByText("3")).toBeInTheDocument(); // 3 puntos activos
+    const cabecera = screen.getByRole("tablist").closest(".app-section-header") as HTMLElement;
+    expect(cabecera).not.toBeNull();
+    const puntos = screen.getByRole("tab", { name: "Puntos de encuentro y zonales" });
+    expect(puntos.textContent).toBe("Puntos de encuentro y zonales");
     expect(puntos).toHaveAttribute("aria-selected", "true");
-    // Con el interruptor encendido (por omisión) cuenta las zonales con puntos.
-    expect(screen.getByText("4 zonales con puntos · 3 de 5 puntos activos")).toBeInTheDocument();
+    // Sin «N zonales con puntos · X de Y puntos activos».
+    expect(screen.queryByText(/puntos activos/)).toBeNull();
 
     puntos.focus();
     await userEvent.keyboard("{ArrowRight}");
-    const tipos = screen.getByRole("tab", { name: /Tipos de control/ });
+    const tipos = screen.getByRole("tab", { name: "Tipos de control" });
     expect(tipos).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("2 de 2")).toBeInTheDocument();
+    // Sin «X de Y».
+    expect(screen.queryByText("2 de 2")).toBeNull();
     expect(screen.getByText("CONTROL ESPACIO PÚBLICO")).toBeInTheDocument();
+    expect(
+      within(cabecera).getByRole("button", { name: "+ Nuevo tipo de control" }),
+    ).toBeInTheDocument();
+  });
+
+  it("las altas de puntos van en la cabecera: zonal en primario y punto en secundario", async () => {
+    abrirPantalla();
+    await screen.findByText("Zonal Calderón");
+
+    const cabecera = screen.getByRole("tablist").closest(".app-section-header") as HTMLElement;
+    const zonal = within(cabecera).getByRole("button", { name: "+ Nueva zonal" });
+    const punto = within(cabecera).getByRole("button", { name: "+ Nuevo punto de encuentro" });
+    expect(zonal.className).toContain("app-boton-barra-primario");
+    expect(punto.className).toContain("app-boton-barra-secundario");
+    expect(punto.className).not.toContain("btn-outline");
+    // El buscador, ancho, en la barra blanca; la nota de eliminar, al pie del panel.
+    expect(screen.getByRole("searchbox", { name: /Buscar zonal o punto/ }).className).toContain(
+      "min-w-[320px]",
+    );
+    expect(
+      screen.getByText(/Solo se puede eliminar un valor que nunca se usó/).closest("[data-nota-panel]"),
+    ).not.toBeNull();
   });
 });
 
@@ -372,12 +419,35 @@ describe("acordeón de zonales", () => {
     expect(screen.queryByText("Estación Quitumbe")).toBeNull();
   });
 
-  it("cada zonal dice sus puntos activos", async () => {
+  it("la zonal ya no lleva el contador «X de N puntos activos» (plantilla visual)", async () => {
     abrirPantalla();
     await screen.findByText("Zonal Calderón");
 
-    expect(screen.getByText("1 de 2 puntos activos")).toBeInTheDocument();
-    expect(screen.getByText("0 de 1 puntos activos")).toBeInTheDocument();
+    expect(screen.queryByText("1 de 2 puntos activos")).toBeNull();
+    expect(screen.queryByText(/de \d+ puntos activos/)).toBeNull();
+  });
+
+  it("«+ Punto» lleva el icono «+» y el texto «Punto» (sin el signo repetido)", async () => {
+    abrirPantalla();
+    await screen.findByText("Zonal Calderón");
+
+    const fila = cabeceraDe("Zonal Calderón").closest("li") as HTMLElement;
+    const agregar = within(fila).getByRole("button", { name: "Agregar punto a Zonal Calderón" });
+    expect(agregar.textContent).toBe("Punto");
+    expect(screen.queryByText(/\+ \+ Punto/)).toBeNull();
+  });
+
+  it("en una zonal desactivada, «+ Punto» se apaga con su motivo", async () => {
+    abrirPantalla({
+      zonales: [CALDERON, { ...QUITUMBE, activo: false }, ELOY, TUMBACO, DMQ],
+    });
+    await screen.findByText("Zonal Quitumbe");
+
+    const fila = cabeceraDe("Zonal Quitumbe").closest("li") as HTMLElement;
+    const agregar = within(fila).getByRole("button", { name: "Agregar punto a Zonal Quitumbe" });
+    expect(agregar).toHaveAttribute("aria-disabled", "true");
+    expect(agregar).toHaveAccessibleDescription("Active la zonal para agregarle puntos.");
+    expect(within(fila).getByRole("button", { name: "Reactivar Zonal Quitumbe" })).toBeInTheDocument();
   });
 
   it("la tabla de puntos ya no lleva la columna «Formularios»", async () => {
@@ -452,19 +522,22 @@ describe("acordeón de zonales", () => {
     expect(container.querySelectorAll('[data-chevron="abierto"]')).toHaveLength(2);
   });
 
-  it("una zonal con puntos (DMQ incluido) muestra Editar y ⋮, con Eliminar apagado y su motivo", async () => {
+  it("una zonal con puntos (DMQ incluido): [Editar] [+ Punto] [Desactivar] [Eliminar] visibles, sin ⋮", async () => {
     abrirPantalla();
     await screen.findByText("DMQ");
 
     const fila = cabeceraDe("DMQ").closest("li") as HTMLElement;
-    expect(within(fila).getByRole("button", { name: /Agregar un punto a/ })).toBeInTheDocument();
+    expect(within(fila).getByRole("button", { name: "Agregar punto a DMQ" })).toBeInTheDocument();
     expect(within(fila).getByRole("button", { name: /^Editar/ })).toBeInTheDocument();
+    // Desactivar es un botón visible, no una opción de menú; y no hay «⋮».
+    expect(within(fila).getByRole("button", { name: "Desactivar DMQ" })).toHaveTextContent("Desactivar");
+    expect(screen.queryByTitle("Más acciones de DMQ")).toBeNull();
+    expect(within(fila).queryByRole("button", { name: /Más acciones/ })).toBeNull();
 
-    await userEvent.click(screen.getByTitle("Más acciones de DMQ"));
-    expect(await screen.findByRole("button", { name: "Desactivar zonal" })).toBeInTheDocument();
-    const eliminar = screen.getByRole("button", { name: "Eliminar" });
+    const eliminar = within(fila).getByRole("button", { name: "Eliminar DMQ" });
+    expect(eliminar).toHaveTextContent("Eliminar");
     expect(eliminar).toHaveAttribute("aria-disabled", "true");
-    expect(eliminar).toHaveAttribute("title", "Tiene puntos: elimínelos o desactive la zonal.");
+    expect(eliminar).toHaveAccessibleDescription("Tiene puntos: elimínelos o desactive la zonal.");
 
     await userEvent.click(eliminar);
     expect(screen.queryByText(/se borra definitivamente/)).toBeNull();
@@ -507,8 +580,7 @@ describe("acordeón de zonales", () => {
     abrirPantalla();
     await screen.findByText("Zonal Quitumbe");
 
-    await userEvent.click(screen.getByTitle("Más acciones de Zonal Quitumbe"));
-    await userEvent.click(await screen.findByRole("button", { name: "Desactivar zonal" }));
+    await userEvent.click(screen.getByRole("button", { name: "Desactivar Zonal Quitumbe" }));
 
     expect(
       await screen.findByText(
@@ -569,12 +641,13 @@ describe("interruptor «Solo zonales con puntos en este formulario»", () => {
     expect(
       screen.getByRole("checkbox", { name: "Solo zonales con puntos en este formulario" }),
     ).not.toBeChecked();
-    expect(screen.getByText("5 zonales · 3 de 5 puntos activos")).toBeInTheDocument();
     expect(screen.getByText(/1 zonal no tiene puntos en este formulario/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Ocultarlas" }));
     await waitFor(() => expect(screen.queryByText("Zonal Tumbaco")).toBeNull());
-    expect(screen.getByText("4 zonales con puntos · 3 de 5 puntos activos")).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Solo zonales con puntos en este formulario" }),
+    ).toBeChecked();
   });
 
   it("la búsqueda respeta el interruptor y el estado se conserva al cambiar de pestaña", async () => {
@@ -644,14 +717,21 @@ describe("llegada desde Formularios del cuadro · ?formulario=…&areas=abierto"
 });
 
 describe("fila tipo · estándar de botones", () => {
-  it("[✎ Editar] [⊘ Desactivar] [⋮], de 32 px; Desactivar es peligro (rojo), no ámbar", async () => {
+  it("[✎ Editar] [⊘ Desactivar] [🗑 Eliminar] con su rótulo, de 32 px y sin ⋮; Desactivar es peligro", async () => {
     abrirPantalla();
     await screen.findByText("Zonal Calderón");
     await userEvent.click(screen.getByRole("tab", { name: /Tipos de control/ }));
 
     const fila = screen.getByText("CONTROL LIBADORES").closest("tr") as HTMLElement;
     const botones = within(fila).getAllByRole("button");
-    expect(botones.map((boton) => boton.textContent)).toEqual(["Editar", "Desactivar", ""]);
+    // Modo texto (2026-10-24): se lee el rótulo; el nombre accesible lleva el registro.
+    expect(botones.map((boton) => boton.textContent)).toEqual(["Editar", "Desactivar", "Eliminar"]);
+    expect(botones.map((boton) => boton.getAttribute("aria-label"))).toEqual([
+      "Editar CONTROL LIBADORES",
+      "Desactivar CONTROL LIBADORES",
+      "Eliminar CONTROL LIBADORES",
+    ]);
+    expect(within(fila).getByText("Activo")).toHaveClass("badge-success", "rounded-full");
     expect(botones[1].className).toContain("btn-error");
     expect(botones[1].className).not.toContain("btn-warning");
     botones.forEach((boton) => expect(boton.className).toContain("btn-sm"));
@@ -669,21 +749,14 @@ describe("eliminar · apagado con el motivo cuando el valor ya se usó", () => {
     await screen.findByText("Zonal Calderón");
     await userEvent.click(screen.getByRole("tab", { name: /Tipos de control/ }));
 
-    // «Eliminar» vive en el «⋮» (estándar de botones), apagado con el motivo del servidor.
-    await userEvent.click(
-      screen.getByRole("button", { name: "Más acciones de CONTROL ESPACIO PÚBLICO" }),
-    );
-    const usado = screen.getByRole("button", { name: "Eliminar" });
+    // «Eliminar» visible (2026-10-24), apagado con el motivo del servidor en su tooltip.
+    const usado = screen.getByRole("button", { name: "Eliminar CONTROL ESPACIO PÚBLICO" });
     expect(usado).toHaveAttribute("aria-disabled", "true");
-    expect(usado).toHaveAttribute("title", "Ya se usó en cuadros: solo puede desactivarse.");
+    expect(usado).toHaveAccessibleDescription("Ya se usó en cuadros: solo puede desactivarse.");
     await userEvent.click(usado);
     expect(screen.queryByText(/se borra definitivamente/)).toBeNull();
-    await userEvent.keyboard("{Escape}");
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Más acciones de CONTROL LIBADORES" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Eliminar CONTROL LIBADORES" }));
     expect(
       await screen.findByText("Nunca se usó en un cuadro, así que se borra definitivamente."),
     ).toBeInTheDocument();
@@ -873,7 +946,9 @@ describe("cajón de alta y edición", () => {
     await screen.findByText("Zonal Quitumbe");
 
     const filaQuitumbe = cabeceraDe("Zonal Quitumbe").closest("li") as HTMLElement;
-    await userEvent.click(within(filaQuitumbe).getByRole("button", { name: /Agregar un punto a/ }));
+    await userEvent.click(
+      within(filaQuitumbe).getByRole("button", { name: "Agregar punto a Zonal Quitumbe" }),
+    );
 
     const cajon = await screen.findByRole("dialog", { name: "Nuevo punto de encuentro" });
     expect(

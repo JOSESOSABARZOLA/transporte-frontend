@@ -21,6 +21,14 @@
  * ya se consume en P-04, es exclusivo del `DIRECTOR` y trae de cada fila justo lo que hace
  * falta: su identificador, su personal —para el caso 4— y el estado del cuadro. Pedirla
  * por `GET /operativos` habría traído lo mismo con un contrato más y sin el estado.
+ *
+ * PLANTILLA VISUAL (2026-10-24). El encabezado es `EncabezadoPagina`: el antetítulo es el módulo,
+ * el perfil de la sesión va como chip (decía «Dirección» fijo), los chips van en el orden de todas
+ * las pantallas —código · fecha en palabras · semana · estado— y la «Fecha del cuadro» y «Editar
+ * plantilla» pasan a la derecha. La tabla va en `PanelTabla`: «Emitir pendientes» sigue en la
+ * cabecera azul, y el avance («X de Y con todas sus órdenes vigentes») y los distintivos por estado
+ * bajan a la barra blanca. Cada fila dice su identificador en monoespaciada, a la izquierda, y sus
+ * acciones son botones de icono con su tooltip (`BotonIcono`).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +38,11 @@ import { useSearchParams } from "react-router-dom";
 import MensajeModal from "../components/common/MensajeModal.tsx";
 import DrawerOperativo from "../components/cuadro/DrawerOperativo.tsx";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
+import { BotonIcono } from "../components/common/AccionesFila.tsx";
 import Boton from "../components/common/Boton.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
+import { useUser } from "../hooks/useUser.ts";
 import { macroSegunTipo } from "../utils/tipoTransporte.util.ts";
 import { MS_RESALTADO } from "../utils/listadoOperativos.util.ts";
 import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
@@ -50,18 +62,23 @@ import {
 } from "../utils/valoresOperativo.util.ts";
 import { colorEstado } from "../config/env.ts";
 import { nombreEstadoCuadro } from "../interfaces/CuadroDiario.ts";
-import type { Matriz, OrdenServicio } from "../interfaces/Documento.ts";
+import type {
+  Matriz,
+  OrdenServicio,
+  SinFormatoOrden,
+} from "../interfaces/Documento.ts";
 import { DocumentoService } from "../services/documento.service.ts";
 import { avisoDeFallo, presentarError, varianteDeAviso, type AvisoTexto } from "../utils/errorApi.util.ts";
 import { turnoDePrimera } from "../utils/personal.util.ts";
 import { fechaDeJornadaPorDefecto } from "../utils/jornada.util.ts";
-import { conDiaYMesEnMayuscula } from "../utils/texto.util.ts";
+import { fechaEnPalabras, horarioLegible } from "../utils/texto.util.ts";
 import {
   motivoParaNoEmitir,
   operativosDeLaMatriz,
   contarEstados,
   partesResumenCabecera,
   resumenEstado,
+  textoSinFormato,
   type OperativoEmisible,
 } from "../utils/ordenes.util.ts";
 import { mensaje, toast } from "../utils/mensaje.ts";
@@ -117,7 +134,7 @@ const OrdenesServicioPage = () => {
    * ¿A la plantilla PROPIA le faltan datos generales? (punto 5). `null` mientras no se sabe o si
    * falló la consulta: el aviso es una ayuda, no bloquea la página.
    */
-  const [plantillaIncompleta, setPlantillaIncompleta] = useState<boolean | null>(
+  const [formatosIncompletos, setFormatosIncompletos] = useState<string[] | null>(
     null,
   );
 
@@ -266,29 +283,36 @@ const OrdenesServicioPage = () => {
     // `recargaOrdenes` re-pide la lista al volver del editor de plantilla (H35).
   }, [operativos, recargaOrdenes]);
 
-  // La plantilla PROPIA del Director en sesión (la crea el servidor desde la base si no existe): si le
-  // faltan datos generales, la página lo avisa con un acceso directo al editor. Un fallo aquí no
-  // bloquea nada: simplemente no se muestra el aviso.
+  // LOS TRES FORMATOS (2026-10-27): si a alguno le faltan datos generales —o aún no se guardó—, la
+  // página lo avisa nombrándolo, con un acceso directo al editor. Un fallo aquí no bloquea nada:
+  // simplemente no se muestra el aviso.
   useEffect(() => {
     let vigente = true;
-    DocumentoService.obtenerPlantilla()
-      .then((plantilla) => {
+    DocumentoService.listarPlantillas()
+      .then((formatos) => {
         if (!vigente) return;
-        const dg = plantilla.datosGenerales;
-        setPlantillaIncompleta(
-          [
-            dg.direccionResponsable,
-            dg.numeroMemorando,
-            dg.fechaMemorando,
-            dg.designado,
-            dg.firmante,
-            dg.firmanteCargo,
-            dg.firmanteDependencia,
-          ].some((valor) => (valor ?? "").trim() === ""),
+        setFormatosIncompletos(
+          formatos
+            .filter((formato) => {
+              const dg = formato.datosGenerales;
+              return (
+                !formato.configurado ||
+                [
+                  dg.direccionResponsable,
+                  dg.numeroMemorando,
+                  dg.fechaMemorando,
+                  dg.designado,
+                  dg.firmante,
+                  dg.firmanteCargo,
+                  dg.firmanteDependencia,
+                ].some((valor) => (valor ?? "").trim() === "")
+              );
+            })
+            .map((formato) => formato.nombre),
         );
       })
       .catch(() => {
-        if (vigente) setPlantillaIncompleta(null);
+        if (vigente) setFormatosIncompletos(null);
       });
     return () => {
       vigente = false;
@@ -554,7 +578,8 @@ const OrdenesServicioPage = () => {
     setEmitiendo(true);
 
     try {
-      const nuevas = await DocumentoService.emitirOrdenes(seleccionado.id);
+      const { ordenes: nuevas, sinFormato } =
+        await DocumentoService.emitirOrdenes(seleccionado.id);
       setEmitidas(nuevas);
       setOrdenesPorOperativo((previo) => ({
         ...previo,
@@ -566,20 +591,28 @@ const OrdenesServicioPage = () => {
       const borradores = nuevas.filter(
         (orden) => orden.faltantes.length > 0,
       ).length;
-      // Un HITO (M7): modal de éxito.
-      void mensaje.exito({
-        titulo: `${nuevas.length === 1 ? "Orden emitida" : "Órdenes emitidas"} para ${seleccionado.identificador}`,
-        mensaje: `Se ${nuevas.length === 1 ? "emitió" : "emitieron"} ${nuevas.length} ${
-          nuevas.length === 1 ? "orden" : "órdenes"
-        }, una por funcionario.${
-          borradores > 0
-            ? ` ${borradores} ${
-                borradores === 1 ? "quedó" : "quedaron"
-              } en borrador por datos faltantes.`
-            : ""
-        }`,
-        textoPrincipal: "Aceptar",
-      });
+      // Un HITO (M7): modal de éxito; con alguien sin formato (2026-10-27), advertencia con el aviso.
+      const resumen = `Se ${nuevas.length === 1 ? "emitió" : "emitieron"} ${nuevas.length} ${
+        nuevas.length === 1 ? "orden" : "órdenes"
+      }, una por funcionario.${
+        borradores > 0
+          ? ` ${borradores} ${
+              borradores === 1 ? "quedó" : "quedaron"
+            } en borrador por datos faltantes.`
+          : ""
+      }`;
+      if (sinFormato.length > 0) {
+        void mensaje.advertencia({
+          titulo: `Órdenes de ${seleccionado.identificador} con avisos`,
+          mensaje: `${resumen} ${textoSinFormato(sinFormato)}`,
+        });
+      } else {
+        void mensaje.exito({
+          titulo: `${nuevas.length === 1 ? "Orden emitida" : "Órdenes emitidas"} para ${seleccionado.identificador}`,
+          mensaje: resumen,
+          textoPrincipal: "Aceptar",
+        });
+      }
       // Si falla, lanza: el error queda en el modal de la confirmación.
     } finally {
       setEmitiendo(false);
@@ -604,10 +637,13 @@ const OrdenesServicioPage = () => {
     let borradoresTotales = 0;
     const noGeneradas: OperativoEmisible[] = [];
     const nuevasPorOperativo: Record<number, OrdenServicio[]> = {};
+    const sinFormatoTotales: SinFormatoOrden[] = [];
 
     for (const operativo of pendientes) {
       try {
-        const nuevas = await DocumentoService.emitirOrdenes(operativo.id);
+        const { ordenes: nuevas, sinFormato } =
+          await DocumentoService.emitirOrdenes(operativo.id);
+        sinFormatoTotales.push(...sinFormato);
         operativosOk += 1;
         ordenesTotales += nuevas.length;
         borradoresTotales += nuevas.filter(
@@ -631,7 +667,17 @@ const OrdenesServicioPage = () => {
       setEmitidas(nuevasPorOperativo[seleccionado.id]);
     }
 
-    if (noGeneradas.length === 0) {
+    if (noGeneradas.length === 0 && sinFormatoTotales.length > 0) {
+      // Alguien quedó sin orden por falta de formato (2026-10-27): advertencia con el aviso.
+      void mensaje.advertencia({
+        titulo: "Órdenes emitidas con avisos",
+        mensaje: `Se emitieron ${ordenesTotales} ${
+          ordenesTotales === 1 ? "orden" : "órdenes"
+        } de ${operativosOk} ${
+          operativosOk === 1 ? "operativo" : "operativos"
+        }. ${textoSinFormato(sinFormatoTotales)}`,
+      });
+    } else if (noGeneradas.length === 0) {
       // Un HITO (M7): modal de éxito.
       void mensaje.exito({
         titulo: "Órdenes emitidas",
@@ -664,7 +710,8 @@ const OrdenesServicioPage = () => {
       setReintentandoId(operativo.id);
 
       try {
-        const nuevas = await DocumentoService.emitirOrdenes(operativo.id);
+        const { ordenes: nuevas, sinFormato } =
+          await DocumentoService.emitirOrdenes(operativo.id);
         setFallidas((actuales) =>
           actuales.filter((otro) => otro.id !== operativo.id),
         );
@@ -675,9 +722,15 @@ const OrdenesServicioPage = () => {
         // Si es el que está abierto en la vista previa, se refleja lo recién emitido.
         if (seleccionado?.id === operativo.id) setEmitidas(nuevas);
         setResaltadoId(operativo.id);
-        toast.exito(
-          `Se emitió la orden de ${operativo.identificador}, una por funcionario.`,
-        );
+        if (sinFormato.length > 0) {
+          toast.advertencia(`Órdenes de ${operativo.identificador} con avisos`, {
+            texto: textoSinFormato(sinFormato),
+          });
+        } else {
+          toast.exito(
+            `Se emitió la orden de ${operativo.identificador}, una por funcionario.`,
+          );
+        }
       } catch (fallo: unknown) {
         void mensaje.errorDe(fallo, {
           titulo: `No se pudo emitir ${operativo.identificador}`,
@@ -691,6 +744,7 @@ const OrdenesServicioPage = () => {
 
   const cabecera = matriz?.cabecera;
   const estado = cabecera ? nombreEstadoCuadro[cabecera.estado] : null;
+  const { user } = useUser();
 
   // EDITAR PLANTILLA: vista a pantalla completa DENTRO del layout (ya no un modal). Reemplaza la
   // página mientras se edita; «← Órdenes de servicio» vuelve (con confirmación si hay cambios).
@@ -714,75 +768,80 @@ const OrdenesServicioPage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="flex flex-col gap-2">
-            <p className="page-heading-kicker font-semibold uppercase">
-              Dirección
-            </p>
-            <h1 className="page-heading-title">Órdenes de servicio</h1>
-          </div>
-          {/*
-            «Editar plantilla» abre la plantilla DEL DIRECTOR EN SESIÓN (2026-10-05): cada Director
-            tiene la suya y sus órdenes se generan con ella. Vive en el encabezado de la página.
-          */}
-          <Boton
-            ref={editarPlantillaRef}
-            variante="secundario"
-            tamano="md"
-            icono="editar"
-            onClick={() => setPlantillaAbierta(true)}
-          >
-            Editar plantilla
-          </Boton>
-        </div>
+      <EncabezadoPagina
+        modulo="Cuadro de Colores"
+        titulo="Órdenes de servicio"
+        subtitulo="Emita la orden de servicio de cada operativo del cuadro."
+        perfil={user?.rolName}
+        chips={
+          cabecera && (
+            <>
+              <span className="badge badge-ghost badge-sm">
+                {cabecera.ordenTrabajo}
+              </span>
+              <span className="badge badge-ghost badge-sm">
+                {fechaEnPalabras(cabecera.fecha)}
+              </span>
+              <span className="badge badge-ghost badge-sm">
+                Semana {cabecera.nroSemana} de {cabecera.anioSemana}
+              </span>
+              <span className={`badge badge-sm ${colorEstado(estado ?? "")}`}>
+                {estado}
+              </span>
+            </>
+          )
+        }
+        contexto={
+          <>
+            <div className="form-control">
+              <label
+                className="label"
+                htmlFor="fechaOrdenes"
+              >
+                <span className="text-app-label text-xs uppercase tracking-[0.12em]">
+                  Fecha del cuadro
+                </span>
+              </label>
+              <input
+                id="fechaOrdenes"
+                type="date"
+                className="input input-bordered input-sm"
+                value={fecha}
+                onChange={(evento) => setFecha(evento.target.value)}
+              />
+            </div>
+            {/*
+              «Editar plantilla» abre la plantilla DEL DIRECTOR EN SESIÓN (2026-10-05): cada Director
+              tiene la suya y sus órdenes se generan con ella. Vive en el encabezado de la página.
+            */}
+            <Boton
+              ref={editarPlantillaRef}
+              variante="secundario"
+              tamano="md"
+              icono="editar"
+              onClick={() => setPlantillaAbierta(true)}
+            >
+              Editar plantilla
+            </Boton>
+          </>
+        }
+      />
 
-        {/* Punto 5: la plantilla propia tiene datos generales vacíos → no se puede emitir en firme. */}
-        {plantillaIncompleta === true && (
-          <AvisoEnLinea
-            variante="advertencia"
-            accion={
-              <Boton variante="secundario" tamano="sm" onClick={() => setPlantillaAbierta(true)}>
-                Editar plantilla
-              </Boton>
-            }
-          >
-            Completa los datos de tu plantilla para emitir órdenes.
-          </AvisoEnLinea>
-        )}
-
-        {cabecera && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="badge badge-ghost badge-sm">
-              {cabecera.ordenTrabajo}
-            </span>
-            <span className="badge badge-ghost badge-sm">
-              {conDiaYMesEnMayuscula(cabecera.fechaNatural)}
-            </span>
-            <span className={`badge badge-sm ${colorEstado(estado ?? "")}`}>
-              {estado}
-            </span>
-          </div>
-        )}
-
-        <div className="form-control w-fit">
-          <label
-            className="label"
-            htmlFor="fechaOrdenes"
-          >
-            <span className="text-app-label text-xs uppercase tracking-[0.12em]">
-              Fecha del cuadro
-            </span>
-          </label>
-          <input
-            id="fechaOrdenes"
-            type="date"
-            className="input input-bordered input-sm"
-            value={fecha}
-            onChange={(evento) => setFecha(evento.target.value)}
-          />
-        </div>
-      </header>
+      {/* Un formato con datos generales vacíos → sus órdenes no se pueden emitir en firme. */}
+      {formatosIncompletos !== null && formatosIncompletos.length > 0 && (
+        <AvisoEnLinea
+          variante="advertencia"
+          accion={
+            <Boton variante="secundario" tamano="sm" onClick={() => setPlantillaAbierta(true)}>
+              Editar plantilla
+            </Boton>
+          }
+        >
+          {formatosIncompletos.length === 1
+            ? `Complete los datos del formato ${formatosIncompletos[0]} para emitir sus órdenes.`
+            : `Complete los datos de los formatos ${formatosIncompletos.join(", ")} para emitir sus órdenes.`}
+        </AvisoEnLinea>
+      )}
 
       {sinJornada && (
         <AvisoEnLinea variante="info">
@@ -890,191 +949,196 @@ const OrdenesServicioPage = () => {
         />
       )}
 
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-              Operativos de la jornada
-            </h2>
-            {operativos.length > 0 && (
-              <span className="text-xs text-app-muted">
-                {conOrdenes} de {operativos.length} con todas sus órdenes
-                vigentes
-              </span>
-            )}
-            {partesCabecera.length > 0 && (
-              <div
-                className="flex flex-wrap gap-1"
-                aria-label="Resumen de la jornada por estado"
-              >
-                {partesCabecera.map((parte) => (
-                  <span
-                    key={parte.clave}
-                    className={`badge badge-sm whitespace-nowrap ${parte.clase}`}
-                  >
-                    {parte.texto}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/*
+      <PanelTabla
+        titulo="Operativos de la jornada"
+        acciones={
+          /*
             EMITIR PENDIENTES. Abarca solo los operativos emisibles SIN órdenes vigentes; se OCULTA
             cuando no queda ninguno (N=0). Emite de uno en uno (no hay endpoint masivo).
-          */}
-          {pendientes.length > 0 && (
+          */
+          pendientes.length > 0 && (
             <Boton
               variante="primario"
               tamano="md"
-              enBarraOscura
               cargando={emitiendo}
               title={`Emitir las órdenes de los ${pendientes.length} operativos pendientes.`}
               onClick={() => setConfirmandoTodas(true)}
             >
               {emitiendo ? "Emitiendo…" : `Emitir pendientes (${pendientes.length})`}
             </Boton>
-          )}
-        </div>
-
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <div className="overflow-x-auto">
-            <table className="table table-sm table-zebra">
-              <thead>
-                <tr className="text-xs uppercase tracking-wider text-app-label">
-                  <th scope="col">Identificador</th>
-                  <th scope="col">Formulario</th>
-                  <th scope="col">Horario</th>
-                  <th scope="col">Personal</th>
-                  <th scope="col">Órdenes</th>
-                  <th scope="col">Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {operativos.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-3 py-6 text-center text-sm text-app-muted"
+          )
+        }
+        filtros={
+          /* El avance y los distintivos por estado, en la barra blanca (plantilla visual). */
+          (operativos.length > 0 || partesCabecera.length > 0) && (
+            <>
+              {operativos.length > 0 && (
+                <span className="text-xs text-app-muted">
+                  {conOrdenes} de {operativos.length} con todas sus órdenes
+                  vigentes
+                </span>
+              )}
+              {partesCabecera.length > 0 && (
+                <div
+                  className="flex flex-wrap gap-1"
+                  aria-label="Resumen de la jornada por estado"
+                >
+                  {partesCabecera.map((parte) => (
+                    <span
+                      key={parte.clave}
+                      className={`badge badge-sm whitespace-nowrap ${parte.clase}`}
                     >
-                      {cargando
-                        ? "Cargando la jornada…"
-                        : "No hay operativos registrados en esta fecha."}
-                    </td>
-                  </tr>
-                ) : (
-                  operativos.map((operativo) => {
-                    const motivo = motivoParaNoEmitir(operativo, cuadroCerrado);
-                    const emitido = estaEmitido(operativo);
-                    const hojas = operativo.personal.length;
-                    // ESTADO ÚNICO por operativo: la MISMA función que pinta el chip del panel
-                    // (nunca «0 vigente» ni «0 borrador»; las reemplazadas no cuentan).
-                    const resumen = resumenEstado(vigentesDe(operativo.id), hojas);
-                    const abierta = operativo.id === seleccionado?.id;
+                      {parte.texto}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        }
+      >
+        <div className="overflow-x-auto">
+          <table className="table table-sm table-zebra">
+            <thead>
+              <tr className="text-xs uppercase tracking-wider text-app-label">
+                <th scope="col">Identificador</th>
+                <th scope="col">Formulario</th>
+                <th scope="col">Horario</th>
+                <th scope="col">Personal</th>
+                <th scope="col">Órdenes</th>
+                <th scope="col">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {operativos.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-3 py-6 text-center text-sm text-app-muted"
+                  >
+                    {cargando
+                      ? "Cargando la jornada…"
+                      : "No hay operativos registrados en esta fecha."}
+                  </td>
+                </tr>
+              ) : (
+                operativos.map((operativo) => {
+                  const motivo = motivoParaNoEmitir(operativo, cuadroCerrado);
+                  const emitido = estaEmitido(operativo);
+                  const hojas = operativo.personal.length;
+                  // ESTADO ÚNICO por operativo: la MISMA función que pinta el chip del panel
+                  // (nunca «0 vigente» ni «0 borrador»; las reemplazadas no cuentan).
+                  const resumen = resumenEstado(vigentesDe(operativo.id), hojas);
+                  const abierta = operativo.id === seleccionado?.id;
 
-                    return (
-                      <tr
-                        key={operativo.id}
-                        // La fila abierta se resalta: fondo azul claro + borde izquierdo (regla 6).
-                        // El adicional recién registrado se resalta unos segundos (`bg-primary/10`).
-                        data-resaltado={
-                          operativo.id === resaltadoId || undefined
-                        }
-                        className={
-                          abierta
-                            ? "border-l-4 border-primary bg-primary/5"
-                            : operativo.id === resaltadoId
-                              ? "bg-primary/10 transition-colors"
-                              : "transition-colors hover:bg-primary/5"
-                        }
-                      >
-                        <td className="px-3 py-1 align-top">
-                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                            <span className="font-medium">
-                              {operativo.identificador}
-                            </span>
-                            {/* «Adicional» es un chip junto al identificador (regla 6). */}
-                            {operativo.origen && (
-                              <span className="badge badge-outline badge-xs whitespace-nowrap">
-                                Adicional de {operativo.origen}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-1 align-top">
-                          {operativo.formulario}
-                        </td>
-                        <td className="px-3 py-1 align-top">
-                          {operativo.horario}
-                        </td>
-                        <td className="px-3 py-1 align-top">
-                          {hojas > 0
-                            ? operativo.personal.join(", ")
-                            : "Sin personal"}
-                        </td>
-                        <td className="px-3 py-1 align-top">
-                          <span
-                            className={`badge badge-sm whitespace-nowrap ${resumen.clase}`}
-                          >
-                            {resumen.texto}
+                  return (
+                    <tr
+                      key={operativo.id}
+                      // La fila abierta se resalta: fondo azul claro + borde izquierdo (regla 6).
+                      // El adicional recién registrado se resalta unos segundos (`bg-primary/10`).
+                      data-resaltado={
+                        operativo.id === resaltadoId || undefined
+                      }
+                      className={
+                        abierta
+                          ? "border-l-4 border-primary bg-primary/5"
+                          : operativo.id === resaltadoId
+                            ? "bg-primary/10 transition-colors"
+                            : "transition-colors hover:bg-primary/5"
+                      }
+                    >
+                      <td className="px-3 py-1 align-top">
+                        {/* El identificador, en monoespaciada y a la izquierda (plantilla visual). */}
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                          <span className="font-mono font-semibold">
+                            {operativo.identificador}
                           </span>
-                        </td>
-                        <td className="px-3 py-1 align-top">
-                          {/*
-                            UN SOLO BOTÓN: «Mostrando» (fila abierta, cierra al pulsar), «Ver
-                            órdenes» (ya emitida) o «Revisar y emitir» (pendiente, deshabilitado con
-                            su motivo en el `title`, regla 6).
-                          */}
-                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
-                          <Boton
-                            variante={abierta || emitido ? "secundario" : "primario"}
-                            tamano="sm"
-                            onClick={() =>
-                              abierta ? setSeleccionado(null) : elegir(operativo)
-                            }
-                            deshabilitado={emitiendo}
-                            motivoDeshabilitado={!abierta && !emitido ? motivo : null}
-                          >
-                            {abierta
+                          {/* «Adicional» es un chip junto al identificador (regla 6). */}
+                          {operativo.origen && (
+                            <span className="badge badge-outline badge-xs whitespace-nowrap">
+                              Adicional de {operativo.origen}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-1 align-top">
+                        {operativo.formulario}
+                      </td>
+                      <td className="px-3 py-1 align-top whitespace-nowrap">
+                        {horarioLegible(operativo.horario)}
+                      </td>
+                      <td className="px-3 py-1 align-top">
+                        {hojas > 0
+                          ? operativo.personal.join(", ")
+                          : "Sin personal"}
+                      </td>
+                      <td className="px-3 py-1 align-top">
+                        <span
+                          className={`badge badge-sm whitespace-nowrap ${resumen.clase}`}
+                        >
+                          {resumen.texto}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1 align-top">
+                        {/*
+                          UN SOLO BOTÓN: «Mostrando» (fila abierta, cierra al pulsar), «Ver
+                          órdenes» (ya emitida) o «Revisar y emitir» (pendiente, deshabilitado con
+                          su motivo, regla 6). Desde la plantilla visual (2026-10-24), de icono
+                          con su nombre —o el motivo— en el tooltip y en `aria-label`.
+                        */}
+                        <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                        <BotonIcono
+                          icono={abierta || emitido ? "ver" : "ordenes"}
+                          rotulo={
+                            abierta
                               ? "Mostrando"
                               : emitido
                                 ? "Ver órdenes"
-                                : "Revisar y emitir"}
-                          </Boton>
-                          {/*
-                            «+ ADICIONAL» · LA URGENCIA (2026-08-20; a la columna Acción el 2026-10-08,
-                            junto a «Ver órdenes», como en Mis operativos). Abre el cajón del
-                            adicional. Se ofrece aunque el cuadro esté cerrado (RN-58, es la
-                            Dirección); NO sobre un adicional ni en formularios que no los admiten
-                            (RN-61, dato del servidor). NO se deshabilita mientras carga el
-                            operativo: un botón deshabilitado pierde el foco, y al cerrar el cajón
-                            el foco tiene que volver aquí; el doble clic lo frena `abrirAdicional`.
-                          */}
-                          {!operativo.esAdicional &&
-                            operativo.admiteAdicionales && (
-                              <Boton
-                                variante="acento"
-                                tamano="sm"
+                                : "Revisar y emitir"
+                          }
+                          nombre={operativo.identificador}
+                          variante={abierta || emitido ? "secundario" : "primario"}
+                          motivo={!abierta && !emitido ? motivo : null}
+                          procesando={emitiendo}
+                          onClick={() =>
+                            abierta ? setSeleccionado(null) : elegir(operativo)
+                          }
+                        />
+                        {/*
+                          «+ ADICIONAL» · LA URGENCIA (2026-08-20; a la columna Acción el 2026-10-08,
+                          junto a «Ver órdenes», como en Mis operativos). Abre el cajón del
+                          adicional. Se ofrece aunque el cuadro esté cerrado (RN-58, es la
+                          Dirección); NO sobre un adicional ni en formularios que no los admiten
+                          (RN-61, dato del servidor). NO se deshabilita mientras carga el
+                          operativo: un botón deshabilitado pierde el foco, y al cerrar el cajón
+                          el foco tiene que volver aquí; el doble clic lo frena `abrirAdicional`.
+                          El `aria-busy` de mientras se trae el operativo va en el `<span>` que lo
+                          envuelve: `BotonIcono` no lo recibe.
+                        */}
+                        {!operativo.esAdicional &&
+                          operativo.admiteAdicionales && (
+                            <span aria-busy={abriendoAdicional || undefined}>
+                              <BotonIcono
                                 icono="agregar"
+                                rotulo="Agregar adicional"
+                                nombre={operativo.identificador}
+                                variante="acento"
+                                procesando={emitiendo}
+                                alinear="fin"
                                 onClick={() => void abrirAdicional(operativo.id)}
-                                deshabilitado={emitiendo}
-                                aria-busy={abriendoAdicional || undefined}
-                                title={`Registrar un operativo adicional a partir de ${operativo.identificador}`}
-                              >
-                                Adicional
-                              </Boton>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                              />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      </div>
+      </PanelTabla>
 
       {/*
         ÓRDENES NO GENERADAS. Aparece solo si alguna falló al emitir en bloque. Cada una lleva
@@ -1082,7 +1146,7 @@ const OrdenesServicioPage = () => {
         REENVIAR solo esa; al salir bien, desaparece de la lista.
       */}
       {fallidas.length > 0 && (
-        <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+        <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-2xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
           <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
               Órdenes no generadas ({fallidas.length})
@@ -1126,7 +1190,7 @@ const OrdenesServicioPage = () => {
       )}
 
       {seleccionado && (
-        <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
+        <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-2xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
           <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">

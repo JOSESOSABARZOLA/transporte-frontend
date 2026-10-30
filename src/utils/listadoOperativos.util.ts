@@ -21,13 +21,21 @@
  * estado. Enviar esos parámetros produciría una fila de filtros que no filtra nada, que
  * es peor que no tenerla. Lo que se filtra es la jornada del perfil —decenas de filas,
  * no miles—, ya recortada por el servidor (PER-02).
+ *
+ * PLANTILLA VISUAL (2026-10-24): `partesDeHorario` se retiró. Partía el horario en dos líneas para
+ * `TablaOperativos`; ahora el horario va en UNA línea sin partirse (`horarioLegible`), como en la
+ * Jornada, la Matriz y Órdenes.
  */
 
 import type { EstadoTransporte, Operativo } from "../interfaces/Operativo";
 import { comoHorario } from "./horario.util";
 import { normalizar } from "./texto.util";
 import { notasDe, textoDeNotas } from "./notasDeTabla.util.ts";
-import { DISTINTIVO_EXCLUSIVO, nombreTipoTransporte } from "./tipoTransporte.util.ts";
+import {
+  CONDUCTOR_OTRA_INSTITUCION,
+  DISTINTIVO_EXCLUSIVO,
+  nombreTipoTransporte,
+} from "./tipoTransporte.util.ts";
 
 /**
  * Columnas que la tabla sabe pintar. El orden lo decide quien la usa.
@@ -109,8 +117,11 @@ export const COLUMNAS_LISTADO: ColumnaOperativo[] = [
   // Mismo sitio que en P-01, la Matriz y la Jornada: entre Teléfono y Punto.
   "zonal",
   "punto",
-  // Tipo de control (2026-10-13): entre Punto y Conductor.
+  // Tipo de control (2026-10-13): entre Punto y Transporte.
   "tipoControl",
+  // Transporte requerido (2026-10-26, a pedido del usuario): como en P-01, qué se pidió a la DAF.
+  // Con ella el conductor de un operativo por propios medios dice «—»: ya lo dice Transporte.
+  "transporte",
   "conductor",
   "estado",
   // Observaciones como notas (2026-10-19, plan «acciones-icono-notas»): P-02 no la tenía; ahora la
@@ -121,10 +132,8 @@ export const COLUMNAS_LISTADO: ColumnaOperativo[] = [
 /**
  * Columnas con filtro propio.
  *
- * `conductor` no lo tiene porque no muestra texto sino la alerta de RN-40, y filtrar por
- * el texto de una alerta llevaría a buscar «falta» para encontrar operativos sin
- * conductor, que es un rodeo. Si hace falta ese corte, es un filtro de estado, no de
- * columna, y conviene decidirlo con el Product Owner antes de inventarlo.
+ * `conductor` lo tiene desde el 2026-10-26 (a pedido del usuario), pero NO filtra por el texto
+ * de la alerta de RN-40: filtra por lo que se lee en la celda (`textoFiltroConductor`).
  */
 export const COLUMNAS_FILTRABLES: ColumnaOperativo[] = [
   "identificador",
@@ -137,6 +146,10 @@ export const COLUMNAS_FILTRABLES: ColumnaOperativo[] = [
   "tipoControl",
   // P-01 (2026-10-13): filtrar por «Propios medios» o «Completo» es una pregunta real.
   "transporte",
+  // Conductor (2026-10-26, a pedido del usuario): se filtra por lo que se LEE en la celda —el
+  // nombre y la placa de cada conductor asignado, o «Sin conductor»—, no por el texto de la alerta
+  // (`textoFiltroConductor`).
+  "conductor",
   "estado",
   "observaciones",
 ];
@@ -162,13 +175,15 @@ export const SIN_TELEFONO = "Sin teléfono";
 
 export const filasDePersonal = (
   operativo: Operativo,
-): { nombre: string; telefono: string; horario: string }[] => {
+): { nombre: string; cargo: string; telefono: string; horario: string }[] => {
   if (operativo.personal.length === 0) {
-    return [{ nombre: "", telefono: "", horario: operativo.horario }];
+    return [{ nombre: "", cargo: "", telefono: "", horario: operativo.horario }];
   }
 
   return operativo.personal.map((persona) => ({
     nombre: persona.nombre,
+    // El cargo del Maestro, tal cual (2026-10-27). Sin cargo, vacío: la celda no pinta la línea.
+    cargo: persona.cargo?.trim() ?? "",
     // RN-34: sale del maestro. Que falte es un caso real, y se dice con palabras.
     telefono: persona.telefono ?? SIN_TELEFONO,
     // RN-66: la ventana EFECTIVA de esta persona, que el servidor ya resuelve. Es lo que se
@@ -194,6 +209,15 @@ export const horarioBajaPorPersona = (operativo: Operativo): boolean =>
       persona.horaInicio !== operativo.personal[0].horaInicio ||
       persona.horaFin !== operativo.personal[0].horaFin,
   );
+
+/**
+ * El distintivo de transporte de una fila de la Jornada o la Matriz: el estado GUARDADO
+ * (Pendiente, Asignado, Propios medios), igual que en Registro y Mis operativos. Desde el
+ * 2026-10-26 «Vehículo de otra institución» ya no se pinta como un estado aparte («Otra
+ * institución»): se lee en Transporte y en Conductor.
+ */
+export const nombreEstadoDeFila = (fila: { estadoTransporte: EstadoTransporte }): string =>
+  nombreEstadoTransporte[fila.estadoTransporte];
 
 /** Filtros activos, por columna. Ausente o vacío significa «sin filtrar». */
 export type FiltrosListado = Partial<Record<ColumnaOperativo, string>>;
@@ -345,11 +369,14 @@ export const valorDeColumna = (
      * cuando la tabla ya tiene la columna «Transporte» (P-01), que lo dice ahí.
      * ═══════════════════════════════════════════════════════════════════════════════
      */
+    // Vehículo de otra institución (2026-10-23): la DAF no asigna, y se dice con palabras.
     case "conductor":
+      if (operativo.tipoTransporte === "OTRA_INSTITUCION") return CONDUCTOR_OTRA_INSTITUCION;
       return operaPorPropiosMedios(operativo) ? "Propios medios" : "";
 
+    // Y su estado no es «Pendiente»: no hay nada que la DAF tenga que resolver.
     case "estado":
-      return nombreEstadoTransporte[operativo.estadoTransporte];
+      return nombreEstadoDeFila(operativo);
 
     // Bitácora (2026-09-09): cada nota es independiente. Desde el 2026-10-19 la celda las pinta
     // como tarjetas (`NotasObservacion`) y el filtro busca en todas, incluido «Comparte con X».
@@ -359,16 +386,30 @@ export const valorDeColumna = (
 };
 
 /**
- * El horario en sus dos mitades, para pintarlo en dos líneas (2026-10-13): «08H00 a» arriba y
- * «15H00» abajo. Solo un rango simple: varios horarios unidos por coma, o un texto sin «a», dan
- * `null` y se pintan tal cual. El filtro sigue usando el texto de una línea (`valorDeColumna`).
+ * Lo que busca el filtro de Conductor (2026-10-26): lo que se lee en la celda. El nombre y la placa
+ * de cada conductor asignado; si la DAF aún no asigna y lo avisa, «Sin conductor»; si no, el texto
+ * de la columna («Propios medios», «Otra institución» o nada).
  */
-export const partesDeHorario = (
-  horario: string,
-): { inicio: string; fin: string } | null => {
-  const partes = /^(\S+)\s+(a)\s+(\S+)$/i.exec(horario.trim());
-  return partes ? { inicio: `${partes[1]} ${partes[2]}`, fin: partes[3] } : null;
+export const textoFiltroConductor = (operativo: Operativo): string => {
+  const asignados = operativo.transporteAsignado ?? [];
+  if (asignados.length > 0) {
+    return asignados
+      .map((par) => (par.placa ? `${par.conductor} ${par.placa}` : par.conductor))
+      .join(" ");
+  }
+  if (operativo.alertas.some((alerta) => alerta.campo === "conductor")) return "Sin conductor";
+  return valorDeColumna(operativo, "conductor");
 };
+
+/**
+ * Lo que filtra la columna Personal (2026-10-27): los nombres y los CARGOS que se leen en la celda.
+ * Va aparte de `valorDeColumna`, que también arma el «Nombre (n)» de las copias del 8.
+ */
+export const textoFiltroPersonal = (operativo: Operativo): string =>
+  filasDePersonal(operativo)
+    .flatMap((fila) => [fila.nombre, fila.cargo])
+    .filter(Boolean)
+    .join(" ");
 
 /** `true` si el operativo satisface **todos** los filtros activos. */
 export const coincideConFiltros = (
@@ -378,8 +419,13 @@ export const coincideConFiltros = (
   Object.entries(filtros).every(([columna, buscado]) => {
     if (!buscado || !buscado.trim()) return true;
 
-    return normalizar(valorDeColumna(operativo, columna as ColumnaOperativo))
-      .includes(normalizar(buscado));
+    const texto =
+      columna === "conductor"
+        ? textoFiltroConductor(operativo)
+        : columna === "personal"
+          ? textoFiltroPersonal(operativo)
+          : valorDeColumna(operativo, columna as ColumnaOperativo);
+    return normalizar(texto).includes(normalizar(buscado));
   });
 
 export const filtrarOperativos = (

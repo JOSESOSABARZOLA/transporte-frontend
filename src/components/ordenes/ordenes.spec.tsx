@@ -24,6 +24,10 @@ import { MemoryRouter } from "react-router-dom";
 import OrdenesServicioPage from "../../pages/OrdenesServicioPage.tsx";
 import { DocumentoService } from "../../services/documento.service.ts";
 
+// La sesión: el chip «Perfil» del encabezado sale de ella (plantilla visual, 2026-10-24).
+vi.mock("../../hooks/useUser.ts", () => ({
+  useUser: () => ({ user: { rolCodes: ["DIRECTOR"], rolName: "Dirección", displayName: "Prueba" } }),
+}));
 vi.mock("../../services/documento.service.ts", () => ({
   DocumentoService: {
     consultarMatriz: vi.fn(),
@@ -32,9 +36,9 @@ vi.mock("../../services/documento.service.ts", () => ({
     verOrdenMemorando: vi.fn(),
     obtenerDatosMemorando: vi.fn(),
     generarMemorandoEditado: vi.fn(),
-    // La página consulta la plantilla PROPIA para el aviso de datos incompletos (2026-10-05). Por
+    // La página consulta los TRES formatos para el aviso de datos incompletos (2026-10-27). Por
     // omisión queda pendiente: el aviso no aparece y no interfiere con las demás pruebas.
-    obtenerPlantilla: vi.fn(() => new Promise(() => {})),
+    listarPlantillas: vi.fn(() => new Promise(() => {})),
   },
 }));
 // El visor real monta react-pdf (worker de pdf.js), que no corre en jsdom. Se sustituye por un
@@ -141,6 +145,8 @@ const orden = (
     directorNombre: "DE LA GUERRA FRANKLIN",
     esPropia: true,
     plantillaVersion: 1,
+    // Formato por departamento (2026-10-27): por defecto, el de la Unidad de Operativos.
+    formato: { departamento: "DMIP_OPERATIVOS", nombre: "DMIP · Unidad de Operativos" },
     ...parcial,
   };
   // Coherencia: sin número o con faltantes ⇒ no está Vigente; reemplazada si no es vigente.
@@ -661,7 +667,8 @@ describe("el adicional en la lista de emisión", () => {
   const ordinario: FilaMatriz = {
     id: 1,
     identificador: "OCPMO-001-21-AGO-2026",
-    grupoRegistro: null,
+    grupoRegistro: "registro-suelto",
+    esLote: false,
     esAdicional: false,
     origen: null,
     horario: "08H00 A 12H00",
@@ -821,7 +828,8 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
   ): FilaMatriz => ({
     id,
     identificador,
-    grupoRegistro: null,
+    grupoRegistro: "registro-suelto",
+    esLote: false,
     esAdicional: false,
     origen: null,
     horario: "08H00 A 12H00",
@@ -853,7 +861,10 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
       cabecera: {
         estado,
         ordenTrabajo: "AMC-2026-08-22",
+        fecha: "2026-08-22",
         fechaNatural: "viernes 22 de agosto de 2026",
+        nroSemana: 34,
+        anioSemana: 2026,
       },
       secciones: [
         {
@@ -889,7 +900,10 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
         fila(3, "OCPMO-003-22-AGO-2026", []),
       ]),
     );
-    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([]);
+    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue({
+      ordenes: [],
+      sinFormato: [],
+    });
 
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
@@ -916,12 +930,15 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
       matrizDeLaJornada([fila(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"])]),
     );
     // La orden emitida nace en BORRADOR: le faltan datos (no consume número).
-    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([
-      orden("YUNDA JESSICA", {
-        faltantes: [falta("Dependencia del destinatario", "persona")],
-        numeroOrden: null,
-      }),
-    ]);
+    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue({
+      ordenes: [
+        orden("YUNDA JESSICA", {
+          faltantes: [falta("Dependencia del destinatario", "persona")],
+          numeroOrden: null,
+        }),
+      ],
+      sinFormato: [],
+    });
 
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
     await userEvent.click(
@@ -947,18 +964,42 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
 
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
-    const revisar = await screen.findByRole("button", { name: "Revisar y emitir" });
+    // Botones de icono con su tooltip (plantilla visual, 2026-10-24): el nombre accesible dice la
+    // acción y el operativo.
+    const revisar = await screen.findByRole("button", {
+      name: "Revisar y emitir OCPMO-001-22-AGO-2026",
+    });
     expect(revisar).toHaveClass("btn", "btn-primary", "btn-sm");
-    // Apagado con aria-disabled, para que el motivo se vea al pasar el mouse.
+    // Apagado con aria-disabled, para que el motivo se vea al pasar el mouse (en el tooltip).
     expect(revisar).toHaveAttribute("aria-disabled", "true");
-    expect(revisar.getAttribute("title")).toContain("Disponible cuando el cuadro esté cerrado");
+    expect(revisar).toHaveAccessibleDescription(/Disponible cuando el cuadro esté cerrado/);
 
-    const adicional = screen.getByRole("button", { name: "Adicional" });
+    const adicional = screen.getByRole("button", {
+      name: "Agregar adicional OCPMO-001-22-AGO-2026",
+    });
     expect(adicional).toHaveClass("btn", "btn-outline", "btn-primary", "btn-sm");
     // El orden: la acción propia de la pantalla y después el «+ Adicional».
     expect(
       revisar.compareDocumentPosition(adicional) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("el identificador va en monoespaciada y a la izquierda, y la columna se llama «Acciones»", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizDeLaJornada(
+        [fila(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"])],
+        "BORRADOR",
+      ),
+    );
+
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
+
+    const identificador = await screen.findByText("OCPMO-001-22-AGO-2026");
+    expect(identificador).toHaveClass("font-mono", "font-semibold");
+    // Plantilla visual (2026-10-24): ya no se empuja a la derecha.
+    expect(identificador.parentElement).not.toHaveClass("justify-end");
+    expect(screen.getByRole("columnheader", { name: "Acciones" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Acción" })).not.toBeInTheDocument();
   });
 
   it("no se ofrece «Emitir pendientes» mientras el cuadro no esté cerrado", async () => {
@@ -988,7 +1029,9 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
     // El segundo falla al emitir en bloque; el primero sale.
     vi.mocked(DocumentoService.emitirOrdenes).mockImplementation(
       (id: number) =>
-        id === 2 ? Promise.reject(new Error("boom")) : Promise.resolve([]),
+        id === 2
+          ? Promise.reject(new Error("boom"))
+          : Promise.resolve({ ordenes: [], sinFormato: [] }),
     );
 
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
@@ -1010,7 +1053,10 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
     expect(screen.getByText("Orden no generada")).toBeInTheDocument();
 
     // El reenvío de esa —y solo esa— sí sale: desaparece de la lista.
-    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue([]);
+    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue({
+      ordenes: [],
+      sinFormato: [],
+    });
     await userEvent.click(screen.getByRole("button", { name: "Reintentar" }));
 
     await vi.waitFor(() =>
@@ -1018,6 +1064,41 @@ describe("emitir todas las órdenes de la jornada con un solo clic", () => {
     );
     // Se volvió a emitir el operativo 2 (dos veces en total: el bloque y el reenvío).
     expect(DocumentoService.emitirOrdenes).toHaveBeenCalledWith(2);
+  });
+
+  it("al emitir, quien no tiene formato se avisa y las demás órdenes quedan emitidas", async () => {
+    vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
+      matrizDeLaJornada([
+        fila(1, "IGNECU-001-22-AGO-2026", ["BENAVIDES FERNANDO", "DIAZ ANA"]),
+      ]),
+    );
+    vi.mocked(DocumentoService.emitirOrdenes).mockResolvedValue({
+      ordenes: [orden("BENAVIDES FERNANDO")],
+      sinFormato: [
+        {
+          funcionarioId: 3,
+          funcionario: "DIAZ ANA",
+          area: "INSTRUCCION",
+          mensaje:
+            "No hay formato de orden para DMIT · Instrucción. Configúrelo en Editar plantilla.",
+        },
+      ],
+    });
+
+    render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Emitir pendientes \(1\)/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Sí, emitir pendientes" }),
+    );
+
+    const aviso = await screen.findByRole("alertdialog", {
+      name: "Órdenes emitidas con avisos",
+    });
+    expect(aviso).toHaveTextContent(
+      "Se emitieron 1 orden de 1 operativo. 1 persona sin orden: No hay formato de orden para DMIT · Instrucción. Configúrelo en Editar plantilla.",
+    );
   });
 });
 
@@ -1037,7 +1118,8 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
   ): FilaMatriz => ({
     id,
     identificador,
-    grupoRegistro: null,
+    grupoRegistro: "registro-suelto",
+    esLote: false,
     esAdicional: false,
     origen: null,
     horario: "08H00 A 12H00",
@@ -1066,7 +1148,10 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
       cabecera: {
         estado: "CERRADO",
         ordenTrabajo: "AMC-2026-08-22",
+        fecha: "2026-08-22",
         fechaNatural: "viernes 22 de agosto de 2026",
+        nroSemana: 34,
+        anioSemana: 2026,
       },
       secciones: [
         {
@@ -1124,11 +1209,11 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Revisar y emitir" }),
+      await screen.findByRole("button", { name: /^Revisar y emitir\b/ }),
     );
 
     expect(
-      await screen.findByRole("button", { name: "Mostrando" }),
+      await screen.findByRole("button", { name: /^Mostrando\b/ }),
     ).toBeInTheDocument();
   });
 
@@ -1144,7 +1229,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
 
     // Ya emitida → el botón de la fila dice «Ver órdenes».
     await userEvent.click(
-      await screen.findByRole("button", { name: "Ver órdenes" }),
+      await screen.findByRole("button", { name: /^Ver órdenes\b/ }),
     );
     // En el panel, «Reemitir órdenes» pide confirmación con el texto de la versión nueva.
     await userEvent.click(
@@ -1210,34 +1295,49 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
     expect(within(resumen).queryByText(/borrador/)).toBeNull();
   });
 
-  it("si la plantilla PROPIA tiene datos generales vacíos, avisa con «Editar plantilla»", async () => {
+  it("si un FORMATO tiene datos generales vacíos, avisa nombrándolo, con «Editar plantilla»", async () => {
     vi.mocked(DocumentoService.consultarMatriz).mockResolvedValue(
       matrizCerrada([filaCon(1, "OCPMO-001-22-AGO-2026", ["YUNDA JESSICA"])]),
     );
     vi.mocked(DocumentoService.consultarOrdenesDeOperativo).mockResolvedValue([]);
-    vi.mocked(DocumentoService.obtenerPlantilla).mockResolvedValueOnce({
+    const completos = {
+      direccionResponsable: "Dirección Metropolitana de Inspección",
+      numeroMemorando: "M-1",
+      fechaMemorando: "2026-06-17",
+      designado: "Lider Franklin (Director)",
+      firmante: "Lider Franklin",
+      firmanteCargo: "Director",
+      firmanteDependencia: "DMI",
+      accion: "Elaborado por",
+      elaboradoPor: "Analista",
+      siglasUnidad: "DMI",
+    };
+    const formato = (
+      departamento: "DMIT_INSTRUCTOR" | "DMIP_OPERATIVOS" | "DMIP_INSPECCIONES",
+      nombre: string,
+      datosGenerales = completos,
+    ) => ({
+      departamento,
+      nombre,
+      configurado: true,
       apartados: [],
-      datosGenerales: {
-        direccionResponsable: "Dirección Metropolitana de Inspección",
-        numeroMemorando: "",
-        fechaMemorando: "",
-        designado: "",
-        firmante: "Lider Franklin",
-        firmanteCargo: "",
-        firmanteDependencia: "",
-        accion: "Elaborado por",
-        elaboradoPor: "",
-        siglasUnidad: "",
-      },
+      datosGenerales,
       version: 1,
-      directorId: 14,
     });
+    vi.mocked(DocumentoService.listarPlantillas).mockResolvedValueOnce([
+      formato("DMIT_INSTRUCTOR", "DMIT · Instrucción", {
+        ...completos,
+        numeroMemorando: "",
+      }),
+      formato("DMIP_OPERATIVOS", "DMIP · Unidad de Operativos"),
+      formato("DMIP_INSPECCIONES", "DMIP · Inspecciones Técnicas y Generales"),
+    ]);
 
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
 
     expect(
       await screen.findByText(
-        "Completa los datos de tu plantilla para emitir órdenes.",
+        "Complete los datos del formato DMIT · Instrucción para emitir sus órdenes.",
       ),
     ).toBeInTheDocument();
   });
@@ -1255,7 +1355,7 @@ describe("la columna «Órdenes» y el panel de emisión", () => {
 
     render(<OrdenesServicioPage />, { wrapper: MemoryRouter });
     await userEvent.click(
-      await screen.findByRole("button", { name: "Ver órdenes" }),
+      await screen.findByRole("button", { name: /^Ver órdenes\b/ }),
     );
 
     const reemitir = await screen.findByRole("button", {
@@ -1358,4 +1458,57 @@ describe("plantilla por Director · orden AJENA y los cinco orígenes (2026-10-0
       within(cajon).queryByRole("button", { name: "Completar datos" }),
     ).toBeNull();
   });
+});
+
+/*
+  UN FORMATO POR DEPARTAMENTO (2026-10-27): la tarjeta y el cajón dicen con qué formato se generó la
+  orden, y quien quedó sin formato se avisa al emitir.
+*/
+describe("el formato de cada orden", () => {
+  it("la tarjeta dice «Formato: <departamento>» bajo el número", () => {
+    render(
+      <VistaPreviaOrden
+        ordenes={[
+          orden("YUNDA JESSICA", {
+            formato: { departamento: "DMIT_INSTRUCTOR", nombre: "DMIT · Instrucción" },
+          }),
+          orden("CAMPAÑA JUAN", { codigo: "OS-ICNECU-001-2-1", formato: null }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Formato: DMIT · Instrucción")).toBeInTheDocument();
+    // Una orden de antes de los formatos lo dice con palabras.
+    expect(
+      screen.getByText("Formato: plantilla anterior (por Director)"),
+    ).toBeInTheDocument();
+  });
+
+  it("el subtítulo del cajón del documento indica el formato usado", async () => {
+    vi.mocked(DocumentoService.verOrdenMemorando).mockReturnValue(
+      new Promise<Blob>(() => {}),
+    );
+    render(
+      <VistaPreviaOrden
+        ordenes={[
+          orden("YUNDA JESSICA", {
+            formato: {
+              departamento: "DMIP_INSPECCIONES",
+              nombre: "DMIP · Inspecciones Técnicas y Generales",
+            },
+          }),
+        ]}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Ver documento" }));
+
+    const cajon = screen.getByRole("dialog", {
+      name: /Orden de servicio · YUNDA JESSICA/,
+    });
+    expect(
+      within(cajon).getByText("· Formato: DMIP · Inspecciones Técnicas y Generales"),
+    ).toBeInTheDocument();
+  });
+
 });

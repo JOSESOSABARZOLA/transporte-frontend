@@ -254,9 +254,29 @@
   background: var(--app-nota-compartida-bg);
 }
 
+/* Nota informativa de composición (2026-10-22): la arma la pantalla, no se pulsa. */
+.app-nota-informativa {
+  border-color: var(--app-nota-informativa-borde);
+  border-left-color: var(--app-nota-informativa-filete);
+  background: var(--app-nota-informativa-bg);
+}
+
 button.app-nota-compartida {
   cursor: pointer;
   width: 100%;
+}
+
+/* Escala de la matriz de traslados (2026-10-20): borde de la celda y de la leyenda. */
+.app-traslado-corto {
+  border-color: var(--app-traslado-corto);
+}
+
+.app-traslado-medio {
+  border-color: var(--app-traslado-medio);
+}
+
+.app-traslado-largo {
+  border-color: var(--app-traslado-largo);
 }
 
 button.app-nota-compartida:hover,
@@ -313,4 +333,64 @@ button.app-nota-compartida:focus-visible {
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PESTAÑAS SOBRE LA CABECERA AZUL (2026-10-24, «Ventanas y parámetros»).
+   `Pestanas` con `sobreBarra`. Sobre #20347d (claro) o la superficie fuerte (oscuro):
+     · inactiva: blanco al 75 % (≈ 8:1), blanco al pasar el ratón;
+     · activa: fondo blanco sombreado, texto #1E2E78 en negrita (≈ 12:1), como la pestaña
+       sombreada de Flota; su contador, azul sólido con texto blanco;
+     · foco: anillo blanco.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.tabs .tab.app-pestana-barra {
+  --tab-color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.75);
+  background: transparent;
+  font-weight: 600;
+}
+
+.tabs .tab.app-pestana-barra:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tabs .tab.app-pestana-barra-activa,
+.tabs .tab.app-pestana-barra-activa:hover {
+  --tab-color: #1e2e78;
+  color: #1e2e78;
+  background: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.25);
+}
+
+.tabs .tab.app-pestana-barra:focus-visible,
+.tabs .tab.app-pestana-barra-activa:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.badge.app-pestana-barra-cuenta {
+  --badge-bg: rgba(255, 255, 255, 0.2);
+  --badge-fg: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.tab.app-pestana-barra-activa .badge.app-pestana-barra-cuenta {
+  --badge-bg: #1e2e78;
+  background: #1e2e78;
+  color: #ffffff;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PANEL DE TABLA ESTÁNDAR (`PanelTabla`, plantilla visual 2026-10-24): `rounded-2xl`, así que la
+   cabecera azul redondea con 1rem y no con el 1.5rem del panel `rounded-3xl`.
+   ───────────────────────────────────────────────────────────────────────────── */
+.app-data-panel.app-panel-tabla > .app-section-header {
+  border-top-left-radius: calc(1rem - 1px) !important;
+  border-top-right-radius: calc(1rem - 1px) !important;
 }

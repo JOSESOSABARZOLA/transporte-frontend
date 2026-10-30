@@ -11,6 +11,7 @@
 
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../services/personal.service.ts", () => ({
@@ -47,13 +48,13 @@ const ficha = (id: number, parcial: Partial<Funcionario> = {}): Funcionario => (
   correoPersonal: null,
   cargo: null,
   area: "OPERATIVOS",
-  tipoContrato: "OCASIONAL",
+  jornadaLaboralId: 2,
   direccion: "DMIP_OPERATIVOS",
   activo: true,
   ...parcial,
 });
 
-/** 13 activas y 2 de baja: «13 funcionarios · 13 activos de 15 en el maestro». */
+/** 13 activas y 2 de baja. */
 const MAESTRO = [
   ...Array.from({ length: 13 }, (_, i) => ficha(i + 1)),
   ficha(14, { activo: false }),
@@ -68,21 +69,37 @@ beforeEach(() => {
 });
 
 const abrir = async () => {
-  render(<AdminPersonalPage />);
-  await screen.findByText(/en el maestro/);
+  const vista = render(
+    <MemoryRouter>
+      <AdminPersonalPage />
+    </MemoryRouter>,
+  );
+  await screen.findByText("APELLIDO01 NOMBRE");
+  return vista;
 };
 
 describe("P-07 · filtro inicial, contador y paginación", () => {
-  it("abre en «Activos» y el contador distingue lo filtrado del maestro", async () => {
+  it("abre en «Activos» y el total lo dice el paginador, no un contador", async () => {
     await abrir();
     expect(screen.getByRole("button", { name: "Activos" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(
-      screen.getByText("13 funcionarios · 13 activos de 15 en el maestro"),
-    ).toBeInTheDocument();
+    // Plantilla visual (2026-10-24): sin «N funcionarios · X activos de Y en el maestro».
+    expect(screen.queryByText(/en el maestro/)).toBeNull();
+    expect(screen.getByText(/Mostrando/).textContent).toContain("de 13");
     expect(screen.queryByText("APELLIDO14 NOMBRE")).toBeNull();
+  });
+
+  it("la tabla va en el panel de cabecera azul «Maestro de personal» con «+ Nuevo funcionario»", async () => {
+    const { container } = await abrir();
+    const cabecera = container.querySelector(".app-section-header") as HTMLElement;
+    expect(cabecera).not.toBeNull();
+    expect(within(cabecera).getByText("Maestro de personal")).toBeInTheDocument();
+    expect(
+      within(cabecera).getByRole("button", { name: "+ Nuevo funcionario" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Buscar en el maestro").className).toContain("min-w-[320px]");
   });
 
   it("10 por página: la segunda página trae las 3 restantes", async () => {
@@ -97,9 +114,7 @@ describe("P-07 · filtro inicial, contador y paginación", () => {
   it("«Inactivos» muestra solo las bajas", async () => {
     await abrir();
     await userEvent.click(screen.getByRole("button", { name: "Inactivos" }));
-    expect(
-      screen.getByText("2 funcionarios · 13 activos de 15 en el maestro"),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Mostrando/).textContent).toContain("de 2");
     expect(screen.getAllByText("Inactivo")).toHaveLength(2);
   });
 });
@@ -160,18 +175,18 @@ describe("P-07 · baja y reactivación con confirmación", () => {
     ).toBeInTheDocument();
   });
 
-  it("«Activar» pide confirmación antes de llamar al servidor", async () => {
+  it("«Reactivar» pide confirmación antes de llamar al servidor", async () => {
     vi.mocked(PersonalService.reactivar).mockResolvedValue(ficha(14));
     await abrir();
     await userEvent.click(screen.getByRole("button", { name: "Inactivos" }));
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Activar APELLIDO14 NOMBRE" }),
+      screen.getByRole("button", { name: "Reactivar APELLIDO14 NOMBRE" }),
     );
     expect(PersonalService.reactivar).not.toHaveBeenCalled();
 
-    const dialogo = screen.getByRole("alertdialog", { name: "¿Activar a APELLIDO14 NOMBRE?" });
-    await userEvent.click(within(dialogo).getByRole("button", { name: "Activar" }));
+    const dialogo = screen.getByRole("alertdialog", { name: "¿Reactivar a APELLIDO14 NOMBRE?" });
+    await userEvent.click(within(dialogo).getByRole("button", { name: "Reactivar" }));
     await waitFor(() => expect(PersonalService.reactivar).toHaveBeenCalledWith(14));
     expect(
       await screen.findByText("APELLIDO14 NOMBRE vuelve al maestro"),
@@ -233,7 +248,8 @@ describe("P-07 · tras guardar la ficha", () => {
     await userEvent.type(screen.getByLabelText(/Cédula/), "1712345678");
     await userEvent.type(screen.getByLabelText(/^Apellidos/), "PEREZ");
     await userEvent.type(screen.getByLabelText(/^Nombres/), "JUAN");
-    await userEvent.click(screen.getByRole("button", { name: "Nombramiento" }));
+    await screen.findAllByRole("option", { name: "Lunes a Viernes 8 horas" });
+    await userEvent.selectOptions(screen.getByLabelText(/^Jornada laboral/), "1");
     await userEvent.selectOptions(screen.getByLabelText(/^Área/), "OPERATIVOS");
     await userEvent.click(screen.getByRole("button", { name: "Guardar ficha" }));
 

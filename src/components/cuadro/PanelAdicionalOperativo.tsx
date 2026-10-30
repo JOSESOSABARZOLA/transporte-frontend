@@ -101,6 +101,8 @@ export type PanelAdicionalOperativoProps = {
   personalAgregado: PersonaAgregada[];
   onAgregarPersona: (persona: PersonaElegible) => void;
   onRetirarPersona: (funcionarioId: number) => void;
+  /** «Reemplazar» del formulario de una sola persona (2026-10-28). Ver `FormOperativo`. */
+  onReemplazarPersona?: (salienteId: number, entrante: PersonaElegible) => void;
   /**
    * Horario propio de cada persona (2026-09-08, RN-66). El adicional ya no tiene horario
    * único: como el registro, cada persona lleva el suyo y el servidor deriva la ventana.
@@ -155,6 +157,7 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
   personalAgregado,
   onAgregarPersona,
   onRetirarPersona,
+  onReemplazarPersona,
   onCambiarHorarioPersona,
   onCambiarTramitePersona,
   avisoPersonal,
@@ -415,6 +418,7 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         personalAgregado={personalAgregado}
         onAgregarPersona={onAgregarPersona}
         onRetirarPersona={onRetirarPersona}
+        onReemplazarPersona={onReemplazarPersona}
         onCambiarHorarioPersona={onCambiarHorarioPersona}
         fechaTramites={onCambiarTramitePersona ? origen.cuadroFecha : null}
         onCambiarTramitePersona={onCambiarTramitePersona}
@@ -444,9 +448,6 @@ const PanelAdicionalOperativo: FC<PanelAdicionalOperativoProps> = ({
         // El pie de acción vive en el pie fijo del cajón (`idForm`).
         idForm={idForm}
         onEstadoEnvio={onEstadoEnvio}
-        // El personal del adicional NO se guarda al instante: entra con él al registrar. Así la
-        // lista compacta del cajón no promete «Se guarda al instante» (a diferencia de la edición).
-        personalInmediato={false}
       />
     </div>
   );

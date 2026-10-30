@@ -3,115 +3,159 @@
  * Módulo: Cuadro de Colores
  * Feature: Ventanas y parámetros
  * Archivo: AdminVentanasPage.tsx
- * Responsabilidad: Pantalla P-09. Configurar las ventanas de carga y los siete umbrales.
+ * Responsabilidad: Pantalla P-09. Las ventanas de carga, las jornadas laborales y los parámetros
+ *                  de política, en tres pestañas.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-06
  *
  * ═══════════════════════════════════════════════════════════════════════════════
- * ES LA PANTALLA QUE HACE QUE PV-06 DEJE DE BLOQUEAR.
- *
- * La hora a la que cierra la carga departamental aparece como 14H00 en una sesión y como
- * 15H00 en otra, del mismo interlocutor. Mientras eso no se resuelva, el sistema funciona
- * con un supuesto documentado.
- *
- * A partir de aquí, resolverlo **no exige desplegar código**. Es el caso 1 del plan, y es
- * la razón por la que estos valores viven en tablas y no en constantes.
+ * ES LA PANTALLA QUE HACE QUE PV-06 DEJE DE BLOQUEAR: la hora a la que cierra cada departamento y
+ * los umbrales de descanso viven en tablas, así que cambiarlos no exige desplegar código.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * DOS PANELES QUE NO DICEN LO MISMO, Y ESO ES NUEVO. 2026-08-25.
- *
- * Hasta hoy la hora de cierre estaba escrita **dos veces**: en la fila de la ventana del
- * rol y en el parámetro `HORA_CIERRE_DEPARTAMENTAL`. Solo una gobernaba —el servidor lee
- * la ventana—, así que la otra se limitaba a producir un aviso pidiendo por favor que se
- * cambiara también. Quien no lo hacía dejaba la pantalla diciendo 15H00 mientras el
- * sistema cerraba a las 16H00.
- *
- * **El parámetro se retiró.** Cada rol tiene su hora en su ventana, que es lo que pide
- * RF-059 —«parametrizar las ventanas de carga por rol»— y lo que un valor único no podía
- * expresar: la DAF cierra a las 16H30 y los tres departamentos a las 15H00.
- *
- * Arriba se administra **cuándo puede escribir cada rol**; abajo, **los umbrales que no
- * dependen del rol**: la hora límite del cuadro entero (RN-57), la franja nocturna, el
- * descanso de patrulla y el tope de salidas pesadas.
- *
  * LA PANTALLA SOLO PARAMETRIZA (2026-10-08). Cada ventana se guarda por su cuenta, sin compararla
- * con las otras: la coherencia entre ventanas la aplica el sistema en ejecución. Se retiraron la
- * franja «Error de configuración» (RN-56) y las advertencias RN-56/RN-57 tras guardar.
+ * con las otras: la coherencia entre ventanas la aplica el sistema en ejecución.
+ *
+ * REDISEÑO (2026-10-24, prototipos CARGA1–3):
+ *   · Tres pestañas —Ventanas de carga · Jornadas laborales · Parámetros—, cada una con su
+ *     permiso, recordada en la URL (`?tab=`). Un `tab` sin permiso cae en la primera permitida.
+ *   · PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina` y `PanelTabla`; las pestañas, sin números,
+ *     en la cabecera azul; sin resumen a la derecha; «+ Nueva jornada» en la cabecera; las ayudas,
+ *     al pie del panel.
+ *   · Las ventanas dicen su estado EN VIVO; el reloj se refresca cada minuto.
+ *   · PARÁMETROS CON GUARDADO ÚNICO. El borrador vive AQUÍ (cambiar de pestaña no lo pierde) y se
+ *     guarda todo junto con «Guardar cambios», tras confirmar el resumen «CLAVE: anterior →
+ *     nuevo · Afecta: …». El servidor guarda todos o ninguno (`PUT /parametros`); si rechaza
+ *     alguno, su motivo queda bajo su fila y el borrador se conserva.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import ModalVentana from "../components/administracion/ModalVentana.tsx";
+import PanelJornadasLaborales from "../components/administracion/PanelJornadasLaborales.tsx";
+import PanelParametros from "../components/administracion/PanelParametros.tsx";
+import TablaVentanas from "../components/administracion/TablaVentanas.tsx";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import Boton from "../components/common/Boton.tsx";
-import TablaParametros from "../components/administracion/TablaParametros.tsx";
-import TablaVentanas from "../components/administracion/TablaVentanas.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
+import PanelTabla from "../components/common/PanelTabla.tsx";
+import Pestanas, {
+  type DefinicionPestana,
+} from "../components/common/Pestanas.tsx";
 import type {
   ActualizarVentana,
   ParametroPolitica,
   VentanaCarga,
 } from "../interfaces/Administracion.ts";
 import { AdministracionService } from "../services/administracion.service.ts";
-import { avisoDeFallo, presentarError, type AvisoTexto } from "../utils/errorApi.util.ts";
+import {
+  avisoDeFallo,
+  erroresPorClave,
+  presentarError,
+  type AvisoTexto,
+} from "../utils/errorApi.util.ts";
+import { entradaDe } from "../utils/catalogoParametros.util.ts";
+import { motivoDeRechazo } from "../utils/parametro.util.ts";
 import { useCatalogoRoles } from "../hooks/useCatalogoRoles.ts";
 import { usePermiso } from "../hooks/usePermiso.ts";
 import { useAvisoAlSalir } from "../hooks/useAvisoAlSalir.ts";
-import { toast } from "../utils/mensaje.ts";
+import { mensaje, toast } from "../utils/mensaje.ts";
+
+type Pestana = "ventanas" | "jornadas" | "parametros";
+
+const esPestana = (valor: string | null): valor is Pestana =>
+  valor === "ventanas" || valor === "jornadas" || valor === "parametros";
+
+/** Cada cuánto se refresca el estado en vivo de las ventanas. */
+const MS_RELOJ = 60_000;
+/** Cuánto dura el verde de lo recién guardado. */
+const MS_RESALTADO = 4000;
+
+const plural = (n: number, uno: string, varios: string): string =>
+  `${n} ${n === 1 ? uno : varios}`;
 
 const AdminVentanasPage = () => {
   /** El catálogo de roles sale del servidor: aquí no hay ninguno escrito. */
   const { nombreDe } = useCatalogoRoles();
 
-  /*
-    LAS VENTANAS DE CARGA son de la administración general (ADMINISTRADOR y DMIP). El
-    ADMINISTRADOR_DMIT entra a esta pantalla SOLO por las ventanas de los turnos de la
-    cobertura (el servidor le filtra los parámetros), así que a él no se le pinta esta
-    sección ni se le piden sus datos. Quien tenga ambos roles la ve.
-  */
-  // RBAC: la sección de «Ventanas de carga» la ve quien tiene el permiso de administrarlas;
-  // el DMIT entra solo por los parámetros de turno y no la ve.
+  // RBAC: cada pestaña con su permiso. El DMIT y el administrador DAF entran solo por los
+  // parámetros (el servidor les filtra cuáles); las jornadas, quien fijaba el nombramiento.
   const gestionaVentanas = usePermiso("ventanas:administrar");
+  const gestionaJornadas = usePermiso("jornadas:administrar");
+  const gestionaParametros = usePermiso("parametros:administrar");
 
+  const [params, setParams] = useSearchParams();
   const [parametros, setParametros] = useState<ParametroPolitica[]>([]);
   const [ventanas, setVentanas] = useState<VentanaCarga[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
+  const [ahora, setAhora] = useState(() => new Date());
 
-  const [guardandoClave, setGuardandoClave] = useState<string | null>(null);
-  const [avisosParametro, setAvisosParametro] = useState<
+  const [enEdicion, setEnEdicion] = useState<{
+    ventana: VentanaCarga;
+    mensaje?: string;
+  } | null>(null);
+  const [guardandoVentana, setGuardandoVentana] = useState(false);
+  /** «+ Nueva jornada» de la cabecera abre el alta del panel de jornadas. */
+  const [altaJornada, setAltaJornada] = useState(false);
+  const [avisoVentana, setAvisoVentana] = useState<string | null>(null);
+  const [resaltado, setResaltado] = useState<VentanaCarga["rol"] | null>(null);
+
+  /** Clave → valor escrito y aún no guardado. Solo lo que difiere de lo guardado. */
+  const [borrador, setBorrador] = useState<Record<string, string>>({});
+  const [erroresServidor, setErroresServidor] = useState<
     Record<string, string>
   >({});
+  const [guardandoParametros, setGuardandoParametros] = useState(false);
+  const [resaltadas, setResaltadas] = useState<ReadonlySet<string>>(new Set());
 
-  const [enEdicion, setEnEdicion] = useState<VentanaCarga | null>(null);
-  const [guardandoVentana, setGuardandoVentana] = useState(false);
-  const [avisoVentana, setAvisoVentana] = useState<string | null>(null);
+  const permitidas = useMemo(() => {
+    const lista: Pestana[] = [];
+    if (gestionaVentanas) lista.push("ventanas");
+    if (gestionaJornadas) lista.push("jornadas");
+    if (gestionaParametros) lista.push("parametros");
+    return lista;
+  }, [gestionaVentanas, gestionaJornadas, gestionaParametros]);
 
-  const [aviso, setAviso] = useState<AvisoTexto | null>(null);
-  /**
-   * La ventana o el parámetro guardado: un aviso breve que se va solo y la fila resaltada en
-   * verde unos segundos (ventanas desde el 2026-10-07; parámetros desde el 2026-10-15, en lugar
-   * del `ModalExito`, que se retiró).
-   */
-  const [resaltado, setResaltado] = useState<VentanaCarga["rol"] | null>(null);
-  const [parametroResaltado, setParametroResaltado] = useState<string | null>(null);
+  const pedida = params.get("tab");
+  const activa: Pestana | undefined =
+    esPestana(pedida) && permitidas.includes(pedida) ? pedida : permitidas[0];
+
+  const elegir = (pestana: Pestana) => {
+    const siguientes = new URLSearchParams(params);
+    siguientes.set("tab", pestana);
+    setParams(siguientes, { replace: true });
+  };
+
+  useEffect(() => {
+    const reloj = window.setInterval(() => setAhora(new Date()), MS_RELOJ);
+    return () => window.clearInterval(reloj);
+  }, []);
 
   useEffect(() => {
     if (!resaltado) return undefined;
-    const quitar = window.setTimeout(() => setResaltado(null), 4000);
+    const quitar = window.setTimeout(() => setResaltado(null), MS_RESALTADO);
     return () => window.clearTimeout(quitar);
   }, [resaltado]);
 
   useEffect(() => {
-    if (!parametroResaltado) return undefined;
-    const quitar = window.setTimeout(() => setParametroResaltado(null), 4000);
+    if (resaltadas.size === 0) return undefined;
+    const quitar = window.setTimeout(
+      () => setResaltadas(new Set()),
+      MS_RESALTADO,
+    );
     return () => window.clearTimeout(quitar);
-  }, [parametroResaltado]);
+  }, [resaltadas]);
+
   const cargar = useCallback(async () => {
     setCargando(true);
-
     try {
+      // Solo se pide lo que el rol administra: evita un 403 inútil.
       const [listaParametros, listaVentanas] = await Promise.all([
-        AdministracionService.listarParametros(),
-        // El DMIT no gestiona ventanas de carga: no se le piden (evita un 403 inútil).
+        gestionaParametros
+          ? AdministracionService.listarParametros()
+          : Promise.resolve([]),
         gestionaVentanas
           ? AdministracionService.listarVentanas()
           : Promise.resolve([]),
@@ -126,90 +170,133 @@ const AdminVentanasPage = () => {
     } finally {
       setCargando(false);
     }
-  }, [gestionaVentanas]);
+  }, [gestionaParametros, gestionaVentanas]);
 
   useEffect(() => {
     void cargar();
   }, [cargar]);
 
-  // Parámetros con un valor escrito sin guardar: avisan antes de salir de la pantalla.
-  const [sinGuardar, setSinGuardar] = useState<ReadonlySet<string>>(new Set());
-  const alCambiarParametro = useCallback((clave: string, cambiado: boolean) => {
-    setSinGuardar((antes) => {
-      if (antes.has(clave) === cambiado) return antes;
-      const siguiente = new Set(antes);
-      if (cambiado) siguiente.add(clave);
-      else siguiente.delete(clave);
-      return siguiente;
-    });
-  }, []);
-  useAvisoAlSalir(sinGuardar.size > 0);
+  const hayCambios = Object.keys(borrador).length > 0;
+  useAvisoAlSalir(hayCambios);
 
-  const guardarParametro = useCallback(
-    async (clave: string, valor: string) => {
-      setGuardandoClave(clave);
-      // Se retira el rechazo anterior de esta clave, y solo el de esta: los avisos de
-      // los demás parámetros siguen valiendo mientras nadie los corrija.
-      setAvisosParametro((actuales) =>
-        Object.fromEntries(
-          Object.entries(actuales).filter(([otra]) => otra !== clave),
-        ),
-      );
-
-      try {
-        const actualizado = await AdministracionService.actualizarParametro(
-          clave,
-          { valor },
-        );
-
-        // Se reemplaza solo la fila tocada: recargar las ocho descartaría lo que el
-        // administrador tuviera escrito a medias en otra.
-        setParametros((actuales) =>
-          actuales.map((parametro) =>
-            parametro.clave === clave ? actualizado : parametro,
-          ),
-        );
-        setParametroResaltado(clave);
-        toast.exito(
-          `${clave} quedó en ${actualizado.valor}${
-            actualizado.unidad ? ` ${actualizado.unidad}` : ""
-          }. El cambio rige desde ahora, sin desplegar código.`,
-        );
-      } catch (fallo: unknown) {
-        // Caso 2: el servidor rechaza con el rango indicado. Se muestra tal cual, junto
-        // al campo, y el valor escrito se conserva para poder corregirlo.
-        setAvisosParametro((actuales) => ({
-          ...actuales,
-          [clave]: presentarError(fallo).mensaje,
-        }));
-      } finally {
-        setGuardandoClave(null);
-      }
-    },
-    [],
+  const porClave = useMemo(
+    () => new Map(parametros.map((parametro) => [parametro.clave, parametro])),
+    [parametros],
   );
+
+  const cambiarParametro = useCallback(
+    (clave: string, valor: string) => {
+      const guardado = porClave.get(clave)?.valor;
+      setBorrador((antes) => {
+        const siguiente = { ...antes };
+        if (valor === guardado) delete siguiente[clave];
+        else siguiente[clave] = valor;
+        return siguiente;
+      });
+      // Al corregir, el rechazo anterior del servidor ya no dice nada de este valor.
+      setErroresServidor((antes) => {
+        if (!(clave in antes)) return antes;
+        const siguiente = { ...antes };
+        delete siguiente[clave];
+        return siguiente;
+      });
+    },
+    [porClave],
+  );
+
+  const erroresBorrador = Object.entries(borrador).filter(([clave, valor]) => {
+    const parametro = porClave.get(clave);
+    return parametro ? motivoDeRechazo(parametro, valor) !== null : false;
+  }).length;
+
+  const descartar = () => {
+    setBorrador({});
+    setErroresServidor({});
+  };
+
+  const guardarParametros = async () => {
+    const cambios = Object.entries(borrador).map(([clave, valor]) => ({
+      clave,
+      valor: valor.trim(),
+    }));
+    if (cambios.length === 0 || erroresBorrador > 0) return;
+
+    const confirmado = await mensaje.confirmar({
+      variante: "advertencia",
+      titulo: `¿Guardar ${plural(cambios.length, "cambio", "cambios")}?`,
+      mensaje: (
+        <div className="flex flex-col gap-2 text-left">
+          <p>Rigen desde que se guardan, sin desplegar código:</p>
+          <ul className="flex flex-col gap-1">
+            {cambios.map(({ clave, valor }) => {
+              const afecta = entradaDe(clave).afecta;
+              return (
+                <li key={clave} className="text-sm">
+                  <span className="font-mono text-xs font-semibold">
+                    {clave}
+                  </span>
+                  : {porClave.get(clave)?.valor ?? "—"} → {valor}
+                  {afecta.length > 0 && (
+                    <span className="block text-xs text-app-muted">
+                      Afecta: {afecta.join(", ")}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ),
+      textoPrincipal: "Guardar",
+      textoSecundario: "Cancelar",
+    });
+    if (!confirmado) return;
+
+    setGuardandoParametros(true);
+    try {
+      const lista = await AdministracionService.actualizarParametros(cambios);
+      setParametros(lista);
+      setBorrador({});
+      setErroresServidor({});
+      setResaltadas(new Set(cambios.map((cambio) => cambio.clave)));
+      toast.exito(
+        `${plural(cambios.length, "parámetro guardado", "parámetros guardados")}. Rigen desde ahora.`,
+      );
+    } catch (fallo: unknown) {
+      // Todos o ninguno: no se guardó nada. Cada motivo, bajo su fila; el borrador se conserva.
+      const porFila = erroresPorClave(fallo);
+      setErroresServidor(porFila);
+      if (Object.keys(porFila).length === 0) {
+        void mensaje.errorDe(fallo, {
+          titulo: "No se guardaron los parámetros",
+        });
+      } else {
+        toast.error(presentarError(fallo).mensaje);
+      }
+    } finally {
+      setGuardandoParametros(false);
+    }
+  };
 
   const guardarVentana = useCallback(
     async (cambios: ActualizarVentana) => {
       if (!enEdicion) return;
-
+      const { rol } = enEdicion.ventana;
       setGuardandoVentana(true);
       setAvisoVentana(null);
-
       try {
         const resultado = await AdministracionService.actualizarVentana(
-          enEdicion.rol,
+          rol,
           cambios,
         );
-
         setVentanas((actuales) =>
           actuales.map((ventana) =>
-            ventana.rol === enEdicion.rol ? resultado.ventana : ventana,
+            ventana.rol === rol ? resultado.ventana : ventana,
           ),
         );
         setEnEdicion(null);
-        setResaltado(enEdicion.rol);
-        toast.exito(`Ventana de ${nombreDe(enEdicion.rol)} actualizada`);
+        setResaltado(rol);
+        toast.exito(`Ventana de ${nombreDe(rol)} actualizada`);
       } catch (fallo: unknown) {
         setAvisoVentana(presentarError(fallo).mensaje);
       } finally {
@@ -219,21 +306,36 @@ const AdminVentanasPage = () => {
     [enEdicion, nombreDe],
   );
 
+  // Sin números en las pestañas ni resumen en la cabecera (plantilla visual, 2026-10-24).
+  const pestanas: DefinicionPestana<Pestana>[] = [
+    gestionaVentanas && {
+      id: "ventanas" as const,
+      titulo: "Ventanas de carga",
+    },
+    gestionaJornadas && {
+      id: "jornadas" as const,
+      titulo: "Jornadas laborales",
+    },
+    gestionaParametros && { id: "parametros" as const, titulo: "Parámetros" },
+  ].filter((pestana): pestana is DefinicionPestana<Pestana> =>
+    Boolean(pestana),
+  );
+
+  /** La ayuda de cada pestaña, al pie del panel. */
+  const nota =
+    activa === "ventanas"
+      ? "Una ventana por rol. Fuera de su franja el departamento no puede cargar ni editar. Para quitar la restricción se elige «Sin restricción», que deja rastro."
+      : activa === "jornadas"
+        ? "Reemplazan al tipo de contrato: cada persona y cada conductor tienen una, y fuera de sus días u horas no se los convoca. Sin jornada no se los convoca. Las reglas de descanso y las ausencias valen igual para todas."
+        : undefined;
+
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-1">
-        <p className="page-heading-kicker font-semibold uppercase">
-          Administración
-        </p>
-        <h1 className="page-heading-title">
-          Ventanas y parámetros
-        </h1>
-        <p className="page-heading-subtitle text-sm">
-          La configuración que gobierna el sistema: a qué hora deja de cargar
-          cada departamento y con qué umbrales se decide si una persona puede
-          salir.
-        </p>
-      </header>
+      <EncabezadoPagina
+        modulo="Administración"
+        titulo="Ventanas y parámetros"
+        subtitulo="Cuándo puede cargar cada departamento y con qué reglas decide el sistema."
+      />
 
       {aviso && (
         <AvisoEnLinea
@@ -249,74 +351,90 @@ const AdminVentanasPage = () => {
         </AvisoEnLinea>
       )}
 
-      {gestionaVentanas && (
-        <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-          <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-              Ventanas de carga
-            </h2>
-            <span className="badge badge-ghost badge-sm">
-              {cargando ? "Cargando…" : `${ventanas.length} roles`}
-            </span>
-          </div>
-
-          <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-            <p className="text-xs text-app-muted">
-              Hay una ventana por rol y no se crean ni se eliminan: eliminar una
-              abriría la carga de ese rol las veinticuatro horas. Para quitar la
-              restricción se elige «Sin restricción», que dice lo mismo y deja rastro.
-            </p>
-
+      {activa && (
+        <PanelTabla
+          // Con UNA sola pestaña (el administrador DAF solo ve Parámetros) no se pintan pestañas:
+          // la cabecera lleva su nombre como título (2026-10-24).
+          titulo={pestanas.length === 1 ? pestanas[0].titulo : undefined}
+          cabecera={
+            pestanas.length > 1 ? (
+              <Pestanas
+                etiqueta="Ventanas y parámetros"
+                pestanas={pestanas}
+                activa={activa}
+                onElegir={elegir}
+                sobreBarra
+              />
+            ) : undefined
+          }
+          acciones={
+            activa === "jornadas" ? (
+              <Boton
+                variante="primario"
+                tamano="md"
+                onClick={() => setAltaJornada(true)}
+              >
+                + Nueva jornada
+              </Boton>
+            ) : undefined
+          }
+          cuerpo={
+            pestanas.length > 1
+              ? {
+                  id: `panel-${activa}`,
+                  role: "tabpanel",
+                  "aria-labelledby": `pestana-${activa}`,
+                }
+              : undefined
+          }
+          nota={nota}
+        >
+          {activa === "ventanas" && (
             <TablaVentanas
               nombreDe={nombreDe}
               ventanas={ventanas}
               cargando={cargando}
               procesando={guardandoVentana}
               resaltado={resaltado}
-              onEditar={(ventana) => {
-                setEnEdicion(ventana);
+              ahora={ahora}
+              onEditar={(ventana, mensajeInicial) => {
+                setEnEdicion({ ventana, mensaje: mensajeInicial });
                 setAvisoVentana(null);
               }}
             />
-          </div>
-        </div>
+          )}
+
+          {activa === "jornadas" && (
+            <PanelJornadasLaborales
+              altaAbierta={altaJornada}
+              onCerrarAlta={() => setAltaJornada(false)}
+            />
+          )}
+
+          {activa === "parametros" && (
+            <PanelParametros
+              parametros={parametros}
+              cargando={cargando}
+              borrador={borrador}
+              onCambiar={cambiarParametro}
+              erroresServidor={erroresServidor}
+              errores={erroresBorrador}
+              guardando={guardandoParametros}
+              resaltadas={resaltadas}
+              onGuardar={() => void guardarParametros()}
+              onDescartar={descartar}
+            />
+          )}
+        </PanelTabla>
       )}
-
-      <div className="app-modules-panel app-data-panel app-shell-surface overflow-visible rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)] backdrop-blur-[2px]">
-        <div className="app-section-header flex flex-col gap-3 border-b border-base-300 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="app-section-heading text-sm font-semibold uppercase text-primary/95">
-            Parámetros de política
-          </h2>
-          <span className="badge badge-ghost badge-sm">
-            {cargando ? "Cargando…" : `${parametros.length} parámetros`}
-          </span>
-        </div>
-
-        <div className="app-data-panel-body flex flex-col gap-3 px-2 pb-4 pt-2 md:px-4">
-          <p className="text-xs text-app-muted">
-            Cada valor rige desde el momento en que se guarda. Cambiar un umbral
-            de descanso altera de inmediato a quién ofrece el sistema al armar el
-            cuadro.
-          </p>
-
-          <TablaParametros
-            parametros={parametros}
-            cargando={cargando}
-            guardando={guardandoClave}
-            avisos={avisosParametro}
-            onGuardar={(clave, valor) => void guardarParametro(clave, valor)}
-            onCambios={alCambiarParametro}
-            resaltada={parametroResaltado}
-          />
-        </div>
-      </div>
 
       {enEdicion && (
         <ModalVentana
           // Cambiar de rol vuelve a montar el modal: los valores del anterior no
           // sobreviven bajo el rótulo del siguiente.
-          key={enEdicion.rol}
-          ventana={enEdicion}
+          key={enEdicion.ventana.rol}
+          ventana={enEdicion.ventana}
+          mensajeInicial={enEdicion.mensaje}
           guardando={guardandoVentana}
           aviso={avisoVentana}
           onGuardar={(cambios) => void guardarVentana(cambios)}

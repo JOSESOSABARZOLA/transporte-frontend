@@ -20,7 +20,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -165,7 +165,13 @@ describe("barra plegable (rediseño 2026-10-12)", () => {
       />,
     );
 
-    expect(screen.getByText("2 de 4")).toBeInTheDocument();
+    // En línea con el selector del formulario (2026-10-24): rótulo en mayúsculas y un enlace «Cambiar»
+    // normal (ya no va sobre la cabecera azul de un panel aparte).
+    expect(screen.queryByText("2 de 4")).toBeNull();
+    const panel = screen.getByRole("group", { name: "Áreas de personal admitidas" });
+    expect(panel.querySelector(".app-section-header")).toBeNull();
+    expect(within(panel).getByText("Áreas de personal admitidas")).toHaveClass("uppercase");
+    expect(within(panel).getByRole("button", { name: /Cambiar/ }).className).toContain("btn-link");
     expect(
       screen.getByText("Inspector General - DMIP, Inspector Técnico - DMIP"),
     ).toBeInTheDocument();

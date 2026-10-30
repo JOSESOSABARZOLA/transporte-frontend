@@ -88,19 +88,6 @@ export const resumenZonal = (
 export const tienePuntos = (zonalId: number, puntos: PuntoEncuentro[]): boolean =>
   puntos.some((punto) => punto.zonalId === zonalId);
 
-/**
- * «11 zonales con puntos · 55 de 63 puntos activos» con el interruptor «Solo zonales con puntos»
- * encendido; «13 zonales · …» apagado. Los puntos son siempre los del formulario.
- */
-export const contadorPuntos = (
-  zonales: number,
-  puntos: PuntoEncuentro[],
-  soloConPuntos = false,
-): string => {
-  const activos = puntos.filter(estaActivo).length;
-  const rotulo = zonales === 1 ? "zonal" : "zonales";
-  return `${zonales} ${rotulo}${soloConPuntos ? " con puntos" : ""} · ${activos} de ${puntos.length} puntos activos`;
-};
 
 /**
  * El resumen único sobre la lista: «2 zonales no tienen puntos en este formulario y están ocultas»
@@ -241,4 +228,4 @@ export const formularioPedido = (
 };
 
 /** Motivo por omisión cuando el servidor no dice por qué un valor no se puede eliminar. */
-export const MOTIVO_NO_ELIMINAR = "Ya se usó en un cuadro: solo puede desactivarse.";
+export const MOTIVO_NO_ELIMINAR = "Ya se usó en un cuadro: solo se puede desactivar.";

@@ -74,7 +74,8 @@ const VIGENTE = fechaDeJornadaPorDefecto();
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
   id: 1,
   identificador: "OCF-001",
-  grupoRegistro: null,
+  grupoRegistro: "registro-suelto",
+  esLote: false,
   secuencial: 1,
   cuadroFecha: VIGENTE,
   cuadroEstado: "BORRADOR",
@@ -153,10 +154,11 @@ describe("columna «Tipo de control»", () => {
       />,
     );
 
-  it("va entre Punto y Conductor", () => {
+  it("va entre Punto y Transporte, y Transporte antes de Conductor (2026-10-26)", () => {
     const i = COLUMNAS_LISTADO.indexOf("tipoControl");
     expect(COLUMNAS_LISTADO[i - 1]).toBe("punto");
-    expect(COLUMNAS_LISTADO[i + 1]).toBe("conductor");
+    expect(COLUMNAS_LISTADO[i + 1]).toBe("transporte");
+    expect(COLUMNAS_LISTADO[i + 2]).toBe("conductor");
   });
 
   it("muestra hasta dos tipos separados por coma, sin «+N»", () => {
@@ -228,6 +230,42 @@ describe("P-02 · filtro Desde–Hasta", () => {
       "aria-disabled",
     );
     expect(screen.queryByRole("columnheader", { name: "Fecha" })).not.toBeInTheDocument();
+  });
+
+  /**
+   * PLANTILLA VISUAL (2026-10-24): los atajos son un `SelectorSegmentado` (eran pastillas sueltas).
+   * Mismo comportamiento: el que coincide con el rango va marcado y, con un rango a mano, ninguno.
+   */
+  it("los atajos son un control segmentado: marca el que coincide y ninguno con un rango a mano", async () => {
+    vi.mocked(OperativoService.consultar).mockResolvedValue(respuesta([operativo()]));
+    const usuario = userEvent.setup();
+
+    render(<MisOperativosPage />);
+
+    const atajos = await screen.findByRole("group", { name: "Atajos de fechas" });
+    expect(atajos).toHaveClass("join");
+    expect(within(atajos).getByRole("button", { name: "Hoy" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await usuario.click(within(atajos).getByRole("button", { name: "Ayer" }));
+    expect(within(atajos).getByRole("button", { name: "Ayer" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(atajos).getByRole("button", { name: "Hoy" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    // Un rango que no es de ningún atajo: ninguno queda marcado.
+    const desde = screen.getByLabelText("Desde");
+    await usuario.clear(desde);
+    await usuario.type(desde, sumarDias(VIGENTE, -2));
+    await waitFor(() =>
+      expect(within(atajos).queryAllByRole("button", { pressed: true })).toHaveLength(0),
+    );
   });
 
   it("con varios días: una fila de cabecera por día, resumen en la cabecera y orden del servidor", async () => {

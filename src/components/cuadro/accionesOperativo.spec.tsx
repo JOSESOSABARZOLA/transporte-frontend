@@ -90,7 +90,8 @@ const FORMULARIO_PMO: Operativo["formulario"] = {
 const operativo = (parcial: Partial<Operativo> = {}): Operativo => ({
   id: 1,
   identificador: "OCPMO-001",
-  grupoRegistro: null,
+  grupoRegistro: "registro-suelto",
+  esLote: false,
   secuencial: 1,
   cuadroFecha: VIGENTE,
   cuadroEstado: "BORRADOR",
@@ -138,8 +139,8 @@ const patrulla = (): Operativo[] => {
     admiteAdicionales: false,
   };
   return [
-    operativo({ id: 11, identificador: "IGECU-001", grupoRegistro: "lote-1", formulario }),
-    operativo({ id: 12, identificador: "ITECU-001", grupoRegistro: "lote-1", formulario }),
+    operativo({ id: 11, identificador: "IGECU-001", grupoRegistro: "lote-1", esLote: true, formulario }),
+    operativo({ id: 12, identificador: "ITECU-001", grupoRegistro: "lote-1", esLote: true, formulario }),
   ];
 };
 
@@ -318,14 +319,31 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
     expect(boton(fila, "Ver detalle", "OCPMO-001")).not.toHaveAttribute("aria-disabled");
   });
 
-  it("«Ver detalle» abre el cajón en solo lectura aunque la fila admita edición", async () => {
+  it("«Ver detalle» abre el DETALLE aunque la fila admita edición; «Editar» abre la edición", async () => {
     const usuario = userEvent.setup();
     await pintar([operativo()]);
 
     await usuario.click(boton(filaDe("OCPMO-001"), "Ver detalle", "OCPMO-001") as HTMLElement);
 
-    const cajon = await screen.findByRole("dialog");
-    expect(within(cajon).getByText(/Solo lectura/)).toBeInTheDocument();
+    // El detalle de solo lectura (2026-10-27), no el formulario de edición apagado.
+    const cajon = await screen.findByRole("dialog", { name: "Detalle del operativo" });
+    expect(cajon.querySelector("[data-detalle-operativo]")).not.toBeNull();
+    expect(cajon.querySelector("[data-drawer-operativo]")).toBeNull();
     expect(within(cajon).queryByRole("button", { name: "Guardar cambios" })).toBeNull();
+
+    // Fila propia con la ventana abierta: «Editar» abre el cajón de edición de siempre.
+    await usuario.click(within(cajon).getByRole("button", { name: "Editar" }));
+    expect(await screen.findByRole("dialog", { name: "Editar operativo" })).toBeInTheDocument();
+  });
+
+  it("el detalle de una fila de otro departamento no ofrece «Editar»", async () => {
+    const usuario = userEvent.setup();
+    await pintar([operativo({ creadoPorRol: "DMIP_INSPECCIONES" })]);
+
+    await usuario.click(boton(filaDe("OCPMO-001"), "Ver detalle", "OCPMO-001") as HTMLElement);
+
+    const cajon = await screen.findByRole("dialog", { name: "Detalle del operativo" });
+    expect(within(cajon).queryByRole("button", { name: "Editar" })).toBeNull();
+    expect(within(cajon).getAllByRole("button", { name: "Cerrar" }).length).toBeGreaterThan(0);
   });
 });

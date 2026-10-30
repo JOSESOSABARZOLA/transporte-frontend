@@ -17,7 +17,9 @@
  */
 
 import type { TurnoConductor } from "../interfaces/Planificacion.ts";
+import type { FilaReparto } from "./personal.util.ts";
 import type {
+  Candidato,
   ConductorJornada,
   OperativoJornada,
   Paso,
@@ -141,8 +143,25 @@ export const textoTurno = (turno: TurnoConductor | null): string => {
   return `Turno ${NOMBRE_TURNO[turno].toLowerCase()}`;
 };
 
+/**
+ * REPARTO DE CARGA DE LOS CONDUCTORES (2026-10-30). El candidato como fila del reparto: «puede
+ * tomarlo» es `asignable` (disponible o fuera de turno), y quien no, lleva su motivo del servidor
+ * tal cual (regla 7). Las señales de carga pasan sin tocar.
+ */
+export const filaDeCandidato = (candidato: Candidato): FilaReparto => ({
+  id: candidato.conductorId,
+  nombre: candidato.nombre,
+  elegible: candidato.asignable,
+  motivo: candidato.asignable ? null : candidato.motivo,
+  indiceCarga: candidato.indiceCarga,
+  nivelFatiga: candidato.nivelFatiga,
+  operativosAsignados: candidato.operativosAsignados,
+  desviacionCarga: candidato.desviacionCarga,
+  nivelEquidad: candidato.nivelEquidad,
+});
+
 /** «Turno día · PMA7056». */
-export const textoConductor = (conductor: Pick<ConductorJornada, "turno" | "placa">): string =>
+export const textoConductor =(conductor: Pick<ConductorJornada, "turno" | "placa">): string =>
   [textoTurno(conductor.turno), conductor.placa].filter(Boolean).join(" · ");
 
 /** «5 conductores en uso · 5 vehículos disponibles · sin avisos». */
@@ -154,7 +173,13 @@ export const lineaDeDetalle = (totales: ResumenJornadaDaf["totales"]): string =>
     totales.avisos === 0
       ? "sin avisos"
       : `${plural(totales.avisos, "aviso", "avisos")} en los conductores`,
-  ].join(" · ");
+    // Vehículo de otra institución (2026-10-23): no piden vehículo, pero se dice que existen.
+    totales.otraInstitucion
+      ? `${plural(totales.otraInstitucion, "operativo", "operativos")} en vehículo de otra institución`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 };
 
 /** «OCFIJ-002 · termina 17H00 en Centro». */

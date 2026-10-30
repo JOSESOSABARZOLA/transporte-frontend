@@ -24,6 +24,11 @@
  * EL CUPO COMPARTIDO no se toca desde aquí (`esCompartida`, PER-06): se muestra para que quien
  * retire esa área sepa lo que se lleva por delante.
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * EN LÍNEA CON EL SELECTOR DEL FORMULARIO (2026-10-24): ya no es un panel azul aparte. Bajo el
+ * título de la página, a la derecha del selector, va el rótulo «ÁREAS DE PERSONAL ADMITIDAS», las
+ * áreas y el enlace «Cambiar», que despliega el MISMO cuerpo de siempre (chips y «Guardar áreas»)
+ * bajo la fila. La lógica no cambia: mismo guardado del conjunto y mismo aviso de cambios pendientes.
  */
 
 import { useEffect, useId, useMemo, useState, type FC } from "react";
@@ -101,18 +106,16 @@ const PanelAreasFormulario: FC<PanelAreasFormularioProps> = ({
   const ocupado = procesando || cargando;
 
   return (
-    <section
+    <div
+      role="group"
       aria-label="Áreas de personal admitidas"
-      className="app-shell-surface rounded-3xl border border-base-300 bg-base-100 shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+      className="relative flex min-w-0 flex-col gap-1.5"
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
-        <h2 className="text-app-strong text-sm font-semibold">
-          Áreas de personal admitidas
-        </h2>
-        <span className="badge badge-ghost badge-sm">
-          {marcadas.length} de {TODAS.length}
-        </span>
-        <span className="text-app-muted min-w-0 flex-1 text-sm">
+      <span className="text-[0.6875rem] font-semibold uppercase tracking-wide text-app-muted">
+        Áreas de personal admitidas
+      </span>
+      <div className="flex min-h-11 flex-wrap items-center gap-2">
+        <span className="text-[0.8125rem] text-app-strong">
           {marcadas.length === 0
             ? "Ninguna área: el formulario no ofrecerá personal"
             : marcadas.map((area) => NOMBRE_AREA[area]).join(", ")}
@@ -144,7 +147,7 @@ const PanelAreasFormulario: FC<PanelAreasFormularioProps> = ({
       {desplegado && (
         <div
           id={idCuerpo}
-          className="flex flex-col gap-3 border-t border-base-300 px-5 py-3"
+          className="app-shell-surface absolute left-0 top-full z-20 mt-1 flex w-[min(40rem,90vw)] flex-col gap-3 rounded-xl border border-base-300 bg-base-100 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.20)]"
         >
           <p className="text-app-muted text-sm">
             Al registrar un operativo de este formulario solo se ofrece personal de
@@ -208,7 +211,7 @@ const PanelAreasFormulario: FC<PanelAreasFormularioProps> = ({
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 };
 

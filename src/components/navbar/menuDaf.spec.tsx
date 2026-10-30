@@ -86,7 +86,13 @@ describe("menú · grupo «Transporte · DAF»", () => {
     conRoles(["ADMINISTRADOR_DAF"]);
 
     expect(screen.queryByText("Planificar el día")).toBeNull();
-    expect(screen.getByRole("link", { name: /Mantenimiento/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Flota y garajes/ })).toBeInTheDocument();
+  });
+
+  it("«Mantenimiento» ya no está en el menú: se programa desde Flota (2026-10-20)", () => {
+    conRoles(["ADMINISTRADOR_DAF"]);
+
+    expect(screen.queryByRole("link", { name: /Mantenimiento/ })).toBeNull();
   });
 
   it("sin ninguna opción, el grupo entero desaparece", () => {
@@ -137,6 +143,25 @@ const redirigir = (desde: string) =>
   );
 
 describe("redirecciones de las pantallas absorbidas", () => {
+  it("«Mantenimiento de vehículos» (retirada) abre Flota › Vehículos en el calendario semanal", async () => {
+    const { routes } = await import("../../config/routes.tsx");
+    const vieja = routes
+      .flatMap((ruta) => ruta.children ?? [])
+      .find((ruta) => ruta.path === "administracion/mantenimiento");
+    render(
+      <MemoryRouter initialEntries={["/home/administracion/mantenimiento"]}>
+        <Routes>
+          <Route path="/home/administracion/mantenimiento" element={vieja?.element} />
+          <Route path="/home/administracion/flota" element={<Destino />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByText("/home/administracion/flota?tab=vehiculos&vista=calendario"),
+    ).toBeInTheDocument();
+  });
+
   it("«Jornada de los conductores» abre Planificar el día en la vista de tabla, con su fecha", () => {
     redirigir("/home/cuadro/jornada-conductores?fecha=2026-10-08");
 

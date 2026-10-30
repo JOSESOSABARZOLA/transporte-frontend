@@ -48,13 +48,15 @@ type TooltipProps = {
   texto: string | null | undefined;
   /** Dónde se alinea respecto del control: al centro (por omisión), o pegado a su borde derecho. */
   alinear?: "centro" | "fin";
+  /** Ocupa todo el ancho (una barra, no un botón): la barra «Sin restricción», 2026-10-24. */
+  bloque?: boolean;
   /** UN elemento que reciba `aria-describedby` (un `<Boton>`, un `<button>`). */
   children: ReactElement<{ "aria-describedby"?: string }>;
 };
 
 type Posicion = { top: number; left: number; flecha: number; lado: "arriba" | "abajo" };
 
-const Tooltip: FC<TooltipProps> = ({ texto, alinear = "centro", children }) => {
+const Tooltip: FC<TooltipProps> = ({ texto, alinear = "centro", bloque = false, children }) => {
   const id = useId();
   const ancla = useRef<HTMLSpanElement>(null);
   const burbuja = useRef<HTMLSpanElement>(null);
@@ -124,7 +126,7 @@ const Tooltip: FC<TooltipProps> = ({ texto, alinear = "centro", children }) => {
   return (
     <span
       ref={ancla}
-      className="inline-flex"
+      className={bloque ? "flex w-full" : "inline-flex"}
       onMouseEnter={abrirConRetraso}
       onMouseLeave={cerrar}
       onFocus={() => {

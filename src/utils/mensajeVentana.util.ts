@@ -9,8 +9,9 @@
  *
  * COPIA DEL SERVIDOR (`common/auth/application/mensaje-ventana.ts`) de `resolverMensajeVentana`.
  * El modal «Editar ventana de carga» la necesita en vivo, mientras se escribe, sin ir al servidor.
- * La detección de horas fijas que no coinciden (aviso «Usar {cierre}») se retiró de la pantalla el
- * 2026-10-08; el servidor la sigue usando en ejecución para el mensaje del funcionario.
+ * La detección de horas fijas que no coinciden se retiró de la pantalla el 2026-10-08 y VOLVIÓ el
+ * 2026-10-24 (rediseño de «Ventanas y parámetros»): `detectarHoraInconsistente`, copia de la del
+ * servidor, marca el mensaje «no coincide con el horario» y ofrece `mensajeSugerido`.
  * La autoridad sigue siendo el servidor: lo que el funcionario lee lo resuelve él.
  *
  * `{cierre}` y `{apertura}` se reemplazan por la hora configurada en formato institucional
@@ -47,4 +48,48 @@ export const resolverMensajeVentana = (
     .join(textoCierre)
     .split(MARCADOR_APERTURA)
     .join(textoApertura);
+};
+
+/** Una hora escrita en el texto: «18H25», «18h25» o «18:25» (con o sin cero inicial). */
+const PATRON_HORA_FIJA = /(?<![0-9])((?:[01]?[0-9]|2[0-3]))[Hh:]([0-5][0-9])(?![0-9])/g;
+
+/** Una hora fija del mensaje que no coincide con la ventana. */
+export interface HoraInconsistente {
+  /** Tal como está escrita en el mensaje («18H25», «18:25»). */
+  texto: string;
+  /** Normalizada a `HH:MM`. */
+  hora: string;
+}
+
+/**
+ * La PRIMERA hora fija del mensaje que no es ni la de apertura ni la de cierre, o `null` si no
+ * hay horas fijas o todas coinciden. Espejo de `detectarHoraInconsistente` del servidor, que con
+ * esa hora deja de usar el texto y le muestra al funcionario el mensaje calculado.
+ */
+export const detectarHoraInconsistente = (
+  mensaje: string,
+  apertura: string | null,
+  cierre: string | null,
+): HoraInconsistente | null => {
+  for (const coincidencia of mensaje.matchAll(PATRON_HORA_FIJA)) {
+    const hora = `${coincidencia[1].padStart(2, "0")}:${coincidencia[2]}`;
+    if (hora !== apertura && hora !== cierre) return { texto: coincidencia[0], hora };
+  }
+  return null;
+};
+
+/**
+ * El mensaje que se ofrece con «Usar mensaje sugerido», con los marcadores en lugar de horas: así
+ * nunca vuelve a desalinearse. Es el mismo texto con que la migración `20261024090000` corrigió
+ * los mensajes guardados.
+ */
+export const mensajeSugerido = (
+  rol: string,
+  tipo: string,
+): string => {
+  if (rol === "DAF") {
+    return "La ventana de asignación de transporte va de {apertura} a {cierre}. Fuera de ese intervalo no se puede asignar conductor ni vehículo.";
+  }
+  const cuando = tipo === "LABORABLE" ? "el siguiente día laborable" : "mañana";
+  return `La ventana de carga de su departamento cerró a las {cierre}. Vuelve a abrirse ${cuando} a las {apertura}.`;
 };

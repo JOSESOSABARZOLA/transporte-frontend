@@ -23,10 +23,14 @@
  *
  * LA VENTANA NO BLOQUEA ESTE PASO. Con la asignación aún cerrada, «Continuar» lleva al paso 2 en
  * solo lectura: se puede revisar todo mientras llega la hora.
+ *
+ * PLANTILLA VISUAL (2026-10-24). El requisito de la ventana (`VENTANA`) ya no va en la lista: la
+ * página lo muestra como aviso bajo su encabezado (`AvisoVentanaJornada`, con la cuenta regresiva).
+ * La cabecera ya no lleva el distintivo «N pendientes» / «Listo para asignar»: el pie lo dice.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useEffect, useState, type FC, type ReactNode } from "react";
+import { useState, type FC, type ReactNode } from "react";
 import Boton from "../../common/Boton.tsx";
 import BotonEnlace from "../../common/BotonEnlace.tsx";
 import CompletarConductor from "./CompletarConductor.tsx";
@@ -35,7 +39,6 @@ import type { Requisito, ResumenJornadaDaf } from "../../../interfaces/JornadaDa
 import { usePermiso } from "../../../hooks/usePermiso.ts";
 import { JornadaDafService } from "../../../services/jornadaDaf.service.ts";
 import { mensaje } from "../../../utils/mensaje.ts";
-import { faltaParaAbrir } from "../../../utils/planificarDia.util.ts";
 
 type PasoPrepararProps = {
   fecha: string;
@@ -67,13 +70,6 @@ const PasoPreparar: FC<PasoPrepararProps> = ({
   const [corrigiendo, setCorrigiendo] = useState(false);
   const [salen, setSalen] = useState<Set<number>>(new Set());
   const [guardando, setGuardando] = useState(false);
-
-  // La cuenta regresiva hasta que abre la ventana se rehace cada minuto.
-  const [ahora, setAhora] = useState(() => new Date());
-  useEffect(() => {
-    const reloj = window.setInterval(() => setAhora(new Date()), 60_000);
-    return () => window.clearInterval(reloj);
-  }, []);
 
   /** Lo que la grilla propone: lo ya confirmado o, sin confirmar, todo lo que no está en taller. */
   const salenPorDefecto = () =>
@@ -169,12 +165,8 @@ const PasoPreparar: FC<PasoPrepararProps> = ({
     }
   };
 
-  /** El título del requisito de la ventana suma la cuenta regresiva: «… · faltan 01:48». */
-  const tituloDe = (requisito: Requisito): string => {
-    if (requisito.clave !== "VENTANA" || requisito.estado !== "ESPERA") return requisito.titulo;
-    const falta = faltaParaAbrir(ventana.horaApertura, ventana.zonaHoraria, ahora);
-    return falta ? `${requisito.titulo} · faltan ${falta}` : requisito.titulo;
-  };
+  // La ventana va en el aviso bajo el encabezado de la página (`AvisoVentanaJornada`).
+  const requisitos = preparacion.requisitos.filter((requisito) => requisito.clave !== "VENTANA");
 
   const listos = preparacion.listos;
   const enLectura = !ventana.abierta;
@@ -184,15 +176,6 @@ const PasoPreparar: FC<PasoPrepararProps> = ({
       numero={1}
       titulo="Preparar la jornada"
       descripcion="Revise que todo esté listo. Cada punto pendiente tiene su acción al lado."
-      extremo={
-        listos ? (
-          <span className="badge badge-success">Listo para asignar</span>
-        ) : (
-          <span className="badge badge-warning">
-            {preparacion.pendientes} {preparacion.pendientes === 1 ? "pendiente" : "pendientes"}
-          </span>
-        )
-      }
       pie={
         <>
           <p className="text-sm text-app-muted" role="status">
@@ -214,7 +197,7 @@ const PasoPreparar: FC<PasoPrepararProps> = ({
       }
     >
       <ul className="flex flex-col divide-y divide-base-300">
-        {preparacion.requisitos.map((requisito) => {
+        {requisitos.map((requisito) => {
           const estado = ESTADO[requisito.estado];
           return (
             <li key={requisito.clave} className="flex flex-col gap-3 py-3">
@@ -229,7 +212,7 @@ const PasoPreparar: FC<PasoPrepararProps> = ({
                   <div className="flex flex-col">
                     <span className="font-semibold text-app-strong">
                       <span className="sr-only">{estado.texto}: </span>
-                      {tituloDe(requisito)}
+                      {requisito.titulo}
                     </span>
                     <span className="text-sm text-app-muted">{requisito.detalle}</span>
                   </div>

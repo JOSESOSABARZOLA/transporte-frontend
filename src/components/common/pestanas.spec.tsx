@@ -17,10 +17,11 @@ import Pestanas from "./Pestanas.tsx";
 
 type Id = "uno" | "dos" | "tres";
 
-function Prueba() {
+function Prueba({ sobreBarra = false }: { sobreBarra?: boolean }) {
   const [activa, setActiva] = useState<Id>("uno");
   return (
     <Pestanas
+      sobreBarra={sobreBarra}
       etiqueta="Maestro"
       pestanas={[
         { id: "uno", titulo: "Vehículos", cuenta: 4, etiquetaCuenta: "activos" },
@@ -59,5 +60,24 @@ describe("Pestanas", () => {
 
     fireEvent.keyDown(primera, { key: "End" });
     expect(screen.getByRole("tab", { name: /Garajes/ })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+/** Sobre la cabecera azul (2026-10-24, «Ventanas y parámetros»). */
+describe("Pestanas · sobreBarra", () => {
+  it("usa las clases de la barra, con el mismo comportamiento", () => {
+    render(<Prueba sobreBarra />);
+    const elegida = screen.getByRole("tab", { name: /Vehículos/ });
+    const otra = screen.getByRole("tab", { name: /Conductores/ });
+
+    expect(screen.getByRole("tablist")).not.toHaveClass("tabs-border");
+    expect(elegida).toHaveClass("app-pestana-barra-activa");
+    expect(elegida).toHaveAttribute("aria-selected", "true");
+    expect(otra).toHaveClass("app-pestana-barra");
+    expect(otra.querySelector(".badge")).toHaveClass("app-pestana-barra-cuenta");
+
+    fireEvent.keyDown(elegida, { key: "ArrowRight" });
+    expect(otra).toHaveAttribute("aria-selected", "true");
+    expect(otra).toHaveClass("app-pestana-barra-activa");
   });
 });

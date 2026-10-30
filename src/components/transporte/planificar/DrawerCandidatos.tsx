@@ -35,14 +35,23 @@
  * «— ocupada por …»), las de aviso se eligen y el aviso se lee debajo. Se envía la elegida; «Sin
  * vehículo» manda `null` y el mensaje lo dice («falta la placa»). La DAF sigue escribiendo solo
  * conductor y placa (RN-40).
+ *
+ * REPARTO DE CARGA (2026-10-30), el mismo del personal del registro. Cada candidato lleva su
+ * etiqueta «Carga baja/media/alta» y «Ver reparto de carga» (con su semáforo) abre, como VISTA del
+ * mismo cajón (regla 18: un cajón a la vez), `RepartoCarga` en modo «consulta»: solo se mira, se
+ * asigna desde la lista. Al asignar a alguien con «Carga Alta» sale un aviso breve INFORMATIVO
+ * (`avisoCargaAlta`): no frena ni pregunta. Nada de esto añade un campo a lo que se envía (RN-40).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useEffect, useRef, useState, type FC } from "react";
+import { useEffect, useMemo, useRef, useState, type FC } from "react";
 
 import Boton from "../../common/Boton.tsx";
 import DrawerLateral from "../../common/DrawerLateral.tsx";
+import EtiquetaCarga from "../../common/EtiquetaCarga.tsx";
 import Insignia from "../../common/Insignia.tsx";
+import BotonRepartoCarga from "../../cuadro/BotonRepartoCarga.tsx";
+import RepartoCarga from "../../cuadro/RepartoCarga.tsx";
 import MensajeModal from "../../common/MensajeModal.tsx";
 import SeccionDrawer from "../../common/SeccionDrawer.tsx";
 import type {
@@ -61,12 +70,23 @@ import {
   presentarError,
 } from "../../../utils/errorApi.util.ts";
 import {
+  filaDeCandidato,
   franja,
   motivoPlacaNoElegible,
   textoConductor,
   textoOpcionVehiculo,
 } from "../../../utils/planificarDia.util.ts";
+import {
+  avisoCargaAlta,
+  conteoSemaforo,
+  hayCargaCalculada,
+} from "../../../utils/personal.util.ts";
 import { nombreTipoTransporte } from "../../../utils/tipoTransporte.util.ts";
+import {
+  avisoAsignacionDelRegistro,
+  identificadorParaDaf,
+  tambienAtiende,
+} from "../../../utils/registroDaf.util.ts";
 import {
   accionCompartir,
   detalleMismaUnidad,
@@ -136,6 +156,25 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
   const [compartibles, setCompartibles] = useState<RespuestaCompartibles | null>(null);
   /** Lo que avisó el servidor al quitar (invitados que quedaron sin conductor). */
   const avisosAlQuitar = useRef<string[]>([]);
+  /** «Ver reparto de carga» abierto: el cuerpo del cajón pasa a la vista del reparto. */
+  const [verReparto, setVerReparto] = useState(false);
+  const botonRepartoRef = useRef<HTMLButtonElement>(null);
+
+  const candidatos = useMemo(() => datos?.candidatos ?? [], [datos]);
+  const hayCarga = hayCargaCalculada(candidatos);
+  const filasReparto = useMemo(() => candidatos.map(filaDeCandidato), [candidatos]);
+  const cuotaReparto = candidatos.find((c) => c.cuotaJusta !== undefined)?.cuotaJusta;
+  const volverDelReparto = () => {
+    setVerReparto(false);
+    // Devuelve el foco al botón que abrió la vista (§8 accesibilidad).
+    requestAnimationFrame(() => botonRepartoRef.current?.focus());
+  };
+
+  /** Aviso breve informativo si el conductor elegido tiene «Carga Alta» (2026-10-30). */
+  const avisarCarga = (candidato: Candidato) => {
+    const aviso = avisoCargaAlta([candidato]);
+    if (aviso) toast.info(aviso.titulo, { texto: aviso.texto });
+  };
 
   useEffect(() => {
     let vigente = true;
@@ -210,7 +249,8 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
         conductorId: candidato.conductorId,
         vehiculoId: vehiculoDe(candidato),
       });
-      return `${operativo.identificador} asignado a ${candidato.nombre}${sinPlaca(candidato)}.`;
+      avisarCarga(candidato);
+      return `${identificadorParaDaf(operativo)} asignado a ${candidato.nombre}${sinPlaca(candidato)}.`;
     });
 
   /** Activar a un libre (horas extra, con su motivo) y asignarle el operativo. */
@@ -223,7 +263,8 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
         conductorId: candidato.conductorId,
         vehiculoId: vehiculoDe(candidato),
       });
-      return `${candidato.nombre} queda activado (horas extra) y asignado a ${operativo.identificador}${sinPlaca(candidato)}.`;
+      avisarCarga(candidato);
+      return `${candidato.nombre} queda activado (horas extra) y asignado a ${identificadorParaDaf(operativo)}${sinPlaca(candidato)}.`;
     });
 
   /**
@@ -239,7 +280,7 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
   };
 
   /** Viajar en la unidad de un operativo ya asignado: mismo conductor y misma placa (RN-40). */
-  const compartirCon = (anfitrion: AnfitrionCompartible) =>
+  const compartirCon = (anfitrion: AnfitrionCompartible, alCompartir?: () => void) =>
     void ejecutar(async () => {
       const { compartidoCon, aviso } = await PlanificacionService.compartir(
         operativo.id,
@@ -247,7 +288,8 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
       );
       // «La misma unidad» (2026-10-19): si un traslado propio quedó pendiente, se dice aparte.
       if (aviso) toast.advertencia("Falta un traslado por asignar", { texto: aviso });
-      return `${operativo.identificador} comparte la unidad de ${compartidoCon.identificador} (${anfitrion.conductor.nombre} · ${anfitrion.vehiculo.placa}).`;
+      alCompartir?.();
+      return `${identificadorParaDaf(operativo)} comparte la unidad de ${compartidoCon.identificador} (${anfitrion.conductor.nombre} · ${anfitrion.vehiculo.placa}).`;
     });
 
   /**
@@ -259,7 +301,7 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
     if (!con) return;
     const anfitrion = compartibles?.anfitriones.find((a) => a.operativoId === con.operativoId);
     if (anfitrion) {
-      compartirCon(anfitrion);
+      compartirCon(anfitrion, () => avisarCarga(candidato));
       return;
     }
     void ejecutar(async () => {
@@ -268,7 +310,8 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
         con.operativoId,
       );
       if (aviso) toast.advertencia("Falta un traslado por asignar", { texto: aviso });
-      return `${operativo.identificador} comparte la unidad de ${compartidoCon.identificador} (${candidato.nombre}${candidato.placa ? ` · ${candidato.placa}` : ""}).`;
+      avisarCarga(candidato);
+      return `${identificadorParaDaf(operativo)} comparte la unidad de ${compartidoCon.identificador} (${candidato.nombre}${candidato.placa ? ` · ${candidato.placa}` : ""}).`;
     });
   };
 
@@ -449,10 +492,19 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
   return (
     <DrawerLateral
       abierto
-      titulo={`${actual ? "Cambiar" : "Asignar"} conductor · ${operativo.identificador}`}
+      titulo={`${actual ? "Cambiar" : "Asignar"} conductor · ${identificadorParaDaf(operativo)}`}
       subtitulo={subtitulo}
       // Compartir unidad (2026-10-19): lo que pidió quien registró, para que la DAF lo vea.
-      ayuda={intencionParaLaDaf(operativo) ?? undefined}
+      // Registro por zonas (2026-10-28): las zonas que también atiende y que la asignación es de todos.
+      ayuda={
+        [
+          intencionParaLaDaf(operativo),
+          tambienAtiende(operativo.registro),
+          avisoAsignacionDelRegistro(operativo.registro),
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
       ancho="lg"
       modo="lectura"
       guardando={trabajando}
@@ -492,6 +544,27 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
         )
       }
     >
+      {verReparto ? (
+        // REPARTO DE CARGA: una VISTA del mismo cajón, con «← Volver» (no un segundo cajón).
+        <div className="flex flex-col gap-3">
+          <Boton
+            variante="enlace"
+            tamano="sm"
+            icono="atras"
+            className="self-start"
+            onClick={volverDelReparto}
+          >
+            Volver a los conductores
+          </Boton>
+          <RepartoCarga
+            personas={filasReparto}
+            cuota={cuotaReparto}
+            idsAgregados={actual ? [actual.conductorId] : []}
+            modo="consulta"
+          />
+        </div>
+      ) : (
+      <>
       {actual && (
         <SeccionDrawer
           titulo="Asignación actual"
@@ -579,6 +652,16 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
         titulo="Conductores sugeridos"
         descripcion="Los más convenientes primero."
         rejilla={false}
+        accion={
+          hayCarga && (
+            <BotonRepartoCarga
+              ref={botonRepartoRef}
+              onClick={() => setVerReparto(true)}
+              expandido={verReparto}
+              conteo={conteoSemaforo(candidatos)}
+            />
+          )
+        }
       >
         {cargando && (
           <p className="text-sm text-app-muted" role="status">
@@ -602,6 +685,8 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
                     <span className={`badge badge-sm ${CATEGORIA[candidato.categoria].distintivo}`}>
                       {CATEGORIA[candidato.categoria].texto}
                     </span>
+                    {/* La MISMA etiqueta de carga del personal (regla 6: con texto). */}
+                    {candidato.nivelFatiga && <EtiquetaCarga nivel={candidato.nivelFatiga} />}
                   </span>
                   <span className="text-xs text-app-muted">{textoConductor(candidato)}</span>
                   <span className={`text-sm ${CATEGORIA[candidato.categoria].motivo}`}>
@@ -645,12 +730,14 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
           </ul>
         )}
       </SeccionDrawer>
+      </>
+      )}
 
       {actual && (
         <MensajeModal
           abierto={confirmandoQuitar}
           variante="peligro"
-          titulo={`¿Quitar la asignación de ${operativo.identificador}?`}
+          titulo={`¿Quitar la asignación de ${identificadorParaDaf(operativo)}?`}
           mensaje={`${actual.nombre} deja de cubrirlo y el operativo vuelve a quedar sin conductor.${
             invitados.length > 0
               ? ` ${invitados.length === 1 ? "1 operativo que comparte esta unidad quedará" : `${invitados.length} operativos que comparten esta unidad quedarán`} sin conductor: ${invitados.join(", ")}.`
@@ -664,7 +751,7 @@ const DrawerCandidatos: FC<DrawerCandidatosProps> = ({
           onExito={() => {
             setConfirmandoQuitar(false);
             onHecho(
-              [`${operativo.identificador} vuelve a quedar sin conductor.`, ...avisosAlQuitar.current].join(
+              [`${identificadorParaDaf(operativo)} vuelve a quedar sin conductor.`, ...avisosAlQuitar.current].join(
                 " ",
               ),
             );

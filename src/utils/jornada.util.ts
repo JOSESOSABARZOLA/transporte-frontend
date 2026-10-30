@@ -27,7 +27,30 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import type { AreaPersonal } from "../interfaces/Formulario.ts";
+import type { FilaJornada } from "../interfaces/Jornada.ts";
 import { DatetimeUtil } from "./datetime.util.ts";
+
+/**
+ * EL AVISO «N OPERATIVOS ESPERAN PERSONAL», CONTADO UNA VEZ POR REGISTRO (2026-10-22).
+ *
+ * Una patrulla partida por persona (IGNECU, ITNECU, INECU) es UN registro con varios códigos, y
+ * la tabla la pinta como una sola. Contar cada código hacía que una patrulla a la que le falta
+ * Instrucción se anunciara como tres. Las áreas llegan calculadas del servidor
+ * (`areasPendientesDelRol`): aquí solo se cuentan los registros distintos y se juntan.
+ */
+export const esperaDeLaJornada = (
+  filas: readonly Pick<FilaJornada, "grupoRegistro" | "areasPendientesDelRol">[],
+): { operativos: number; areas: AreaPersonal[] } => {
+  const pendientes = filas.filter((fila) => fila.areasPendientesDelRol.length > 0);
+  const registros = new Set(
+    pendientes.map((fila) => fila.grupoRegistro),
+  );
+  return {
+    operativos: registros.size,
+    areas: [...new Set(pendientes.flatMap((fila) => fila.areasPendientesDelRol))],
+  };
+};
 
 /**
  * La fecha de la jornada que se propone al abrir una pantalla de captura, `AAAA-MM-DD`.

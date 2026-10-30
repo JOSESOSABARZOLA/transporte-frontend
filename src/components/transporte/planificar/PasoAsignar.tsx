@@ -48,6 +48,7 @@ import { TrasladosService } from "../../../services/traslados.service.ts";
 import { descargarArchivo } from "../../../utils/banner.util.ts";
 import { presentarError } from "../../../utils/errorApi.util.ts";
 import { mensaje, toast } from "../../../utils/mensaje.ts";
+import { identificadorParaDaf, tambienAtiende } from "../../../utils/registroDaf.util.ts";
 import {
   operativosExclusivos,
   visibleEnLinea,
@@ -300,7 +301,7 @@ const PasoAsignar: FC<PasoAsignarProps> = ({
       extremo={
         <>
           <details className="dropdown dropdown-end">
-            <summary className={clasesBoton("secundario", "md")}>Opciones ({opcionesActivas})</summary>
+            <summary className={clasesBoton("secundario", "md", true)}>Opciones ({opcionesActivas})</summary>
             <div className="dropdown-content z-10 mt-2 flex w-80 flex-col gap-3 rounded-md border border-base-300 bg-base-100 p-4 shadow-[0_12px_32px_rgba(15,23,42,0.12)]">
               <label className="flex cursor-pointer items-start gap-3">
                 <input
@@ -455,7 +456,7 @@ const PasoAsignar: FC<PasoAsignarProps> = ({
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-sm font-semibold text-app-strong">
-                    {operativo.identificador}
+                    {identificadorParaDaf(operativo)}
                   </span>
                   {operativo.esMacrooperativo && (
                     <span
@@ -471,6 +472,10 @@ const PasoAsignar: FC<PasoAsignarProps> = ({
                 </div>
                 <span className="text-xs text-app-strong">{operativo.formulario}</span>
                 <span className="text-xs text-app-muted">{detalleOperativo(operativo)}</span>
+                {/* Registro por zonas (2026-10-28): las demás zonas, dentro de la misma solicitud. */}
+                {tambienAtiende(operativo.registro) && (
+                  <span className="text-xs text-app-strong">{tambienAtiende(operativo.registro)}</span>
+                )}
                 {/* Compartir unidad (2026-10-19): lo que pidió quien registró, en palabras. */}
                 {intencionParaLaDaf(operativo) && (
                   <span className="text-xs text-app-strong" data-testid={`intencion-${operativo.id}`}>
@@ -598,9 +603,18 @@ const PasoAsignar: FC<PasoAsignarProps> = ({
                 <tbody>
                   {resumen.operativos.map((operativo) => (
                     <tr key={operativo.id} className="hover:bg-primary/5">
-                      <td className="font-mono font-semibold">{operativo.identificador}</td>
+                      <td className="font-mono font-semibold">{identificadorParaDaf(operativo)}</td>
                       <td>{franja(operativo.horaInicio, operativo.horaFin)}</td>
-                      <td>{operativo.zonal ?? "—"}</td>
+                      <td>
+                        <span className="flex flex-col gap-0.5">
+                          <span>{operativo.zonal ?? "—"}</span>
+                          {tambienAtiende(operativo.registro) && (
+                            <span className="text-xs text-app-muted">
+                              {tambienAtiende(operativo.registro)}
+                            </span>
+                          )}
+                        </span>
+                      </td>
                       <td>
                         <span className="flex flex-col gap-0.5">
                           <span>{nombreTipoTransporte(operativo.tipoTransporte)}</span>

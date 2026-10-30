@@ -266,6 +266,20 @@ export interface CatalogosFormulario {
   puntoManual: boolean;
   /** Igual que en `Formulario`: lo que el adicional propone en «Transporte» (2026-10-06). */
   tipoTransportePorDefecto?: TipoTransporte;
+  /**
+   * UNA PERSONA Y UN TIPO DE PERSONAL (2026-10-28). `maxPersonas` es el tope por operativo (`null`,
+   * sin tope) y `elegirUnaArea` pide elegir primero el tipo de personal. Hoy solo el 8: 1 y true.
+   */
+  maxPersonas?: number | null;
+  elegirUnaArea?: boolean;
+  /**
+   * REGISTRO POR ZONAS (2026-10-28): la persona atiende varias zonas en el mismo horario y cada
+   * zona lleva su lugar, su control y su cantidad de identificadores; el transporte es uno solo.
+   * Hoy solo el 8. Reemplaza en la derecha a Zonales, Punto, Instituciones, Tipo y Transporte.
+   */
+  cantidadPorZona?: boolean;
+  /** El prefijo ordinario de cada área (IG/IT en el 8): «identificador IG-» en el selector de tipo. */
+  prefijosPorArea?: { area: AreaPersonal; prefijo: string }[];
 }
 
 // ─────────────────── Administración de catálogos (P-08) ───────────────────
@@ -333,6 +347,12 @@ export interface FormularioAdmin {
   tipoControlMultiple: boolean;
   variosPorPersona: boolean;
   cantidadPorPersona: boolean;
+  /** Tope de personas por operativo; `null` sin tope (2026-10-28). */
+  maxPersonas?: number | null;
+  /** Elegir primero UN tipo de personal (2026-10-28). */
+  elegirUnaArea?: boolean;
+  /** Registro por zonas, cada una con su cantidad (2026-10-28). */
+  cantidadPorZona?: boolean;
   orden: number;
   activo: boolean;
   areas: AreaPersonal[];
@@ -377,6 +397,9 @@ export interface CrearFormulario {
   tipoControlMultiple: boolean;
   variosPorPersona: boolean;
   cantidadPorPersona: boolean;
+  maxPersonas?: number | null;
+  elegirUnaArea?: boolean;
+  cantidadPorZona?: boolean;
   orden?: number;
   tipoTransportePorDefecto?: TipoTransporte;
 }

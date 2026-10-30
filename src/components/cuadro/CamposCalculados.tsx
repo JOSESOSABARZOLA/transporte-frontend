@@ -20,6 +20,11 @@
  *     (caso 12 del plan y FASE5 §10.3). Tabular por tres controles que no se pueden
  *     tocar es exactamente el ruido que hace lento un formulario.
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * PLANTILLA VISUAL (2026-10-24). Los distintivos van dentro de los chips de `EncabezadoPagina`,
+ * así que se devuelven SUELTOS (sin contenedor propio), en el orden de todas las pantallas:
+ * código · fecha · semana · estado. La fecha se dice en palabras (`fechaEnPalabras`: «Sábado 24 de
+ * octubre de 2026»), igual que en la Jornada, la Matriz y Órdenes; antes iba el `AAAA-MM-DD` tal cual.
  */
 
 import type { FC } from "react";
@@ -29,6 +34,7 @@ import {
   nombreEstadoCuadro,
   type CuadroDiario,
 } from "../../interfaces/CuadroDiario.ts";
+import { fechaEnPalabras } from "../../utils/texto.util.ts";
 
 type CamposCalculadosProps = {
   cuadro: CuadroDiario | null;
@@ -37,33 +43,25 @@ type CamposCalculadosProps = {
 
 const CamposCalculados: FC<CamposCalculadosProps> = ({ cuadro, cargando }) => {
   if (cargando) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="badge badge-ghost badge-sm">Cargando jornada…</span>
-      </div>
-    );
+    return <span className="badge badge-ghost badge-sm">Cargando jornada…</span>;
   }
 
   if (!cuadro) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="badge badge-ghost badge-sm">Sin jornada abierta</span>
-      </div>
-    );
+    return <span className="badge badge-ghost badge-sm">Sin jornada abierta</span>;
   }
 
   const estado = nombreEstadoCuadro[cuadro.estado];
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <>
       <span className="badge badge-ghost badge-sm">{cuadro.ordenTrabajo}</span>
-      <span className="badge badge-ghost badge-sm">{cuadro.fecha}</span>
+      <span className="badge badge-ghost badge-sm">{fechaEnPalabras(cuadro.fecha)}</span>
       <span className="badge badge-ghost badge-sm">
         Semana {cuadro.nroSemana} de {cuadro.anioSemana}
       </span>
       {/* El estado lleva color y **también** texto: ninguna señal depende solo del color. */}
       <span className={`badge badge-sm ${colorEstado(estado)}`}>{estado}</span>
-    </div>
+    </>
   );
 };
 

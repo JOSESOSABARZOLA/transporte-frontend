@@ -4,7 +4,8 @@
  * Feature: Mensajes estándar
  * Archivo: MensajeModal.tsx
  * Responsabilidad: El modal ÚNICO de mensajes —advertencia, peligro, error, éxito e información—:
- *                  icono en círculo, título, texto, detalle técnico colapsable y uno o dos botones,
+ *                  icono en círculo, título, texto, detalle técnico colapsable y uno o dos botones
+ *                  (tres, apilados, con `accionExtra`),
  *                  con la acción asíncrona y su fallo resueltos dentro del mismo modal.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-16
@@ -104,6 +105,12 @@ export type MensajeModalProps = {
   tituloError?: string;
   /** Un contenido corto bajo el texto (el motivo de una baja). No es un formulario. */
   children?: ReactNode;
+  /**
+   * Una TERCERA salida, secundaria (2026-10-30, aviso de carga alta: «Agregar igual» entre «Elegir a
+   * X» y «Cancelar»). Con ella los botones van apilados: la acción arriba, esta en medio y el botón
+   * seguro abajo. Escape y el velo siguen siendo el botón seguro, nunca esta.
+   */
+  accionExtra?: { texto: string; onClick: () => void };
 };
 
 const MensajeModal: FC<MensajeModalProps> = ({
@@ -123,6 +130,7 @@ const MensajeModal: FC<MensajeModalProps> = ({
   validar,
   tituloError,
   children,
+  accionExtra,
 }) => {
   const tarjeta = useRef<HTMLDivElement>(null);
   const botonPrincipal = useRef<HTMLButtonElement>(null);
@@ -243,6 +251,33 @@ const MensajeModal: FC<MensajeModalProps> = ({
   };
 
   const clases = CLASES_FAMILIA[familia];
+  /** La tercera salida no tiene sentido sobre un error: ahí manda el error. */
+  const extraVisible = accionExtra !== undefined && !fallo;
+
+  const secundario = rotuloSecundario && (
+    <Boton
+      ref={botonSecundario}
+      tamano="lg"
+      className="flex-1"
+      deshabilitado={procesando}
+      onClick={() => onSecundario?.()}
+    >
+      {rotuloSecundario}
+    </Boton>
+  );
+  const principal = (
+    <Boton
+      ref={botonPrincipal}
+      tamano="lg"
+      variante={esPeligroso ? "peligroRelleno" : "primario"}
+      className="flex-1"
+      cargando={procesando}
+      motivoDeshabilitado={fallo ? null : motivoPrincipal}
+      onClick={() => void ejecutar()}
+    >
+      {procesando ? "Procesando…" : rotuloPrincipal}
+    </Boton>
+  );
 
   return createPortal(
     <div className="fixed inset-0 z-[10003] flex items-center justify-center p-4">
@@ -308,30 +343,27 @@ const MensajeModal: FC<MensajeModalProps> = ({
           </div>
         )}
 
-        <div className="mt-3 flex w-full gap-3">
-          {rotuloSecundario && (
+        {/* Con una tercera salida, apilados y en ese orden también para el tabulador: acción, extra
+            y el seguro al final. Sin ella, en fila con el seguro a la izquierda. */}
+        {accionExtra && extraVisible ? (
+          <div className="mt-3 flex w-full flex-col gap-3">
+            {principal}
             <Boton
-              ref={botonSecundario}
               tamano="lg"
               className="flex-1"
               deshabilitado={procesando}
-              onClick={() => onSecundario?.()}
+              onClick={accionExtra.onClick}
             >
-              {rotuloSecundario}
+              {accionExtra.texto}
             </Boton>
-          )}
-          <Boton
-            ref={botonPrincipal}
-            tamano="lg"
-            variante={esPeligroso ? "peligroRelleno" : "primario"}
-            className="flex-1"
-            cargando={procesando}
-            motivoDeshabilitado={fallo ? null : motivoPrincipal}
-            onClick={() => void ejecutar()}
-          >
-            {procesando ? "Procesando…" : rotuloPrincipal}
-          </Boton>
-        </div>
+            {secundario}
+          </div>
+        ) : (
+          <div className="mt-3 flex w-full gap-3">
+            {secundario}
+            {principal}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

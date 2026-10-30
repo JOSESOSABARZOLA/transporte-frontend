@@ -189,7 +189,7 @@ src/
 | `/cuadro/transporte` | **Planificar el día** | DAF. **Flujo guiado en 4 pasos desde el 2026-10-08** (Preparar → Asignar → Fin del día → Emitir). Ver la nota de abajo |
 | `/cuadro/jornada-conductores` | Redirige a Planificar el día (vista «Tabla» del paso 2) | — |
 | `/cuadro/capacidad` | Redirige a Planificar el día (paso 1, vehículos que salen) | — |
-| `/administracion/mantenimiento` | Mantenimiento de vehículos | **Solo Administrador DAF** desde el 2026-09-01. Sale la DAF operativa: sigue **viendo** el vehículo parado —el estado viaja en `GET /transporte/vehiculos`— pero ya no lo para ella |
+| `/administracion/mantenimiento` | Redirige a Flota y garajes › Vehículos, en el calendario semanal (`?tab=vehiculos&vista=calendario`) | **Retirada el 2026-10-20**: la parada se programa desde la fila del vehículo, con el permiso `flota:mantenimiento`. Ya no está en el menú |
 | `/cuadro/jornada` | Jornada del Día | Los **tres** departamentales desde el 2026-09-01. Cada rol ve **solo sus formularios** (los que escribe o aporta) desde el 2026-09-15. La acción de personal solo donde el servidor la concede (`frol_edita_desde_jornada`); para los demás es consulta |
 | `/cuadro/matriz` | Matriz Consolidada del Día | **Solo Director** |
 | `/cuadro/ordenes` | Órdenes de servicio | **Solo Director** |
@@ -266,6 +266,31 @@ src/
 > la placa es uno de los dos campos de la DAF. «Traslados entre zonales» dice cuántos pares usan aún la
 > regla general (`cobertura`). Contrato: `transporte-backend/docs/CONTRATO-sustitucion-flota.md`.
 
+> **«Traslados entre zonales» (2026-10-20, plan de traslados).**
+> - **Aviso de impacto antes de guardar.** «Guardar cambios» pregunta primero
+>   `POST /administracion/traslados/verificar-impacto` (`TrasladosService.verificarImpacto`, mismo cuerpo que el PUT, no escribe):
+>   - sin asignaciones afectadas, guarda como antes;
+>   - con alguna, `MensajeModal` advertencia «Advertencia de impacto» con N, el rango («entre hoy (20/10) y el 21/10») y hasta 10 líneas (`textoParAfectado`: «21/10 · Jose Luis Sosa · OCPMO-001 (dejar) → OCPMO-005 (completo): hueco 20 min, necesita 45 (faltan 25)»), y [Cancelar] / [Guardar igual]. Guardar no retira nada: se reasigna en «Planificar el día»;
+>   - si la verificación falla, no bloquea: «No se pudo verificar el impacto» con [Guardar igual].
+> - **Escala de color:** corto verde, medio turquesa, largo naranja (`app-traslado-*`, tokens `--app-traslado-*`), con el rango en palabras.
+> - **Al salir con cambios sin guardar** se pregunta (`useAvisoAlSalir`).
+> - **Línea de tiempo:** `trasladosDe` sigue la vara del servidor. Entre el dejar y el retirar de un mismo operativo no exige traslado (`requerido: null`) y con hueco igual al traslado sí llega.
+> - **Mensajes del servidor:** el «No llega» trae «(faltan X)» y se muestra tal cual (regla 7).
+>
+> Contrato: `transporte-backend/docs/CONTRATO-traslados.md`.
+
+> **«Personal y disponibilidad» (P-07) en DOS PESTAÑAS (2026-10-24).** Un solo `EncabezadoPagina` (subtítulo
+> según la pestaña) y un solo `PanelTabla` con `Pestanas sobreBarra` «Maestro de personal» · «Cobertura por
+> turnos», en `?tab=maestro|cobertura` (maestro por omisión). La cobertura solo para quien gestiona Instrucción
+> (y sin 404); si no, sin pestañas y con el título «Maestro de personal». `MatrizCobertura` queda MONTADA
+> (`marco`), así cada pestaña conserva sus filtros. Enlaces de navegación: «Ver turnos» en la fila (solo
+> Instrucción; `AccionesFila` acepta varias `propia`) y «Ausente dd/mm–dd/mm» abren la cobertura con la persona
+> en el buscador (`enfoque`; la ausencia, en su mes); en la cobertura el nombre abre el MISMO `PanelAusencias`
+> (`onVerAusencias`), y registrar o quitar una ausencia relee la matriz (`recarga`). **Cajón de Ausencias
+> (Personal y Flota):** «Registrar ausencia» en el pie junto a [Cerrar], estado «✓ Se bloquearán N días (dd/mm al
+> dd/mm)» o «Revise las fechas» (apagado), errores en línea con el texto del servidor (`textoSolape` de cada
+> envoltorio), ayuda bajo las fechas (`ayudaFechas`) y las pasadas dicen «Historial» en vez de «Quitar».
+>
 > **«Personal y disponibilidad» (P-07), rediseñada el 2026-10-08.** Maestro con cabecera de una
 > fila y fija, 10 por página, filtro segmentado **Activos** (por omisión) | Inactivos | Todos y un
 > solo contador «N funcionarios · X activos de Y en el maestro» (Y = sus direcciones). La columna
@@ -295,6 +320,10 @@ src/
 > (`zonasDisponibles`); al cambiar de formulario se recarga todo, se limpia la búsqueda y se
 > cierran los acordeones. `GET /zonales` (zonas de la ciudad) sigue sirviendo a personal, flota y
 > cobertura. Contrato: `transporte-backend/docs/CONTRATO-zonal-por-formulario.md`.
+> **Desde el 2026-10-24 el selector del formulario va BAJO EL TÍTULO** (`debajo` de `EncabezadoPagina`): rótulo
+> azul en mayúsculas, caja de 44 px con borde azul de 2 px y, pegado, el `CuadroFormulario` (`lg`, 40 px) con su
+> color y número; a su derecha, en la misma línea, las áreas («ÁREAS DE PERSONAL ADMITIDAS» + «Cambiar», que
+> despliega el mismo cuerpo de chips). Ya no hay panel azul de áreas.
 > Acepta `?formulario=<código o id>&areas=abierto` (2026-10-13): abre con ese formulario y la barra
 > de áreas desplegada. Es el ÚNICO sitio donde se editan las áreas de un formulario.
 
@@ -306,7 +335,7 @@ src/
 > (`?tab=vehiculos|conductores|garajes&filtro=documentos|sin-conductor|incompletos`); `?conductor=<id>`
 > sigue abriendo esa ficha. Barra común con Activos | De baja | Todos (Vigentes en garajes) **que
 > arranca en Activos**. Distintivos de `Insignia` (nueva variante `error`): documentos, «⚠ Sin
-> conductor habitual», «⚠ Sin vehículo», «⚠ Sin contrato», «⚠ Sin zonal: no se sugerirá»; patrón en
+> conductor habitual», «⚠ Sin vehículo», «⚠ Sin jornada» (antes «⚠ Sin contrato»), «⚠ Sin zonal: no se sugerirá»; patrón en
 > fichas de la paleta de «Turnos del mes» (`utils/paletaTurnos.util.ts`). Acciones con `AccionesFila`
 > (Editar + ⋮ con Dar de baja / Reactivar). Alta y edición en `DrawerVehiculo`, `DrawerConductor` y
 > `DrawerGaraje` (`ancho="md"` (conductor `lg`) desde el cajón estándar, pie con estado, errores tras intentar guardar, repetidos de
@@ -330,6 +359,37 @@ src/
 > baja vacía la página). El menú ya no le pone `?fecha=` (`sinFechaDaf`) y la página la quita si llega.
 > **Ajustes finales del 2026-10-15:** acciones como botones visibles (`AccionesFila modo="botones"`: Editar · Dar de baja en rojo · Reactivar en verde) bajo el encabezado «Acciones»; Conductores con columna «Identificación» (cédula) y «Teléfono», y solo «Licencia X» bajo el nombre; paginador numerado a 32 px / 13 px; documentos `INCOMPLETO` («Falta SOAT», «Falta matrícula») y «Sin fechas» en ámbar suave (`avisoSuave` = `badge-soft badge-warning`), rojo solo lo vencido, y la tarjeta dice «N con fechas faltantes»; kilometraje inusual (`kmSospechoso`: sobre el tope o desde 500.000) con «Revisar».
 > **Ausencias de los conductores (2026-10-16, plan «ausencias-conductores-flota»).** Permiso `flota:ausencias` (DAF, Administrador DAF y Administrador). En la pestaña Conductores, «📅 Ausencias» en la fila (`AccionesFila` `propia`, apagada para un conductor de baja) abre `flota/AusenciasConductor.tsx`, que es el MISMO cajón de Personal: `ausencias/PanelAusenciasBase.tsx` (desde esta fecha `personal/PanelAusencias.tsx` es su envoltorio, sin cambio de comportamiento). Mismas situaciones y reglas (409 `AUSENCIA_SOLAPADA` / `AUSENCIA_PASADA`, en el cajón). Al registrar, los tramos que el conductor YA tiene en el rango (`tramosAfectados`) se avisan en ámbar: la ausencia no los retira; se reasignan en «Planificar el día». La columna «Estado» suma «Ausente dd/mm–dd/mm» (en curso) o «Ausencia dd/mm–dd/mm» (próxima), de UNA consulta (`hooks/useAusenciasDeLaFlota.ts`, `GET /administracion/conductores/ausencias`, sin motivo). El cajón de ausencias y el de edición nunca están abiertos a la vez. Contrato: `transporte-backend/docs/CONTRATO-ausencias-conductor.md`.
+> **Mantenimiento en Vehículos, pestañas y baja real (2026-10-20, plan «flota-mantenimiento-baja»).**
+> - **Pestañas:** Conductores · Vehículos · Garajes autorizados, con **Conductores por omisión** (`?tab=` sigue mandando).
+> - **Cinco indicadores**, en este orden:
+>   - Conductores activos;
+>   - Vehículos activos;
+>   - **En taller hoy** (`resumen.vehiculos.enTallerHoy`): ámbar si hay alguno y «No se ofrecen en Planificar el día». Al pulsarlo abre Vehículos › Lista con la ficha «Solo en taller ese día» (`?filtro=en-taller`);
+>   - Documentos por vencer;
+>   - Sin conductor habitual.
+>
+>   «Datos incompletos» dejó de ser tarjeta: en Conductores es el enlace «Ver N con datos incompletos».
+> - **Pestaña Vehículos:**
+>   - **Barra:** «Estado el día» (hoy en Quito) y [Lista | Calendario semanal] (`?vista=calendario`). Las dos vistas leen `FlotaService.disponibilidad(fecha)`, una consulta por fecha.
+>   - **Lista:** columnas Placa · Descripción del vehículo (`descripcionDelVehiculo`: «Camioneta · doble cabina blanca») · Asientos · Kilometraje · Documentos · Conductores habituales · **Disponibilidad** · Estado · Acciones. Disponibilidad es «Disponible» en verde, «En taller hasta jue 22/10» en ámbar con el motivo en el tooltip, o «—» si está de baja.
+>   - **Calendario** (`flota/CalendarioTaller.tsx`): placa × 7 días desde la fecha, con ‹ Anterior · Hoy · Siguiente ›, el día elegido resaltado y una barra ámbar por parada con su motivo. Solo muestra activos con paradas («Ningún vehículo en taller esta semana.») y respeta el buscador.
+> - **Acciones con icono en las tres tablas.** Vehículo activo: ✎ · 🔧 Programar mantenimiento (apagado sin `flota:mantenimiento`) · ⊘ Dar de baja. De baja: ✎ · ↺ Reactivar.
+> - **«Programar mantenimiento»** (`flota/DrawerMantenimiento.tsx`, `md`) reemplaza a «Ver paradas» y «Registrar parada»:
+>   - **Parada:** Desde*, Hasta* y Motivo* (`MOTIVOS_PARADA`);
+>   - **Cita en el taller (opcional):** taller, hora y zonal, plegada; con hora crea la TAREA;
+>   - **Paradas programadas:** con su estado y Eliminar;
+>   - **Cruce con otra parada:** se dice en rojo y apaga Guardar (`paradaQueSeCruza`, espejo del 409);
+>   - **Traslados ya asignados:** un `MensajeModal` advertencia antes de guardar (`impactoMantenimiento`), porque la parada no los retira;
+>   - **Al guardar:** toast «Mantenimiento de PMA-7057 programado» y se releen la disponibilidad, el calendario y los indicadores.
+> - **Página y menú:** `MantenimientoFlotaPage`, `SemanaMantenimiento`, `TransporteService.consultarVehiculos` / `consultarSemanaMantenimiento` y `VehiculoDeLaFlota` se retiraron.
+> - **La baja ya no se bloquea antes de preguntar:**
+>   - `MensajeModal` peligro «¿Dar de baja PMA-7056?» («Su historial se conserva y puede reactivarlo después.»);
+>   - el servidor decide y su 409, con el motivo real, queda en el mismo modal;
+>   - hecha: toast «PMA-7056 dado de baja» con [Deshacer], que reactiva;
+>   - «De baja» lleva en su tooltip cuándo y quién (`flota/EstadoRegistroFlota.tsx`, `bajaEn` / `bajaPorNombre`);
+>   - la baja y la reactivación esperan hasta 15 s.
+>
+> Contrato: `transporte-backend/docs/CONTRATO-flota-y-garajes.md` §9.
 
 > **«Formularios del cuadro» (rediseño del 2026-10-13).** Tabla propia (`TablaFormularios`) con
 > buscador, Vigentes | Inactivos | Todos (arranca en Vigentes) y distintivos de `Insignia`; alta y
@@ -354,6 +414,76 @@ src/
 pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
 
 ---
+
+> **Plantilla visual única (2026-10-24).** Las once pantallas de Cuadro de Colores (Registro, Mis
+> operativos, Jornada, Matriz, Órdenes) y de Administración (Personal, Catálogos, Formularios, Ventanas,
+> Roles, Cuentas) usan las mismas piezas, sin cambiar lo que hacen: `common/EncabezadoPagina` (antetítulo
+> = módulo, chip «Perfil: <rol de la sesión>», chips código · fecha · semana · estado, selectores a la
+> derecha), `common/PanelTabla` (cabecera azul #1E2E78 `rounded-2xl`, solo título o pestañas `sobreBarra`
+> sin números, botones a la derecha que toman solos las variantes de barra, barra blanca de filtros, nota
+> al pie con `NotaPanel`), `common/EtiquetaEstado` (estado único) y `AccionesFila modo="icono"` en todas
+> las tablas. **Sin contadores** en cabeceras ni barras: el total está en «Mostrando X–Y de Z». La fecha
+> en un solo formato (`fechaEnPalabras`: «Sábado 24 de octubre de 2026») y el horario en una línea
+> (`horarioLegible`: «08H00 a 16H30»). «Activar» se lee «Reactivar» y «Retirar» (Roles) «Desactivar».
+> `BotonEnlace` también lee `BarraOscuraContexto`.
+> **Y en Transporte DAF (2026-10-24):** Planificar el día (cada paso es un `PanelTabla` «PASO N · …» vía
+> `TarjetaPaso`; la ventana «La asignación abre a las…» salió de la lista del paso 1 y es un aviso info bajo el
+> encabezado, `AvisoVentanaJornada`), Turnos de conductores (mes y estado en el encabezado por el render prop
+> `marco` de `MatrizCobertura`), Flota y garajes (pestañas en la cabecera, sin números) y Traslados
+> (`PanelTabla`, «Guardar cambios» en la cabecera). En «Ventanas y parámetros», con una sola pestaña visible
+> (administrador DAF) la cabecera lleva el título y no pestañas.
+>
+> **Cobertura por turnos simplificada (2026-10-24, prototipos IN1/IN2), igual en Instrucción y en Turnos de
+> conductores** (`MatrizCobertura` + `cobertura/configMatriz.ts`; las banderas de aspecto se retiraron):
+> - **Encabezado y panel por `marco`:** la matriz entrega sus piezas (`estadoMes`, `selectorMes`, `acciones`,
+>   `filtros`, `contenido`, `nota` y `panel`, más `disponible` = no hubo 404) y la página las coloca: la DAF en
+>   su `EncabezadoPagina`, «Personal y disponibilidad» en su pestaña. Sin `marco`, solo el panel. Estado del
+>   mes, «Guardado hace un momento» y ‹ mes › en el encabezado; cabecera azul «Turnos de <mes>» con Exportar y
+>   «Publicar mes», sin contadores.
+> - **Mes sin turnos:** tarjeta de estado vacío con «Asignar turnos del mes» (y «Copiar mes anterior» en la DAF).
+>   Quien no tiene ningún turno: aviso «N personas no tienen ningún turno en <mes>».
+> - **Sin selector de modo.** El clic simple cambia el turno en el orden de `config.estados` (D → N → — →
+>   vacía), encolado y optimista, con «Deshacer». Mayús+clic o arrastrar marcan un rango en la fila SIN cambiar
+>   nada; con dos días o más aparece la barra «<Nombre> · del 3 al 7 (5 días) · Poner: [D · Diurno]…», que
+>   escribe en un lote. Una línea fija sobre la grilla explica los dos gestos. Teclado igual (D, N, -, Supr,
+>   flechas, Mayús+flechas, Ctrl+Z). Ausencias con 🔒 y «Vacaciones: se edita en Ausencias»; vacía punteada, «Sin
+>   restricción».
+> - **Grilla:** la zona es solo un título (sin subtotal); fila con «Asignar turnos a esta persona» y «Cambiar
+>   zona» (`BotonIcono`, iconos `asignarTurnos` y `cambiarZona`); pie con las filas `principal` y «Sin turno»,
+>   el resto tras «Ver todos los totales»; leyenda simple (`significado`) bajo la grilla.
+> - **Un solo cajón, `cobertura/DrawerAsignarTurnos.tsx`** (reemplaza a `ModalAplicarPatron` y
+>   `ModalContinuarRotacion`). Desde el icono de una fila el alcance es SOLO esa persona (`unaPersona`: tarjeta
+>   fija con iniciales, nombre y zona; pasos 1 · ¿Qué horario? y 2 · ¿Desde cuándo?); desde la barra, el estado
+>   vacío o el aviso, el paso 1 es ¿A quién? (casillas, Todos · Ninguno · Solo quienes no tienen turno).
+>   ¿Qué horario?: «Lunes a viernes de día» alineado al calendario, los `patronesRapidos`, «Seguir el ciclo de
+>   <mes anterior>» con `proponerRotacion` (apagado si no hay ciclo; solo llena días vacíos) y «Personalizado»
+>   con casillas tocables. ¿Desde cuándo?: sin «solo celdas vacías»; asignar SIEMPRE escribe el horario desde
+>   esa fecha (`soloVacias: false`, solo viaja lo que cambia) y nunca toca las ausencias. Vista previa de dos
+>   semanas: «Se asignarán X días de N personas», las ausencias y «Y días que ya tenían otro turno se
+>   reemplazan»; sin cambios, «Ya tiene ese horario». UN lote; el aviso «Turnos asignados a <nombre>» (o «a N
+>   personas») trae «Deshacer». Lógica pura en `utils/asignarTurnos.util.ts`.
+>
+> **«Ventanas y parámetros» en pestañas, con guardado único (2026-10-24, prototipos CARGA1–3).** Tres
+> pestañas —Ventanas de carga · Jornadas laborales · Parámetros—, cada una con su permiso
+> (`ventanas:administrar`, `jornadas:administrar`, `parametros:administrar`; la ruta y el menú aceptan
+> cualquiera), recordada en `?tab=`. **Ventanas**: estado EN VIVO (`utils/estadoVentana.util.ts`, espejo
+> del evaluador del servidor), barra de 24 h y aviso «El mensaje no coincide con el horario» con «Usar
+> mensaje sugerido» (`detectarHoraInconsistente` / `mensajeSugerido` de `mensajeVentana.util.ts`).
+> **Jornadas**: «N fichas de personal →» abre Personal con `?jornada=<id>` (`filtrosDesdeUrl`).
+> **Parámetros**: secciones de `config/catalogoParametros.ts` (grupo, etiqueta y «Afecta»; lo no
+> catalogado cae en «Otros»), buscador y filtros, «Modificado» contra `valorSiembra` con «↺ Restaurar»,
+> «Sin configurar», nombre de quien lo cambió. **Sin «Guardar» por fila**: el borrador vive en la página
+> y `PUT /parametros` guarda todos o ninguno tras confirmar el resumen; un rechazo vuelve en
+> `detalles.errores` y se pinta bajo su fila (`erroresPorClave`). `TablaParametros` se retiró.
+>
+> **«Jornada laboral» reemplaza al «Tipo de contrato» (2026-10-23).** Nombramiento y Ocasional se dieron
+> de baja. Cada ficha de personal y cada conductor tienen una jornada de un catálogo que se administra
+> en «Ventanas y parámetros › Jornadas laborales» (`components/administracion/PanelJornadasLaborales.tsx`,
+> permiso `jornadas:administrar`). Se lee con `useJornadasLaborales` (caché del módulo; quien escribe
+> llama a `recargar`) y se nombra con `utils/jornadaLaboral.util.ts`. Las fichas guardan solo
+> `jornadaLaboralId`: **sin jornada no se convoca** (el servidor responde `JORNADA_NO_ADMITE_TURNO` y,
+> para el conductor, `SIN_JORNADA`), y Personal y Flota lo dicen con «⚠ Sin jornada». En las pruebas el
+> catálogo lo simula `pruebas/configuracion.ts` con las dos jornadas sembradas (`pruebas/jornadasDePrueba.ts`).
 
 ## 6. Reglas invariables de interfaz
 
@@ -434,7 +564,16 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
    «RN-40 · la DAF solo escribe conductor y placa» de `planificar/planificarDia.spec.tsx`: el
    cajón no tiene ningún control de captura y el envío solo lleva identificación + conductor y
    vehículo. Si agregas un campo, caerá, y debe.
-10. **La orden de servicio tiene cuatro campos** (INV-24, RN-50): horario, funcionario, conductor y
+10. **Órdenes de servicio: solo la Dirección y un formato por departamento (2026-10-27).** Quién entra lo
+    dice `config/ordenesServicio.ts` (`ROLES_QUE_EMITEN_ORDENES`, espejo del servidor): lo leen la ruta y el
+    menú, que la oculta a los demás. «Editar plantilla» tiene tres pestañas (DMIT · Instrucción / DMIP · Unidad
+    de Operativos / DMIP · Inspecciones Técnicas y Generales), cada una con sus datos generales, tabla de
+    control, apartados y versión; cambiar de pestaña con cambios pregunta «¿Descartar cambios?». La orden sale
+    con el formato del ÁREA de la persona; la tarjeta dice «Formato: <departamento>» bajo el número y el cajón
+    del documento lo repite en su subtítulo. Quien no tiene formato no recibe orden y la emisión lo avisa
+    (`textoSinFormato`, `utils/ordenes.util.ts`).
+
+    **La orden de servicio tiene cuatro campos** (INV-24, RN-50): horario, funcionario, conductor y
     placa. Se pintan en un solo componente, `components/ordenes/CamposDeLaOrden.tsx`, para que haya
     un único sitio que vigilar. No le agregues ninguno: se decide con el Product Owner y se amplía
     primero en el servidor, que es donde el dato se construye y se guarda.
@@ -520,7 +659,7 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
     |---|---|
     | **Tres grupos, no una sábana** | Los campos van agrupados y rotulados con `app-section-heading`: `01 · DATOS DEL OPERATIVO`, `02 · PERSONAL ASIGNADO`, `03 · COORDINACIÓN`. Son subtítulos: **no** abren un `<h1>` nuevo |
     | **La etiqueta del formulario se acorta, el número no** | El nombre completo va en `title`; la etiqueta visible se recorta. Las nueve etiquetas largas empujan el ancho y en tablet parten los tabs en dos filas. El número **siempre** se pinta: es el equivalente textual del banner (regla 6) |
-    | **Un selector de formulario, no una rejilla (2026-10-16, R10)** | `SelectorFormulario` vive en la barra azul «FORMULARIO», con la fecha de la jornada a la derecha: caja blanca con punto de color, «N. NOMBRE», «N hoy» (`GET /operativos/conteo?fecha=`, `OperativoService.conteo`) y ▾. Al abrir: buscador por número, nombre o código sin tildes (`combobox` sobre un `listbox`, ↓/↑/Enter/Escape), grupos por departamento dueño («DMIP · Unidad de Operativos», «DMIP · Inspecciones Técnicas y Generales», «DMIT · Instrucción»), «N hoy» y ✓; «Sin formularios con ese texto.». Solo `ESCRITURA` y `COMPARTIDO` (con «Aporta personal»; sin `onAportar`, apagado). **RECIENTES** al lado: los tres últimos usados sin el actual («N · CÓDIGO»), en `localStorage` por usuario y SOLO con ids (única excepción a «nada en disco»: no son datos personales). Debajo de la barra, una **línea de ayuda** con lo que declara el formulario (condicionante nocturno, vehículo siempre requerido, transporte sugerido; `lineaDeAyuda`). Reglas puras en `utils/selectorFormulario.util.ts`. Cambiar de formulario (lista o recientes) **no pregunta ni descarta**: aparta la captura bajo su formulario (regla 15) |
+    | **Un selector de formulario, no una rejilla (2026-10-16, R10)** | `SelectorFormulario` vive en la barra azul «FORMULARIO» (la fecha de la jornada pasó al encabezado de la página, a la derecha, con la plantilla visual del 2026-10-24): caja blanca con punto de color, «N. NOMBRE», «N hoy» (`GET /operativos/conteo?fecha=`, `OperativoService.conteo`) y ▾. Al abrir: buscador por número, nombre o código sin tildes (`combobox` sobre un `listbox`, ↓/↑/Enter/Escape), grupos por departamento dueño («DMIP · Unidad de Operativos», «DMIP · Inspecciones Técnicas y Generales», «DMIT · Instrucción»), «N hoy» y ✓; «Sin formularios con ese texto.». Solo `ESCRITURA` y `COMPARTIDO` (con «Aporta personal»; sin `onAportar`, apagado). **RECIENTES** al lado: los tres últimos usados sin el actual («N · CÓDIGO»), en `localStorage` por usuario y SOLO con ids (única excepción a «nada en disco»: no son datos personales). Debajo de la barra, una **línea de ayuda** con lo que declara el formulario (condicionante nocturno, vehículo siempre requerido, transporte sugerido; `lineaDeAyuda`). Reglas puras en `utils/selectorFormulario.util.ts`. Cambiar de formulario (lista o recientes) **no pregunta ni descarta**: aparta la captura bajo su formulario (regla 15) |
     | **Para elegir personal se usa `SelectorTokens`** | No se escribe otro selector. Es el caso que lo originó: se asignan **más de 30** efectivos y con lista plana no hay señal de lo ya elegido. Buscador por **apellido, unidad o cargo** —no solo apellido—, filtros por área con su conteo y, desde el 2026-10-01, candidatos en una **grilla de 2 columnas (2×3, 6/pág)** con TARJETAS donde **solo el botón «+ Agregar» es clicable** (no la tarjeta), orden sugeridos→menor carga→alfabético, pestañas de unidad solo si hay más de una, y el botón de lista «**Completar con N de menor carga**» (se retiró «Asignar visibles» y la pista «↵ asigna el primer elegible»; el modo de tarjeta-botón clicable completo solo lo conserva P-13, que usa `SelectorPersonal` directo). **Desde el 2026-10-16 (bloque 3 del rediseño del registro)** la tarjeta «Personal y horario» —alta, edición y adicional— es: cabecera con «Ver reparto de carga» en la línea del título (lo pinta `FormOperativo` en el `accion` de `SeccionDrawer`; el selector lo recibe con `verReparto`/`onCambiarVerReparto`), «N de M efectivos» (ámbar sin nadie, verde con gente, rojo con «· agregue al menos una persona» tras intentar; icono + texto) y «Horario por defecto: …» —el de la primera persona, `turnoDePrimera`: el formulario no declara uno—; franja **SELECCIONADOS** punteada con cada persona, su horario en línea y su «✕» (el motivo de un horario mal escrito, «Termina al día siguiente» si cruza la medianoche y el rechazo del servidor para esa persona —`detalles.funcionarioId`, `funcionarioDelRechazo`— van debajo de ella; vale en el alta y en los cajones de edición y adicional de P-01 y P-02, que reciben `idPersonaRechazada`); «Completar con N de menor carga» con **N = hasta 4** (`cuantosCompletar`); DISPONIBLES solo con quien puede salir, **8 por página** (4×2), tarjeta con el nombre en una línea (`truncate` + `title`) y «Cargo · N op. esta semana»; y «▸ No disponibles (N)» plegado al final, con el motivo en ámbar y «+ Agregar» apagado con el motivo. «Cupo completo» solo con un cupo real (`cupo`): hoy ningún operativo declara un número exigido de efectivos, así que M son los candidatos. Se retiró el «Cambiar turno» de la lista compacta |
     | **La bandeja de asignados tiene alto acotado** | Con desplazamiento propio. Treinta asignados no estiran la página; ese estiramiento es el defecto que se está corrigiendo |
     | **El horario del operativo desapareció; se captura POR PERSONA, con los campos de hora inline** | Desde el 2026-09-08 (RN-66). **El operativo ya no tiene campo de horario en el registro**: cada persona lleva el suyo. **Desde el 2026-10-01 el bloque de personal del ALTA comparte la presentación del cajón de P-02**: AGREGADOS en una columna y DISPONIBLES en una **grilla de 2 columnas (2×3, 6/pág)** con tarjetas (solo el botón «+ Agregar» clicable), filtros en pestañas (`role="tablist"`, solo con más de una unidad), botón «Completar con N de menor carga», contador único y nota de borrador; se retiraron «Asignar visibles» y «↵ asigna el primer elegible», **PERO el horario sigue capturándose POR PERSONA con los dos campos de hora SIEMPRE VISIBLES inline** (regla 14, no detrás de «Cambiar turno»): lo gobierna `horarioInline` de `SelectorPersonal` (`FormOperativo` lo pone en sus tres modos). Cada asignado lleva dos **campos de hora ESCRIBIBLES** —inicio y fin— (`input input-bordered input-sm` + un `<datalist>` compartido con las horas 00:00–23:30 de `horasSeleccionables()`, desde el 2026-09-21): se teclea la hora («14» sugiere 14:00/14:30) o se elige de la lista, y es **OBLIGATORIO**: el vacío es el `placeholder` («Inicio…»/«Fin…»), no «heredar». El `:00/:30` lo garantiza la lista y lo revalida el servidor (RN-07). `FormOperativo.validate` rechaza el envío mientras alguna persona no tenga las dos horas. **Default-from-first**: al agregar a alguien su turno arranca copiando el de la **primera** persona asignada (`turnoDePrimera`), editable; la primera arranca vacía y hay que llenarla. Viaja en `CrearOperativo.personal` (`{ funcionarioId, horaInicio, horaFin }`); **no** se envía `horaInicio/horaFin` del operativo. El **servidor deriva la ventana del operativo** de las personas (`RangoHorario.envolvente`) y lo hace nocturno si **alguna** persona lo es; devuelve la ventana **efectiva** en `PersonaAsignada`. La lista de elegibles se pide **sin horario** (área+ausencia); el cruce lo valida el servidor por persona. El **adicional funciona igual** (por persona): hereda a su equipo en cuanto llegan los elegibles —sin horario, se dispara solo—, y a cada heredado se le fija su horario abajo. La **edición SÍ ofrece horario por persona desde el 2026-09-09**: la bandeja de corrección muestra los mismos dos campos de hora escribibles por persona (con su turno ya lleno) y cambiarlo es un `PATCH /operativos/:id/personal/:funcionarioId` **inmediato** —como asignar o retirar en edición—; el servidor **re-deriva la ventana del operativo** (envolvente) de los turnos y revalida el descanso/cruce de esa persona. `FormOperativo` ya no tiene un «modo clásico» de horario único |
@@ -537,10 +676,11 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
 
     > **Un solo formulario: `FormOperativo` (2026-10-16, plan «registro-operativo-rediseno»).** `FormularioOperativo` y sus siete banderas (`enCajon`, `seccionado`, `selectoresFlotantes`, `horarioInline`, `ocultarAcciones`, `bandejaSinTope`…) pasaron a **una prop `modo`**: `"alta"` (P-01, con su pie), `"edicion"` y `"adicional"` (el cajón, que lleva el pie con `idForm` + `onEstadoEnvio`). En el cajón, cuatro tarjetas `SeccionDrawer` —Personal y horario · Lugar · Control · Transporte y observaciones—. **En la página (`variante="pagina"`, por omisión en el alta; ajustes visuales del 2026-10-16)** solo «Personal y horario» es tarjeta: la columna derecha va **sin recuadros ni títulos** —Zonales + Punto · Instituciones + Tipo de control · Transporte + macrooperativo · Observaciones—, cada grupo un `role="group"` con nombre y un filete `border-t border-base-200` (14 px arriba) entre ellos (`SeccionDrawer abierta separada`); a dos columnas desde `lg` (~55/45). Mismos campos y mismo orden en los dos: lo fija `formOperativo.spec.tsx`. El «otro tipo» va **dentro del combobox** de Tipo de control como ficha «OTRO ·» (uno solo: el servidor guarda un texto); `CampoOtroTipo` se retiró. Al quitar la zonal del punto elegido, el punto se limpia. El transporte sugerido va marcado «(sugerido)». **«Requiere vehículo exclusivo (macrooperativo)» solo se ofrece con «Completo» (2026-10-19, a pedido del negocio)**: en Solo dejar, Solo retirar, Dejar y retirar o Propios medios no se muestra y se desmarca al cambiar de tipo; se envía con `macroSegunTipo` (`utils/tipoTransporte.util.ts`, espejo del servidor, que lo guarda en `false` con cualquier otro tipo). Las reglas puras viven en `utils/politicasOperativo.util.ts`; el cruce de horario, el descanso y el cupo siguen siendo del servidor.
 
-    > **Y el pie de acción fijo sigue siendo un punto abierto.** `sticky bottom-0` no está en el
-    > inventario (`progress` sí, desde el 2026-10-08, solo para «Planificar el día») de `docs/FASE5-diseno-interfaz.md` §2.2, y la regla 1 no admite
-    > excepciones por comodidad: **hasta que se amplíe el inventario, el pie va al final del panel**
-    > y el avance se muestra solo con el distintivo. Ampliarlo se decide, no se supone.
+    > **Y el pie de acción fijo sigue siendo un punto abierto, con UNA excepción decidida.** `sticky bottom-0`
+    > entró al inventario de `docs/FASE5-diseno-interfaz.md` §2.2 el 2026-10-24 **solo** para la barra del
+    > guardado único de «Ventanas y parámetros › Parámetros» (`BarraCambiosParametros`, por decisión del
+    > usuario). Para todo lo demás la regla 1 sigue sin admitir excepciones por comodidad: **el pie va al
+    > final del panel** y el avance se muestra solo con el distintivo. Otra ampliación se decide, no se supone.
 
     > **Reordenar el pie no unifica las dos varas.** `bloqueado` y `bloqueadoParaAdicional` siguen
     > separadas (regla 11): al mover los botones es tentador dejar una sola condición, y eso
@@ -550,15 +690,69 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
     > **Y la EDICIÓN usa ese mismo cajón (2026-10-08).** `DrawerOperativo` tiene `modo`:
     > `"adicional"` (Órdenes, Mis operativos), `"editar"` (Mis operativos y Registro: título «Editar
     > operativo», «Guardar cambios», personal DIFERIDO) y `"personal"` (aporte y «Agregar Personal»
-    > de la patrulla: cada persona al instante, sin botón de envío). Mismo ancho, secciones, pie con
+    > de la patrulla). **El aporte se confirma con «Guardar cambios» desde el 2026-10-28:**
+    > - agregar, «Completar con N», quitar y cambiar horas solo tocan el borrador, y quien se agregó lleva «Nuevo»;
+    > - el pie dice «Sin cambios pendientes» (Guardar apagado), «N cambios sin guardar · +X persona(s) · −Y persona(s) · Z horario(s)» o «Revise los horarios» (apagado). Lo calculan las reglas puras de `utils/borradorPersonal.util.ts`;
+    > - Guardar envía el conjunto final en una llamada, `OperativoService.guardarPersonal` → `PUT /operativos/:id/personal/lote`, todo o nada;
+    > - si el servidor rechaza a alguien, el motivo va bajo esa persona (`detalles.funcionarioId`) y el borrador queda;
+    > - con éxito, toast «Personal guardado: N personas en <identificador>», el cajón se cierra y la tabla se relee;
+    > - cerrar con cambios pregunta «¿Descartar cambios?»; con la ventana o el cuadro cerrados, Guardar se apaga con su motivo y el `AvisoVentanaCerrada`.
+    >
+    > **Desde el 2026-10-29 también la patrulla 5/6, y en un solo lugar.** `hooks/useBorradorAporte.ts` lleva el borrador, el pie y el guardado de TODAS las variantes; lo usan `CajonAportePersonal` (Mis operativos y Registro, sobre `DrawerOperativo` «personal», que ya exige `borrador`) y `PanelPersonalJornada`:
+    > - en la patrulla (`esAporteDePatrulla`: `esLote` y `esPatrulla`) el borrador es la persona de cada código del registro (`personalDelRegistro`); una persona nueva dice «Nuevo código <prefijo>… al guardar» (`prefijosPorArea` de catálogos) y Guardar envía el registro entero al mismo `…/personal/lote`, que crea, retira y ajusta códigos;
+    > - el título es «Personal de patrulla» con los códigos del registro unidos con « · » en el subtítulo, nunca el `grupoRegistro`; el aviso, «Personal guardado: N personas en la patrulla A · B»;
+    > - quien aporta ve a la gente del dueño con «Del dueño del formulario · lectura» (`puedeTocarPersona`, RF-063) y solo candidatos de Instrucción; agrega con el rol que elige el servidor (`rolQueAgrega`);
+    > - el texto superior es «Su departamento aporta personal a este operativo. El resto de los datos los mantiene el departamento dueño del formulario y llega en lectura.»; «Se guarda al instante» se retiró (`SelectorPersonal` ya no tiene `guardadoInmediato`: `conGuardarCambios`; `RepartoCarga` ya no tiene el modo «inmediato»; `personalInmediato` salió de toda la cadena);
+    > - la Jornada usa la misma lista compacta, con el horario de cada persona, y monta un solo cajón: el hook se inicia con `iniciar` cuando llega el operativo.
+    >
+    > Mismo ancho, secciones, pie con
     > su estado, confirmación de descarte («¿Descartar cambios?», regla 18), foco y error del servidor
-    > sobre el pie. **Con la ventana o el cuadro cerrados, «Editar» ya no se apaga: abre en SOLO
-    > LECTURA** (sin «Guardar cambios»); «Eliminar» sí se apaga. Si el operativo tiene transporte
+    > sobre el pie. **Con la ventana o el cuadro cerrados la fila ofrece «Ver»** (el detalle); «Eliminar» se
+    > apaga. Si se cierran con la edición abierta, «Guardar cambios» queda apagado con su motivo. **Todo cambio espera a «Guardar cambios» (2026-10-24):** el personal del Form 4 (patrulla SIN grupo, un
+    > operativo suelto) ya no se guarda al instante; solo la patrulla CON grupo propia (Form 5/6, roster) sigue
+    > en el momento. El aporte (modo «personal») va al borrador desde el 2026-10-28 (la patrulla, 2026-10-29). **Consultar es solo mirar (2026-10-27):** «Ver» y
+    > «Ver detalle» abren `DetalleOperativoLectura` (`DrawerLateral` `md`, modo lectura), NO el formulario de
+    > edición: Personal y horario (nombre, cargo, teléfono, horario y el trámite solo si lo tiene), Lugar,
+    > Control, Transporte (requerido, conductor y placa o «Sin asignar»; «—» con propios medios u otra institución;
+    > estado) y Observaciones (`NotasObservacion` o «Sin observaciones»), en pares rótulo/valor, «—» en lo vacío y el
+    > horario con `horarioLegible` («08H00 a 16H30»). **Ficha (2026-10-28):** cuerpo gris y una tarjeta blanca por
+    > sección con icono (tokens `--app-detalle-*`, prop `claseCuerpo`); arriba, un resumen de tres tarjetas (Horario ·
+    > Lugar · Personal: «N personas», «N códigos de patrulla» o «1 código»); el aviso «Transporte pendiente: la DAF
+    > todavía no asigna conductor ni vehículo.» solo si hace falta vehículo de la DAF y no hay conductor; cada persona
+    > con avatar de iniciales (primer nombre + primer apellido), «☎ teléfono» y el horario a la derecha; «Lugar y
+    > control» en 2×2; el estado junto al título de Transporte y «Sin asignar» en ámbar; el pie «Registrado por
+    > **<nombre>**» con la fecha debajo. **Patrulla:** la página pasa `grupo` (los códigos del mismo
+    > `grupoRegistro` de su lista); el título es «Detalle de patrulla», debajo todos los identificadores con « · »
+    > (nunca el UUID), y el personal de todos los códigos, cada persona con su identificador; pie «Registrado por
+    > <nombre> · <fecha y hora>» (`registradoPor` del servidor). «Editar» aparece solo si la fila lo ofrecería
+    > (propia, ventana y cuadro abiertos) y abre el cajón de edición. `DrawerOperativo` ya no tiene
+    > `soloLectura`. Si el operativo tiene transporte
     > asignado y el borrador cambia un turno o las zonales, avisa «Este cambio puede dejar el
     > transporte pendiente de reasignación por la DAF». Se retiraron `DrawerEdicionOperativo` y los
     > `DrawerLateral` sueltos de Registro. La Jornada del Día no edita el operativo (solo personal,
     > `PanelPersonalJornada`) y queda fuera. Las dos varas `bloqueado` / `bloqueadoParaAdicional`
     > siguen separadas.
+    >
+    > **Una persona y un tipo de personal (2026-10-28, el 8).** Lo deciden dos datos del formulario
+    > (`elegirUnaArea` y `maxPersonas = 1` en catálogos), no su número. `FormOperativo` arma
+    > `tipoUnico` y `SelectorPersonal` (lista compacta) cambia así:
+    > - antes de la lista, «1 · Tipo de personal *» en tarjetas de radio, sin «Todas», con «N disponibles · identificador IG-» (`prefijosPorArea`);
+    > - hasta elegir, solo «Elija el tipo de personal para ver los disponibles»; después, la lista, el buscador y «No disponibles» muestran solo ese tipo;
+    > - sin pestañas ni «Completar con N de menor carga»; el contador dice «1 persona»;
+    > - con alguien elegido, las demás dicen «Reemplazar»: `conPersonaReemplazada` conserva horario, cantidad y quién asignó;
+    > - cambiar el tipo con alguien elegido pide `MensajeModal` «¿Cambiar a <tipo>? Se quitará a <nombre>.» [Cancelar] [Cambiar];
+    > - al editar, el tipo queda fijo (la persona registrada; el identificador ya lleva su prefijo). El borrador con una baja y un alta se guarda con `reemplazarPersonal` (`reemplazoDelBorrador`), y el personal de un lote del 8 (cantidad > 1) sigue bloqueado.
+    >
+    > **Registro por zonas (2026-10-28, el 8).** Lo decide `cantidadPorZona` del catálogo. La columna derecha cambia Zonales, Punto, Instituciones y Tipo de control por **«3 · Zonas»** (`BloqueZonas`, reglas en `utils/registroPorZonas.util.ts`):
+    > - sin persona: «Elija primero el tipo de personal y la persona.»;
+    > - una tarjeta por zona con Zonal, Punto de encuentro, Cantidad (− n +), Instituciones y Tipo de control; en la cabecera, «Zona N», los números de vista previa («IG-030 a IG-042», de `GET /operativos/proximo-identificador`) y quitar la zona;
+    > - al elegir la persona, la Zona 1 toma su zonal del Maestro (y su punto si es el único) con «✓ Su zonal (del Maestro) · principal para transporte». Si no está, la principal es la Zona 1 con «Principal para transporte»;
+    > - «Agregar zona» copia instituciones y tipo de control de la anterior. Una zonal ya usada se ve deshabilitada;
+    > - el resumen dice «Se generarán N identificadores: La Delicia 13 (IG-030 a IG-042) · Calderón 1 (IG-043).». Debajo va «Transporte requerido · común a todo el operativo» con «La DAF lo ve como un solo operativo…», y después las observaciones;
+    > - el pie dice «Listo para registrar · 1 persona · <transporte> · N zonas · M identificadores» o lo que falta («Zona 2: tipo de control»). Registrar queda apagado mientras falte algo;
+    > - registra con `OperativoService.registrarPorZonas`. La edición (P-01 y P-02) carga las zonas del registro (`zonasDeLosOperativos`, con `grupo` en `DrawerOperativo`) y guarda el registro completo con `editarPorZonas`.
+    >
+    > En los listados el registro es un bloque por persona con una línea por zona, la principal primero (`ordenarPorPersonaYZona`, `rangoIdentificadores.util.ts`). En «Planificar el día» es una sola solicitud con el rango de identificadores y «También atiende».
 15. **En P-01 «Editar» un operativo propio abre el CAJÓN LATERAL (como P-02), y la tabla trae la
     jornada entera.** Añadida el 2026-09-01 por la tarde; **cambiada el 2026-10-01**: hasta entonces
     «Editar» cargaba el operativo en el formulario de arriba (modo corrección inline). Ahora abre el
@@ -569,7 +763,7 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
 
     | Regla | Qué significa |
     |---|---|
-    | **«Editar» un operativo propio abre el cajón lateral, no el formulario de arriba** | `DrawerOperativo` (modo «editar», que monta `PanelEdicionOperativo`) con `personalInmediato={false}`: el personal (alta/baja/turno) se acumula en `enEdicion` y se aplica al «Guardar cambios», en orden bajas→altas→turnos y luego los generales (`editar`). Un fallo por persona (descanso/cruce) detiene el guardado, lo avisa y NO toca los generales; lo ya aplicado queda guardado y el cajón sigue abierto. Es el mismo modelo que Mis operativos (P-02). **El APORTE** (operativo ajeno, DMIT) sigue en su cajón de solo-personal al instante, y la **PATRULLA** propia se corrige **inline** con el roster (su personal al instante): ninguno de los dos es diferido |
+    | **«Editar» un operativo propio abre el cajón lateral, no el formulario de arriba** | `DrawerOperativo` (modo «editar», que monta `PanelEdicionOperativo`) con `personalInmediato={false}`: el personal (alta/baja/turno) se acumula en `enEdicion` y se aplica al «Guardar cambios», en orden bajas→altas→turnos y luego los generales (`editar`). Un fallo por persona (descanso/cruce) detiene el guardado, lo avisa y NO toca los generales; lo ya aplicado queda guardado y el cajón sigue abierto. Es el mismo modelo que Mis operativos (P-02). **El APORTE** (operativo ajeno, DMIT) va en `CajonAportePersonal`, con su propio borrador y «Guardar cambios» (simple desde el 2026-10-28, patrulla desde el 2026-10-29), y la **PATRULLA** propia se corrige **inline** con el roster (su personal al instante) |
     | **El formulario de arriba es siempre el del alta** | Ya no cambia de modo al editar: sus propiedades se derivan de `editandoPatrulla` (la única edición que sigue inline), no de `enEdicion`. El personal del formulario sale siempre de `personalAgregado` (la captura en memoria); la edición propia tiene su propio personal en el cajón |
     | **Entrar a corregir no pierde la captura** | «LO CAPTURADO NUNCA SE PIERDE» de la cabecera del archivo. El borrador del alta se aparta al abrir la corrección —leyendo `refFormik`— y vuelve al cancelar **y** al guardar, por `enableReinitialize`; el formulario de arriba, al quedarse en alta, lo muestra de vuelta |
     | **`resetForm()` a secas está prohibido en esta pantalla** | Repone `initialValues`, que mientras hay borrador **es el borrador**: al registrar, el formulario se habría rellenado solo con lo que se acababa de enviar. Se le dice a qué se vuelve |
@@ -643,6 +837,12 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
       Escape lo cierra, cambia de lado si no cabe, `alinear="fin"` en el último botón, portal y
       `aria-describedby`; token `--app-tooltip-bg`). El resto de tablas, icono + texto (por omisión).
       La pieza reutilizable es `BotonIcono` de `AccionesFila.tsx`.
+      **Regla desde el 2026-10-24:** `texto` en las tablas de 6 columnas o menos (Catálogos, Formularios,
+      Ventanas y parámetros, Roles de Auth, Cuentas); `icono` solo en las densas (Registro, Mis operativos,
+      Jornada del Día, Personal y disponibilidad, Flota y garajes). En los dos modos, el motivo de una acción
+      apagada va en el `Tooltip`. **«Eliminar» visible** (`eliminar` de `AccionesFila`): al final, `peligro`
+      con papelera, apagado con el motivo del servidor; en Catálogos va así y SIN «⋮» (la zonal: [✎ Editar]
+      [+ Punto] [⊘ Desactivar | ↺ Reactivar] [🗑 Eliminar]; puntos, tipos e instituciones: [✎] [⊘ | ↺] [🗑]).
     - **Operativos (P-01 y P-02): `AccionesOperativo`, solo icono y sin «⋮» (2026-10-19).** Cuatro
       casilleros fijos: [✎ Editar · secundario] [+ Agregar adicional · acento] [👁 Ver detalle ·
       secundario] [🗑 Eliminar · peligro], columna `w-[9.5rem]`. Fila de CONSULTA (`consulta`: cuadro
@@ -712,7 +912,7 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
     | **Cabecera** | **Azul corporativo** (`app-cajon-barra`, `--app-cajon-barra` = `--color-secondary`, igual en los dos temas): `titulo` (20 px, blanco) + `subtitulo` (13 px, claro suave; admite un nodo: identificador en mono, cuadro de color) + aspa `fantasma` de 36 px. **Sin versalita**: el contexto va en el subtítulo. Una `Insignia` del subtítulo se pinta translúcida sola (`BarraOscuraContexto`). `ayuda` opcional al principio del cuerpo |
     | **Cuerpo** | Secciones con `SeccionDrawer` (tarjeta, título de 14 px legible, **sin número**) y campos con `CampoDrawer` (etiqueta, `*` roja, ayuda, error con `aria-describedby`) |
     | **Pie** | **Azul, como la cabecera.** Lo arma el cajón, nunca a mano: [`extraPie` · estado] ··· [`accionesPie`] [Cancelar `secundario lg`, blanco] [`textoGuardar` `primario lg`, borde blanco], con `onGuardar` o `formId`. El estado sale de **`estadoPieDrawer`** (`utils/estadoPieDrawer.util.ts`), igual en todos: edición sin cambios «Sin cambios pendientes» (y Guardar apagado «Sin cambios», `motivoSinCambios`) · edición con cambios «Cambios sin guardar» (ámbar, tono `cambios`) · alta con faltantes «N campos por completar» (claro suave, nunca naranja) · tras intentar «Falta: …» (rojo claro, icono; el foco va al primer campo inválido y su borde se pone rojo) · alta completa «Listo para guardar» (verde claro, check) · «Guardando…». Se admite contexto propio delante («1 efectivo · Sin cambios pendientes»). `motivoGuardar` apaga de verdad; `guardarPendiente` se ve apagado pero valida al pulsar. Apagado sobre el azul: colores fijos sin opacidad (`--app-cajon-deshabilitado-*`) y el motivo en el `title` |
-    | **Lectura** | `modo="lectura"`: [Cerrar] y, con `onAccionLectura`, [Listo]. Para consultas y para lo que se guarda al instante (ausencias, personal de la Jornada) |
+    | **Lectura** | `modo="lectura"`: [Cerrar] y, con `onAccionLectura`, [Listo]. Para consultas y para lo que se guarda al instante (ausencias). El personal de la Jornada lleva [Cancelar] [Guardar cambios] desde el 2026-10-28 |
     | **Descarte** | Con `sucio`, el aspa, Escape, el velo y Cancelar preguntan «¿Descartar cambios?» [Seguir editando] / [Descartar] (rojo relleno). Mientras `guardando`, nada cierra y el cuerpo va `inert` |
     | **Al guardar** | El cajón se cierra, aviso breve (`toast.exito`, `utils/mensaje.ts`) y la fila resaltada. Con «Agregar otro después» (`extraPie`), el formulario se limpia, el cajón sigue abierto y sale el aviso igual. `ModalExito` se retiró |
     | **Instantánea** | La estructura de cada cajón (ancho, cabecera, secciones, campos, pie) está fijada con `pruebas/resumenCajon.ts` en `common/cajonesSnapshots.spec.tsx` (los de una pantalla, en la prueba de su pantalla). Un cambio de forma se mira y se acepta con `-u`, no a ciegas |
@@ -812,8 +1012,8 @@ forma de llamar a otro origen.
 
 Tres cosas que conviene saber antes de tocar esa vista:
 
-1. **Auth no conoce el tipo de contrato**, ni el área, ni el teléfono. Se siguen capturando en el
-   formulario de la ficha, y el del contrato decide si esa persona puede salir de noche (RN-26).
+1. **Auth no conoce la jornada laboral** (antes, el tipo de contrato), ni el área, ni el teléfono. Se siguen capturando en el
+   formulario de la ficha, y la jornada decide en qué días y horas se convoca a esa persona (RN-26).
    No los precargue con un valor por omisión «razonable»: invita a no mirarlos.
 2. **El nombre viene en un solo campo** y se parte por heurística —`partirNombre`, en
    `interfaces/DirectorioAuth.ts`, misma regla que aplica el servidor—. Llega **editable** y la

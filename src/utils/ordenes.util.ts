@@ -19,7 +19,13 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { Matriz, OrdenServicio } from "../interfaces/Documento";
+import type {
+  DepartamentoFormato,
+  FormatoOrden,
+  Matriz,
+  OrdenServicio,
+  SinFormatoOrden,
+} from "../interfaces/Documento";
 
 /** Lo que P-05 necesita de un operativo para decidir si emite. */
 export interface OperativoEmisible {
@@ -214,3 +220,38 @@ export const partesResumenCabecera = (
       texto: `${conteo[clave]} ${conteo[clave] === 1 ? singular : plural}`,
     }));
 };
+
+/**
+ * EL AVISO DE QUIENES QUEDARON SIN ORDEN POR FALTA DE FORMATO (2026-10-27). El servidor ya redacta el
+ * mensaje de cada uno («No hay formato de orden para <departamento>. Configúrelo en Editar plantilla.»);
+ * aquí se dice a cuántas personas les falta y se junta el mensaje sin repetirlo (regla 7: tal cual).
+ */
+export const textoSinFormato = (sinFormato: readonly SinFormatoOrden[]): string => {
+  if (sinFormato.length === 0) return "";
+  const personas = sinFormato.length === 1 ? "1 persona" : `${sinFormato.length} personas`;
+  const mensajes = [...new Set(sinFormato.map((uno) => uno.mensaje))].join(" ");
+  return `${personas} sin orden: ${mensajes}`;
+};
+
+/**
+ * LOS TRES FORMATOS DE LA ORDEN (2026-10-27), en el orden de las pestañas de «Editar plantilla». El
+ * nombre es el del organigrama, el mismo que devuelve el servidor en `formato.nombre`.
+ */
+export const FORMATOS_ORDEN: readonly {
+  departamento: DepartamentoFormato;
+  nombre: string;
+}[] = [
+  { departamento: "DMIT_INSTRUCTOR", nombre: "DMIT · Instrucción" },
+  { departamento: "DMIP_OPERATIVOS", nombre: "DMIP · Unidad de Operativos" },
+  {
+    departamento: "DMIP_INSPECCIONES",
+    nombre: "DMIP · Inspecciones Técnicas y Generales",
+  },
+];
+
+/**
+ * «Formato: <departamento>» de una orden (2026-10-27), bajo su número y en el cajón del documento.
+ * Una orden de antes de los formatos se generó con la plantilla del Director.
+ */
+export const textoFormato = (formato: FormatoOrden | null): string =>
+  `Formato: ${formato?.nombre ?? "plantilla anterior (por Director)"}`;

@@ -17,8 +17,8 @@
  * | `modo` | Quién | Cuerpo | Pie |
  * |---|---|---|---|
  * | `adicional` | Órdenes, Mis operativos | `PanelAdicionalOperativo` | Cancelar · Registrar adicional |
- * | `editar` | Mis operativos, Registro | `PanelEdicionOperativo` | Cancelar · Guardar cambios (o solo Cerrar en lectura) |
- * | `personal` | aporte y patrulla (Mis operativos, Registro) | `PanelEdicionOperativo` en solo-personal | Cancelar |
+ * | `editar` | Mis operativos, Registro | `PanelEdicionOperativo` | Cancelar · Guardar cambios |
+ * | `personal` | aporte, simple o patrulla (Mis operativos, Registro) | `PanelEdicionOperativo` en solo-personal | Cancelar · Guardar cambios |
  *
  * El ancho, la forma, el velo, la animación, el foco, el error del servidor sobre el pie y la
  * confirmación de descarte son los mismos en los tres. Si un día cambian, cambian aquí.
@@ -33,18 +33,24 @@
  * EL BOTÓN PRINCIPAL SE VE APAGADO, PERO SE PUEDE PULSAR. Con algo pendiente lleva `aria-disabled`
  * y el aspecto del deshabilitado; al pulsarlo Formik valida y `FocoAlPrimerError` lleva el
  * desplazamiento y el foco al primer campo que falta. Solo se deshabilita de verdad mientras se
- * guarda o si el cuadro lo bloquea. En «editar» con la ventana cerrada (`soloLectura`) ni se pinta:
- * se abre para consultar.
+ * guarda o si el cuadro lo bloquea (`bloqueado`: la ventana o el cuadro se cerraron con el cajón
+ * abierto), con el motivo en su `title`.
  *
  * CERRAR CON CAMBIOS PIDE CONFIRMACIÓN, por los cuatro caminos (✕, Cancelar, Escape y clic en el
- * velo). En «personal» nunca pregunta: cada persona ya se guardó en su clic.
+ * velo). En «personal» (el aporte) también: agregar, quitar y cambiar horas solo tocan el borrador
+ * y «Guardar cambios» envía el lote. Desde el 2026-10-29 también en la patrulla (5/6), que antes
+ * guardaba cada código en su clic: el borrador lo arma `useBorradorAporte` (`CajonAportePersonal`).
  *
  * ES EL MODELO DEL CAJÓN ESTÁNDAR (2026-10-15). `DrawerLateral` `ancho="lg"` pone la cabecera, el
  * pie, el foco inicial y la confirmación «¿Descartar cambios?»; aquí solo se dice qué hay (`sucio`,
  * `estadoPie`, `formId`). El pie pasa de gris («N campos por completar») a rojo («Falta: …») tras
- * el primer intento, y a verde («Listo para guardar») completo. «personal» y la consulta en lectura
- * abren en modo LECTURA: solo [Cerrar]. Las secciones son `SeccionDrawer` (`FormOperativo`):
- * sus títulos usaban `app-section-heading`, que sobre el panel blanco salía casi blanca.
+ * el primer intento, y a verde («Listo para guardar») completo. «personal» (el aporte) lleva
+ * [Cancelar] [Guardar cambios] y el pie de `borradorPersonal.util.ts`. Las secciones son `SeccionDrawer` (`FormOperativo`): sus títulos usaban
+ * `app-section-heading`, que sobre el panel blanco salía casi blanca.
+ *
+ * CONSULTAR YA NO PASA POR AQUÍ (2026-10-27). «Ver» y «Ver detalle» abren
+ * `DetalleOperativoLectura`, que muestra solo lo registrado. Hasta hoy eran este cajón en «editar»
+ * con `soloLectura`: el formulario entero dentro de un `fieldset` apagado.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -52,6 +58,7 @@ import { useMemo, useState, type FC, type ReactNode } from "react";
 
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 import DrawerLateral, { type EstadoPie } from "../common/DrawerLateral.tsx";
+import ChipFormulario from "./ChipFormulario.tsx";
 import PanelAdicionalOperativo, {
   type PanelAdicionalOperativoProps,
 } from "./PanelAdicionalOperativo.tsx";
@@ -59,11 +66,14 @@ import PanelEdicionOperativo, {
   type PanelEdicionOperativoProps,
 } from "./PanelEdicionOperativo.tsx";
 import type { EstadoEnvio } from "./FormOperativo.tsx";
-import type { Operativo } from "../../interfaces/Operativo.ts";
-import { colorDeTextoSobre } from "../../utils/banner.util.ts";
 import type { AvisoTexto } from "../../utils/errorApi.util.ts";
 import { cambiaronZonales } from "../../utils/edicionOperativo.util.ts";
 import { estadoPieDrawer, motivoSinCambios } from "../../utils/estadoPieDrawer.util.ts";
+import {
+  estadoPieDelBorrador,
+  motivoGuardarBorrador,
+  type ResumenBorrador,
+} from "../../utils/borradorPersonal.util.ts";
 
 /** `id` del `<form>` del cajón: el botón del pie lo envía con `form=`. Uno abierto a la vez. */
 const ID_FORM = "form-drawer-operativo";
@@ -104,37 +114,34 @@ type PropsPanelEdicion = Omit<
 
 type PropsEditar = PropsComunes & {
   modo: "editar";
-  /** Ventana cerrada o cuadro cerrado: se abre para consultar, sin «Guardar cambios». */
-  soloLectura: boolean;
   /** Personal del borrador sin aplicar (alta, baja, turno o trámite): cuenta como cambio. */
   personalPendiente: boolean;
   /** Si el borrador cambió el turno de alguien que ya iba: puede descuadrar el transporte. */
   horarioCambiado: boolean;
 } & PropsPanelEdicion;
 
+/** El borrador del aporte (2026-10-28): lo que cambió, si los horarios están bien y cómo guardar. */
+export type BorradorPersonalCajon = {
+  resumen: ResumenBorrador;
+  horariosInvalidos: boolean;
+  onGuardarPersonal: () => void;
+  /** El rótulo de cada persona nueva si no es «Nuevo» (la patrulla, 2026-10-29). */
+  rotulosNuevos?: ReadonlyMap<number, string>;
+};
+
 type PropsPersonal = PropsComunes & {
   modo: "personal";
   titulo: string;
+  /** El cajón confirma con «Guardar cambios» en todas las variantes del aporte (2026-10-29). */
+  borrador: BorradorPersonalCajon;
+  /**
+   * La patrulla (2026-10-29): los identificadores de su registro, que van en el subtítulo en lugar
+   * del `grupoRegistro`. Sin ellos, el identificador del operativo.
+   */
+  identificadores?: readonly string[];
 } & PropsPanelEdicion;
 
 export type DrawerOperativoProps = PropsAdicional | PropsEditar | PropsPersonal;
-
-/** Chip del formulario con el color del banner que entrega el servidor (regla 3). */
-const ChipFormulario: FC<{ operativo: Operativo }> = ({ operativo }) => (
-  <span
-    className="badge badge-sm min-w-0 max-w-full"
-    title={`${operativo.formulario.numero}. ${operativo.formulario.nombre}`}
-    style={{
-      backgroundColor: operativo.formulario.colorFondo,
-      color: colorDeTextoSobre(operativo.formulario.colorFondo),
-    }}
-  >
-    {/* El número va en el texto: el color acompaña, no informa solo (regla 6). */}
-    <span className="min-w-0 truncate">
-      {operativo.formulario.numero}. {operativo.formulario.nombre}
-    </span>
-  </span>
-);
 
 const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
   const { onCerrar, errorServidor = null, avisoContexto } = props;
@@ -182,9 +189,12 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
     [operativo],
   );
 
+  // El borrador del aporte: en «personal», siempre (2026-10-29).
+  const borrador = props.modo === "personal" ? props.borrador : undefined;
+
   const hayCambios =
     props.modo === "personal"
-      ? false
+      ? props.borrador.resumen.total > 0
       : (estado?.hayCambios ?? false) ||
         (props.modo === "adicional"
           ? personalAdicionalModificado
@@ -197,7 +207,7 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
   */
   const avisoTransporte =
     props.modo === "editar" &&
-    !props.soloLectura &&
+    !props.bloqueado &&
     operativo.estadoTransporte === "ASIGNADO" &&
     (props.horarioCambiado ||
       (estado !== null &&
@@ -221,15 +231,10 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
     props.titulo ??
     (props.modo === "adicional" ? "Operativo adicional" : "Editar operativo");
 
-  // El botón principal: no en «personal» (nada que enviar) ni al consultar en lectura.
-  const conAccion =
-    props.modo === "adicional" ||
-    (props.modo === "editar" && !props.soloLectura);
   const textoAccion =
     props.modo === "adicional" ? "Registrar adicional" : "Guardar cambios";
   const textoListo =
     props.modo === "adicional" ? "Listo para registrar" : "Listo para guardar";
-  const enLectura = props.modo === "personal" || (props.modo === "editar" && props.soloLectura);
 
   /*
     El pie: «N efectivos · …» con los estados comunes del cajón estándar. Al editar sin cambios dice
@@ -238,32 +243,35 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
     solo informa. (El rojo de «Falta: …» va tras intentar; el adicional completo, «Listo para
     registrar».)
   */
-  const estadoPie: EstadoPie =
-    props.modo === "personal"
-      ? { tono: "pendiente", texto: "Cada persona se guarda en el momento." }
-      : enLectura
-        ? { tono: "pendiente", texto: `${textoEfectivos} · Solo lectura` }
-        : estadoPieDrawer({
-            esEdicion: props.modo === "editar",
-            hayCambios,
-            intentado: estado?.intentado ?? false,
-            faltan: faltantes.map(rotuloDelPie),
-            textoListo,
-            contexto: textoEfectivos,
-          });
+  const estadoPie: EstadoPie = borrador
+    ? estadoPieDelBorrador(borrador.resumen, borrador.horariosInvalidos)
+    : estadoPieDrawer({
+          esEdicion: props.modo === "editar",
+          hayCambios,
+          intentado: estado?.intentado ?? false,
+          faltan: faltantes.map(rotuloDelPie),
+        textoListo,
+        contexto: textoEfectivos,
+      });
+
+  // La patrulla se nombra por sus códigos, no por su `grupoRegistro` (2026-10-29).
+  const identificadores =
+    props.modo === "personal" && props.identificadores?.length
+      ? props.identificadores.join(" · ")
+      : null;
 
   return (
     <DrawerLateral
       abierto
       ancho="lg"
-      modo={conAccion ? "form" : "lectura"}
+      modo="form"
       titulo={titulo}
       subtitulo={
         <span className="flex min-w-0 flex-wrap items-center gap-2">
           <span>
             {props.modo === "adicional"
               ? `de ${operativo.identificador}`
-              : operativo.identificador}
+              : (identificadores ?? operativo.identificador)}
           </span>
           <ChipFormulario operativo={operativo} />
         </span>
@@ -271,18 +279,26 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
       onCerrar={onCerrar}
       sucio={hayCambios}
       guardando={guardando}
-      formId={conAccion ? ID_FORM : undefined}
+      // El borrador del aporte no es un `<form>`: «Guardar cambios» envía el lote directamente.
+      formId={borrador ? undefined : ID_FORM}
+      onGuardar={borrador?.onGuardarPersonal}
       textoGuardar={textoAccion}
       estadoPie={estadoPie}
       /*
         Con campos pendientes se VE apagado, pero al pulsarlo envía el formulario igual, para que la
         validación lleve al primer error. Apagado de verdad solo si el cuadro lo bloquea.
       */
-      guardarPendiente={incompleto}
+      guardarPendiente={!borrador && incompleto}
       motivoGuardar={
-        props.bloqueado
-          ? "No se puede guardar: el cuadro o la ventana de carga están cerrados."
-          : motivoSinCambios(props.modo === "editar", hayCambios)
+        borrador
+          ? motivoGuardarBorrador(
+              borrador.resumen,
+              borrador.horariosInvalidos,
+              props.bloqueado,
+            )
+          : props.bloqueado
+            ? "No se puede guardar: el cuadro o la ventana de carga están cerrados."
+            : motivoSinCambios(props.modo === "editar", hayCambios)
       }
       errorServidor={errorServidor?.texto}
       varianteErrorServidor={errorServidor?.variante}
@@ -290,6 +306,8 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
         props.mensajeDescarte ??
         (props.modo === "adicional"
           ? "Se perderá lo capturado del operativo adicional: el personal, su horario y los demás datos."
+          : props.modo === "personal"
+          ? "Se perderán las personas agregadas, las quitadas y los horarios cambiados. Nada se ha guardado todavía."
           : "Se perderán los cambios en el personal asignado y en los datos del operativo (punto de encuentro, zonales, instituciones, tipo de control y observaciones nuevas). Nada se ha guardado todavía.")
       }
     >
@@ -339,15 +357,23 @@ function panelDe(props: DrawerOperativoProps) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       modo, onCerrar, errorServidor, avisoContexto, titulo, mensajeDescarte,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      soloLectura, personalPendiente, horarioCambiado,
+      personalPendiente, horarioCambiado,
       ...panel
     } = props;
     return panel;
   }
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { modo, onCerrar, errorServidor, avisoContexto, titulo, mensajeDescarte, ...panel } =
-    props;
-  return panel;
+  const {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    modo, onCerrar, errorServidor, avisoContexto, titulo, mensajeDescarte, identificadores,
+    borrador,
+    ...panel
+  } = props;
+  // Quien se agregó y aún no se guarda lleva «Nuevo» o, en la patrulla, el código que tendrá.
+  return {
+    ...panel,
+    idsNuevos: borrador.resumen.idsNuevos,
+    rotulosNuevos: borrador.rotulosNuevos,
+  };
 }
 
 export default DrawerOperativo;

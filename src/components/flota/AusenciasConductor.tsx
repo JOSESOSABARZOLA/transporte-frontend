@@ -38,6 +38,10 @@ import { toast } from "../../utils/mensaje.ts";
 import { SITUACIONES_DE_AUSENCIA } from "../../utils/personal.util.ts";
 
 /** Lo que deja de pasar mientras el conductor esté ausente. */
+/** El choque con otra ausencia: el mismo texto del 409 `AUSENCIA_SOLAPADA` del servidor. */
+const textoSolape = (desde: string, hasta: string): string =>
+  `El conductor ya tiene registrada una ausencia del ${desde} al ${hasta}, que se cruza con la que intenta registrar. Retire la anterior o ajuste las fechas.`;
+
 const DESCRIPCION_CONDUCTOR =
   "Mientras esté ausente no se ofrecerá al asignar transporte en «Planificar el día», ni en la asignación automática ni en los turnos del mes.";
 
@@ -130,6 +134,7 @@ const PanelAusenciasConductor: FC<PanelAusenciasConductorProps> = ({
       hoy={hoy}
       aviso={aviso}
       descripcionRegistradas={DESCRIPCION_CONDUCTOR}
+      textoSolape={textoSolape}
       avisoImpacto={avisoTramos}
       onRegistrar={registrar}
       onRetirar={(periodoId) => void retirar(periodoId)}

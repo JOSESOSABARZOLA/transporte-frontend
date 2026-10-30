@@ -16,8 +16,6 @@
 import type { AreaPersonal } from "./Formulario";
 import type { RolDepartamental } from "../config/env";
 
-export type TipoContrato = "NOMBRAMIENTO" | "OCASIONAL";
-
 /**
  * Motivo de la baja lógica (2026-09-30). Códigos fijos que reconoce el servidor; «OTRO» exige un
  * detalle escrito. El nombre legible lo pone `NOMBRE_MOTIVO_BAJA` (regla 6).
@@ -65,7 +63,11 @@ export interface Funcionario {
   correoPersonal: string | null;
   cargo: string | null;
   area: AreaPersonal;
-  tipoContrato: TipoContrato;
+  /**
+   * La JORNADA LABORAL (2026-10-23), que reemplaza al tipo de contrato: decide en qué días y horas
+   * se convoca a la persona. `null` = sin jornada asignada, y entonces no se la convoca.
+   */
+  jornadaLaboralId: number | null;
   direccion: RolDepartamental;
   /** Zona y denominación de Instrucción (nulos para el resto; opcionales en el tipo). */
   zonalId?: number | null;
@@ -207,7 +209,8 @@ export interface CrearFuncionario {
   correoPersonal?: string;
   cargo?: string;
   area: AreaPersonal;
-  tipoContrato: TipoContrato;
+  /** La jornada laboral (2026-10-23). Obligatoria en el alta; `null` la retira al editar. */
+  jornadaLaboralId: number | null;
   /**
    * Zonal de trabajo, opcional, para todas las áreas (2026-09-21; Instrucción incluida desde el
    * 2026-10-08). Sin valor no viaja y el servidor conserva la que hubiera.

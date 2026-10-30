@@ -18,10 +18,10 @@
  * institución ya tiene esos datos en otro sitio.
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * LO QUE AUTH NO SABE, y por eso no está aquí: **el tipo de contrato**. Ni nombramiento,
- * ni ocasional. Comprobado en su código fuente el 2026-08-21. Y es justo el dato del que
- * depende RN-26 —quién puede salir de noche o en fin de semana—, así que se sigue
- * capturando en esta pantalla al crear la ficha.
+ * LO QUE AUTH NO SABE, y por eso no está aquí: **la jornada laboral** (antes, el tipo de
+ * contrato, que tampoco conocía; comprobado en su código fuente el 2026-08-21). Y es justo el
+ * dato del que depende RN-26 —en qué días y horas se puede convocar a la persona—, así que se
+ * sigue capturando en esta pantalla al crear la ficha.
  *
  * Tampoco sabe el área, ni el cargo, ni el teléfono.
  */
@@ -47,7 +47,8 @@ export interface FichaDelDirectorio {
   apellidos: string;
   nombres: string;
   area: string;
-  tipoContrato: string;
+  /** La jornada laboral de la ficha (2026-10-23), o `null` si aún no tiene. */
+  jornadaLaboralId: number | null;
   activo: boolean;
 }
 

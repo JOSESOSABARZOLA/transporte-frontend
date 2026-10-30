@@ -25,10 +25,21 @@
  *   papelera. Una opción apagada sigue en el menú, con su motivo en el `title`.
  *
  * Cada control lleva el nombre del registro en su nombre accesible («Editar PBA-1235»).
+ *
+ * ¿TEXTO O ICONO? (2026-10-24, regla del estándar):
+ *   · `modo="texto"` (icono + rótulo) en las tablas de 6 columnas o menos, donde hay espacio:
+ *     Catálogos del cuadro (zonales, puntos, tipos de control, instituciones), Formularios del
+ *     cuadro, Ventanas y parámetros (ventanas y jornadas), Roles de Auth central y Cuentas.
+ *   · `modo="icono"` (cuadrado de 32 px con tooltip) solo en las DENSAS: Registro de operativo, Mis
+ *     operativos, Jornada del Día, Personal y disponibilidad y Flota y garajes.
+ *   En los dos modos, una acción apagada dice su motivo en el `Tooltip`. Vocabulario de estado:
+ *   Desactivar / Reactivar.
+ *   «ELIMINAR» VISIBLE (`eliminar`): siempre al final, en `peligro` con la papelera y apagado con el
+ *   motivo del servidor. En Catálogos va así y SIN «⋮»; el menú queda para quien todavía lo usa.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { FC, MouseEvent } from "react";
+import type { FC, MouseEvent, ReactElement } from "react";
 
 import Boton, { type VarianteBoton } from "./Boton.tsx";
 import Tooltip from "./Tooltip.tsx";
@@ -40,7 +51,8 @@ export type EstadoFila = "desactivar" | "activar" | "baja" | "reactivar" | "reti
 
 const ESTADO: Record<EstadoFila, { texto: string; icono: NombreIcono; variante: VarianteBoton }> = {
   desactivar: { texto: "Desactivar", icono: "desactivar", variante: "peligro" },
-  activar: { texto: "Activar", icono: "activar", variante: "exito" },
+  // «Activar» se lee «Reactivar» en todas las tablas (plantilla visual, 2026-10-24): misma acción.
+  activar: { texto: "Reactivar", icono: "activar", variante: "exito" },
   baja: { texto: "Dar de baja", icono: "desactivar", variante: "peligro" },
   reactivar: { texto: "Reactivar", icono: "activar", variante: "exito" },
   retirar: { texto: "Retirar", icono: "desactivar", variante: "peligro" },
@@ -146,13 +158,25 @@ export const BotonIcono: FC<{
   icono: NombreIcono;
   rotulo: string;
   nombre: string;
+  /** El texto del tooltip, si no es el rótulo (la propia «Ausencias» con nombre «Ausencias de»). */
+  tooltip?: string;
   variante?: VarianteBoton;
   motivo?: string | null;
   procesando?: boolean;
   alinear?: "centro" | "fin";
   onClick: () => void;
-}> = ({ icono, rotulo, nombre, variante = "secundario", motivo, procesando = false, alinear, onClick }) => (
-  <Tooltip texto={motivo || rotulo} alinear={alinear}>
+}> = ({
+  icono,
+  rotulo,
+  nombre,
+  tooltip,
+  variante = "secundario",
+  motivo,
+  procesando = false,
+  alinear,
+  onClick,
+}) => (
+  <Tooltip texto={motivo || tooltip || rotulo} alinear={alinear}>
     <Boton
       variante={variante}
       tamano="sm"
@@ -172,10 +196,34 @@ type AccionesFilaProps = {
   modo?: ModoAcciones;
   procesando?: boolean;
   editar?: AccionEditar | null;
-  propia?: AccionPropia | null;
+  /** Una acción propia o varias, en su orden (2026-10-24: «Ver turnos» · «Ausencias» en Personal). */
+  propia?: AccionPropia | AccionPropia[] | null;
   estado?: AccionEstado | null;
+  /**
+   * El borrado definitivo VISIBLE (2026-10-24, Catálogos): siempre al final, en `peligro` y con la
+   * papelera. Apagado, su motivo va en el tooltip. La confirmación es de quien llama.
+   */
+  eliminar?: Condicionada | null;
   menu?: OpcionMenu[];
 };
+
+/** En modo texto, una acción apagada dice su motivo en el MISMO `Tooltip` del modo icono. */
+const ConMotivo: FC<{
+  motivo?: string | null;
+  alinear?: "centro" | "fin";
+  children: ReactElement<{ "aria-describedby"?: string }>;
+}> = ({
+  motivo,
+  alinear,
+  children,
+}) =>
+  motivo ? (
+    <Tooltip texto={motivo} alinear={alinear}>
+      {children}
+    </Tooltip>
+  ) : (
+    <>{children}</>
+  );
 
 const AccionesFila: FC<AccionesFilaProps> = ({
   nombre,
@@ -183,12 +231,23 @@ const AccionesFila: FC<AccionesFilaProps> = ({
   editar,
   propia,
   estado,
+  eliminar,
   menu = [],
   modo = "texto",
 }) => {
   const rotuloEstado = estado ? ESTADO[estado.tipo] : null;
+  const propias = propia ? (Array.isArray(propia) ? propia : [propia]) : [];
   if (modo === "icono") {
-    const ultimo = menu.length > 0 ? "menu" : estado ? "estado" : propia ? "propia" : "editar";
+    const ultimo =
+      menu.length > 0
+        ? "menu"
+        : eliminar
+          ? "eliminar"
+          : estado
+            ? "estado"
+            : propias.length > 0
+              ? "propia"
+              : "editar";
     return (
       <div className="app-acciones-icono">
         {editar && (
@@ -202,18 +261,20 @@ const AccionesFila: FC<AccionesFilaProps> = ({
             onClick={editar.onClick}
           />
         )}
-        {propia && (
+        {propias.map((accion, i) => (
           <BotonIcono
-            icono={propia.icono}
-            rotulo={propia.etiqueta ?? propia.texto}
+            key={accion.texto}
+            icono={accion.icono}
+            rotulo={accion.etiqueta ?? accion.texto}
+            tooltip={accion.texto}
             nombre={nombre}
-            variante={propia.variante ?? "acento"}
-            motivo={propia.motivo}
+            variante={accion.variante ?? "acento"}
+            motivo={accion.motivo}
             procesando={procesando}
-            alinear={ultimo === "propia" ? "fin" : undefined}
-            onClick={propia.onClick}
+            alinear={ultimo === "propia" && i === propias.length - 1 ? "fin" : undefined}
+            onClick={accion.onClick}
           />
-        )}
+        ))}
         {estado && rotuloEstado && (
           <BotonIcono
             icono={rotuloEstado.icono}
@@ -226,49 +287,78 @@ const AccionesFila: FC<AccionesFilaProps> = ({
             onClick={estado.onClick}
           />
         )}
+        {eliminar && (
+          <BotonIcono
+            icono="eliminar"
+            rotulo="Eliminar"
+            nombre={nombre}
+            variante="peligro"
+            motivo={eliminar.motivo}
+            procesando={procesando}
+            alinear={ultimo === "eliminar" ? "fin" : undefined}
+            onClick={eliminar.onClick}
+          />
+        )}
         {menu.length > 0 && <MenuFila nombre={nombre} opciones={menu} procesando={procesando} />}
       </div>
     );
   }
   return (
-    <div className="flex items-center justify-end gap-1.5">
+    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
       {editar && (
-        <Boton
-          tamano="sm"
-          icono={editar.icono ?? "editar"}
-          deshabilitado={procesando}
-          motivoDeshabilitado={editar.motivo}
-          onClick={editar.onClick}
-          aria-label={`${editar.texto ?? "Editar"} ${nombre}`}
-        >
-          {editar.texto ?? "Editar"}
-        </Boton>
+        <ConMotivo motivo={editar.motivo}>
+          <Boton
+            tamano="sm"
+            icono={editar.icono ?? "editar"}
+            deshabilitado={procesando || Boolean(editar.motivo)}
+            onClick={editar.onClick}
+            aria-label={`${editar.texto ?? "Editar"} ${nombre}`}
+          >
+            {editar.texto ?? "Editar"}
+          </Boton>
+        </ConMotivo>
       )}
-      {propia && (
-        <Boton
-          variante={propia.variante ?? "acento"}
-          tamano="sm"
-          icono={propia.icono}
-          deshabilitado={procesando}
-          motivoDeshabilitado={propia.motivo}
-          onClick={propia.onClick}
-          aria-label={`${propia.etiqueta ?? propia.texto} ${nombre}`}
-        >
-          {propia.texto}
-        </Boton>
-      )}
+      {propias.map((accion) => (
+        <ConMotivo key={accion.texto} motivo={accion.motivo}>
+          <Boton
+            variante={accion.variante ?? "acento"}
+            tamano="sm"
+            icono={accion.icono}
+            deshabilitado={procesando || Boolean(accion.motivo)}
+            onClick={accion.onClick}
+            aria-label={`${accion.etiqueta ?? accion.texto} ${nombre}`}
+          >
+            {accion.texto}
+          </Boton>
+        </ConMotivo>
+      ))}
       {estado && rotuloEstado && (
-        <Boton
-          variante={rotuloEstado.variante}
-          tamano="sm"
-          icono={rotuloEstado.icono}
-          deshabilitado={procesando}
-          motivoDeshabilitado={estado.motivo}
-          onClick={estado.onClick}
-          aria-label={`${rotuloEstado.texto} ${nombre}`}
-        >
-          {rotuloEstado.texto}
-        </Boton>
+        <ConMotivo motivo={estado.motivo}>
+          <Boton
+            variante={rotuloEstado.variante}
+            tamano="sm"
+            icono={rotuloEstado.icono}
+            deshabilitado={procesando || Boolean(estado.motivo)}
+            onClick={estado.onClick}
+            aria-label={`${rotuloEstado.texto} ${nombre}`}
+          >
+            {rotuloEstado.texto}
+          </Boton>
+        </ConMotivo>
+      )}
+      {eliminar && (
+        <ConMotivo motivo={eliminar.motivo} alinear="fin">
+          <Boton
+            variante="peligro"
+            tamano="sm"
+            icono="eliminar"
+            deshabilitado={procesando || Boolean(eliminar.motivo)}
+            onClick={eliminar.onClick}
+            aria-label={`Eliminar ${nombre}`}
+          >
+            Eliminar
+          </Boton>
+        </ConMotivo>
       )}
       {menu.length > 0 && <MenuFila nombre={nombre} opciones={menu} procesando={procesando} />}
     </div>

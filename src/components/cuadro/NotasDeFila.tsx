@@ -23,7 +23,8 @@ import NotasObservacion from "../common/NotasObservacion.tsx";
 import type { NotaOperativo } from "../../interfaces/Operativo.ts";
 import { useDestelloDeFila } from "../../hooks/useDestelloDeFila.ts";
 import { NavegacionNotas, type NavegacionDeNotas } from "../../hooks/useAnclaDeFila.ts";
-import { notasDeFila } from "../../utils/notasDeTabla.util.ts";
+import type { AreaPersonal } from "../../interfaces/Formulario.ts";
+import { notaDeComposicion, notasDeFila } from "../../utils/notasDeTabla.util.ts";
 
 /** Provee la navegación de las notas a una tabla que muestra los operativos `ids`. */
 export const ProveedorNotas: FC<{ ids: number[]; children: ReactNode }> = ({ ids, children }) => {
@@ -38,12 +39,21 @@ export const ProveedorNotas: FC<{ ids: number[]; children: ReactNode }> = ({ ids
 
 /** Las notas de una fila, como tarjetas. */
 const NotasDeFila: FC<{
-  fila: { id: number; identificador: string; notas?: NotaOperativo[]; observaciones: string[] };
+  fila: {
+    id: number;
+    identificador: string;
+    notas?: NotaOperativo[];
+    observaciones: string[];
+    /** Solo la Jornada lo trae (2026-10-22): la composición del registro, como nota informativa. */
+    composicionPorInformar?: AreaPersonal[];
+  };
 }> = ({ fila }) => {
   const { irA, esVisible } = useContext(NavegacionNotas);
+  const informativa = notaDeComposicion(fila.composicionPorInformar);
   return (
     <NotasObservacion
       notas={notasDeFila(fila)}
+      informativas={informativa ? [informativa] : []}
       onIrA={irA}
       esVisible={esVisible}
       etiqueta={`Observaciones de ${fila.identificador}`}

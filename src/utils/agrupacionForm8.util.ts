@@ -66,3 +66,68 @@ export function agruparPorClave<T>(
 
   return grupos;
 }
+
+/**
+ * LAS FILAS DE UNA PERSONA, SIEMPRE SEGUIDAS (2026-10-26). Dentro de un grupo, `agruparPorClave`
+ * conserva el orden de llegada, y el servidor puede intercalar los códigos de una persona con los de
+ * otra (IG-001 Caiza, IT-001 Aguirre, IG-002 Caiza). La tabla fusiona nombre, teléfono y horario POR
+ * PERSONA con `rowSpan` sobre filas contiguas: intercaladas, la celda invadía la fila ajena y la
+ * tabla se descuadraba. Aquí cada persona va en el orden de su PRIMERA aparición y, dentro de ella,
+ * por identificador en orden natural (IG-002 antes que IG-010). Estable: no pierde ni duplica filas.
+ */
+export function ordenarPorPersona<T>(
+  filas: readonly T[],
+  persona: (fila: T) => string,
+  identificador: (fila: T) => string,
+): T[] {
+  const orden = new Map<string, number>();
+  for (const fila of filas) {
+    const clave = persona(fila);
+    if (!orden.has(clave)) orden.set(clave, orden.size);
+  }
+  return filas
+    .map((fila, indice) => ({ fila, indice }))
+    .sort(
+      (a, b) =>
+        (orden.get(persona(a.fila)) ?? 0) - (orden.get(persona(b.fila)) ?? 0) ||
+        identificador(a.fila).localeCompare(identificador(b.fila), "es", { numeric: true }) ||
+        a.indice - b.indice,
+    )
+    .map(({ fila }) => fila);
+}
+
+/**
+ * REGISTRO POR ZONAS DEL 8 (2026-10-28): una persona atiende varias zonas, cada una con sus
+ * identificadores. Dentro del bloque de la persona va la ZONA PRINCIPAL primero y cada zona con sus
+ * códigos juntos y en orden natural. Conserva lo de `ordenarPorPersona`: cada persona en el orden de
+ * su primera aparición. `esPrincipal` nulo (los demás formularios) no cuenta, y entonces el orden es
+ * el de `ordenarPorPersona`.
+ */
+export function ordenarPorPersonaYZona<T>(
+  filas: readonly T[],
+  persona: (fila: T) => string,
+  zona: (fila: T) => string,
+  esPrincipal: (fila: T) => boolean | null | undefined,
+  identificador: (fila: T) => string,
+): T[] {
+  const porPersona = ordenarPorPersona(filas, persona, identificador);
+  const ordenPersona = new Map<string, number>();
+  const ordenZona = new Map<string, number>();
+  for (const fila of porPersona) {
+    if (!ordenPersona.has(persona(fila))) ordenPersona.set(persona(fila), ordenPersona.size);
+    const claveZona = `${persona(fila)}|${zona(fila)}`;
+    if (!ordenZona.has(claveZona)) ordenZona.set(claveZona, ordenZona.size);
+  }
+  const principal = (fila: T) => (esPrincipal(fila) === true ? 0 : 1);
+  return porPersona
+    .map((fila, indice) => ({ fila, indice }))
+    .sort(
+      (a, b) =>
+        (ordenPersona.get(persona(a.fila)) ?? 0) - (ordenPersona.get(persona(b.fila)) ?? 0) ||
+        principal(a.fila) - principal(b.fila) ||
+        (ordenZona.get(`${persona(a.fila)}|${zona(a.fila)}`) ?? 0) -
+          (ordenZona.get(`${persona(b.fila)}|${zona(b.fila)}`) ?? 0) ||
+        a.indice - b.indice,
+    )
+    .map(({ fila }) => fila);
+}

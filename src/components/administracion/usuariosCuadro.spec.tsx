@@ -20,7 +20,7 @@
  * abre directo en el paso 2); las del recorrido del alta, la pantalla entera.
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -191,10 +191,30 @@ describe("Cuentas del cuadro", () => {
       expect(screen.queryByText("Sin ficha: no recibe órdenes")).toBeNull();
       expect(screen.getByText("dssalazar")).toBeInTheDocument();
     });
+
+    it("plantilla visual: el estado es `EtiquetaEstado` y el correo va en gris legible, sin opacidad", () => {
+      render(
+        <TablaUsuarios
+          nombreDe={(rol) => rol}
+          usuarios={[COMPLETA, { ...SIN_ENLACES, id: 99, nombre: "CUENTA APAGADA", activo: false }]}
+          cargando={false}
+          procesando={false}
+          onEditar={vi.fn()}
+          onDesactivar={vi.fn()}
+          onActivar={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Activa")).toHaveClass("badge-success", "rounded-full", "text-xs");
+      expect(screen.getByText("Desactivada")).toHaveClass("badge-ghost", "rounded-full");
+      const correo = screen.getByText(COMPLETA.correo);
+      expect(correo).toHaveClass("text-app-muted");
+      expect(correo.className).not.toMatch(/opacity-|text-base-content\//);
+    });
   });
 
   describe("las acciones de la fila (estándar de botones)", () => {
-    it("la cuenta activa muestra [✎ Editar] [⊘ Desactivar]; la desactivada, [✎ Editar] [↺ Activar]", async () => {
+    it("la cuenta activa muestra [✎] [⊘ Desactivar]; la desactivada, [✎] [↺ Reactivar], con su rótulo", async () => {
       const activar = vi.fn();
       render(
         <TablaUsuarios
@@ -211,22 +231,24 @@ describe("Cuentas del cuadro", () => {
       const desactivar = screen.getByRole("button", { name: `Desactivar ${COMPLETA.nombre}` });
       expect(desactivar.className).toContain("btn-error");
       expect(desactivar.className).toContain("btn-sm");
-      const boton = screen.getByRole("button", { name: "Activar CUENTA APAGADA" });
+      expect(desactivar.textContent).toBe("Desactivar");
+      const boton = screen.getByRole("button", { name: "Reactivar CUENTA APAGADA" });
       expect(boton.className).toContain("btn-success");
+      expect(boton.textContent).toBe("Reactivar");
       expect(screen.queryByRole("button", { name: "Desactivar CUENTA APAGADA" })).toBeNull();
       await userEvent.click(boton);
       expect(activar).toHaveBeenCalledWith(expect.objectContaining({ id: 99 }));
       expect(screen.getByRole("columnheader", { name: "Acciones" })).toHaveClass("text-right");
     });
 
-    it("«Activar» en la página envía { activo: true } sin confirmación y avisa", async () => {
+    it("«Reactivar» en la página envía { activo: true } sin confirmación y avisa", async () => {
       const apagada = { ...COMPLETA, id: 7, activo: false };
       vi.mocked(UsuariosCuadroService.listar).mockResolvedValue([apagada]);
       vi.mocked(UsuariosCuadroService.actualizar).mockResolvedValue({ ...apagada, activo: true });
 
       render(<AdminUsuariosPage />);
       await userEvent.click(
-        await screen.findByRole("button", { name: `Activar ${COMPLETA.nombre}` }),
+        await screen.findByRole("button", { name: `Reactivar ${COMPLETA.nombre}` }),
       );
 
       expect(UsuariosCuadroService.actualizar).toHaveBeenCalledWith(7, { activo: true });
@@ -234,6 +256,19 @@ describe("Cuentas del cuadro", () => {
       expect(
         await screen.findByText(`La cuenta de ${COMPLETA.nombre} vuelve a estar activa`),
       ).toBeInTheDocument();
+    });
+
+    it("plantilla visual: «Cuentas» sin contador, «+ Nueva cuenta» en la cabecera y la ayuda al pie", async () => {
+      vi.mocked(UsuariosCuadroService.listar).mockResolvedValue([COMPLETA]);
+
+      const { container } = render(<AdminUsuariosPage />);
+      await screen.findByText(COMPLETA.nombre);
+
+      const cabecera = container.querySelector(".app-section-header") as HTMLElement;
+      expect(within(cabecera).getByText("Cuentas")).toBeInTheDocument();
+      expect(within(cabecera).getByRole("button", { name: "+ Nueva cuenta" })).toBeInTheDocument();
+      expect(screen.queryByText(/registradas/)).toBeNull();
+      expect(container.querySelector("[data-nota-panel]")).toHaveTextContent(/con «Reactivar», en su fila/);
     });
   });
 
@@ -593,7 +628,7 @@ describe("el alta de una cuenta empieza en el directorio (en el cajón)", () => 
             apellidos: "PEREZ LOPEZ",
             nombres: "JUAN CARLOS",
             area: "GENERAL",
-            tipoContrato: "NOMBRAMIENTO",
+            jornadaLaboralId: 1,
             activo: true,
           },
         }),

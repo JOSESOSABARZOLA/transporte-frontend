@@ -23,6 +23,7 @@
 
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -85,7 +86,11 @@ const consultarDirectorio = vi.mocked(PersonalService.consultarDirectorio);
 
 /** Monta la pantalla con el maestro ya resuelto, para no probar el arranque. */
 const abrirPantalla = async () => {
-  render(<AdminPersonalPage />);
+  render(
+    <MemoryRouter>
+      <AdminPersonalPage />
+    </MemoryRouter>,
+  );
   await waitFor(() => expect(listar).toHaveBeenCalled());
 };
 
@@ -131,7 +136,7 @@ describe("el alta empieza en el directorio de Auth", () => {
       await screen.findByText("PEREZ LOPEZ JUAN CARLOS"),
     ).toBeInTheDocument();
     // Si abriera la ficha, este campo estaría a la vista.
-    expect(screen.queryByLabelText(/Tipo de contrato/)).toBeNull();
+    expect(screen.queryByLabelText(/Jornada laboral/)).toBeNull();
   });
 
   it("elegir a alguien y «Continuar» cierra el directorio y abre su ficha con lo que Auth sabe", async () => {

@@ -21,8 +21,10 @@ import {
   COLUMNAS_SESION,
   cabeceraDeFecha,
   coincideConFiltros,
+  textoFiltroConductor,
   filtrarOperativos,
   hayFiltrosActivos,
+  nombreEstadoDeFila,
   paginar,
   rangoPaginas,
   valorDeColumna,
@@ -227,10 +229,10 @@ describe("cabecera de un día en P-02 con varios días (2026-10-13)", () => {
 });
 
 describe("columnas de P-01 (2026-10-13)", () => {
-  it("Transporte y Observaciones se filtran, y el conductor no", () => {
+  it("Transporte, Conductor (2026-10-26) y Observaciones se filtran", () => {
     expect(COLUMNAS_FILTRABLES).toContain("transporte");
     expect(COLUMNAS_FILTRABLES).toContain("observaciones");
-    expect(COLUMNAS_FILTRABLES).not.toContain("conductor");
+    expect(COLUMNAS_FILTRABLES).toContain("conductor");
     for (const columna of COLUMNAS_SESION) {
       expect([...COLUMNAS_LISTADO, "transporte", "observaciones"]).toContain(columna);
     }
@@ -260,5 +262,56 @@ describe("rangoPaginas (paginador numerado, 2026-10-15)", () => {
   it("una página fuera de rango se acota", () => {
     expect(rangoPaginas(40, 12)).toEqual(rangoPaginas(12, 12));
     expect(rangoPaginas(0, 12)).toEqual(rangoPaginas(1, 12));
+  });
+});
+
+/** FILTRO DE CONDUCTOR (2026-10-26): lo que se lee en la celda, no el texto de la alerta. */
+describe("filtro de Conductor", () => {
+  const asignado = operativo({
+    transporteAsignado: [{ conductor: "PÉREZ LOPEZ JUAN", placa: "PMA-3370" }],
+  });
+  const pendiente = operativo({
+    alertas: [{ codigo: "ALV-02", campo: "conductor", mensaje: "La DAF todavía…", critica: false }],
+  });
+
+  it("encuentra por el nombre (sin tildes) y por la placa", () => {
+    expect(coincideConFiltros(asignado, { conductor: "perez" })).toBe(true);
+    expect(coincideConFiltros(asignado, { conductor: "pma-3370" })).toBe(true);
+    expect(coincideConFiltros(asignado, { conductor: "gomez" })).toBe(false);
+  });
+
+  it("sin asignar, se encuentra por «Sin conductor», no por el texto de la alerta", () => {
+    expect(textoFiltroConductor(pendiente)).toBe("Sin conductor");
+    expect(coincideConFiltros(pendiente, { conductor: "sin cond" })).toBe(true);
+    expect(coincideConFiltros(pendiente, { conductor: "todavía" })).toBe(false);
+  });
+
+  it("filtra la lista", () => {
+    expect(filtrarOperativos([asignado, pendiente], { conductor: "pérez" })).toEqual([asignado]);
+  });
+});
+
+/** VEHÍCULO DE OTRA INSTITUCIÓN (2026-10-23): la DAF no asigna, y las celdas lo dicen. */
+describe("columnas · vehículo de otra institución", () => {
+  const enOtra = operativo({ tipoTransporte: "OTRA_INSTITUCION" });
+
+  it("el conductor dice «Otra institución» y el transporte su nombre", () => {
+    expect(valorDeColumna(enOtra, "conductor")).toBe("Otra institución");
+    expect(valorDeColumna(enOtra, "transporte")).toBe("Vehículo de otra institución");
+  });
+
+  // Estado = el estado GUARDADO (2026-10-26): «Otra institución» ya no se pinta como estado.
+  it("su estado es el que se guardó, no «Otra institución»", () => {
+    expect(valorDeColumna(enOtra, "estado")).toBe("Pendiente");
+    expect(nombreEstadoDeFila({ estadoTransporte: "PENDIENTE" })).toBe("Pendiente");
+    expect(nombreEstadoDeFila({ estadoTransporte: "ASIGNADO" })).toBe("Asignado");
+    expect(nombreEstadoDeFila({ estadoTransporte: "PROPIOS_MEDIOS" })).toBe("Propios medios");
+  });
+
+  it("el filtro de Estado no encuentra «Otra institución»: se filtra como cualquier pendiente", () => {
+    expect(coincideConFiltros(enOtra, { estado: "otra" })).toBe(false);
+    expect(coincideConFiltros(enOtra, { estado: "pendiente" })).toBe(true);
+    // El tipo sigue encontrándose donde se informa: en Transporte.
+    expect(coincideConFiltros(enOtra, { transporte: "otra institución" })).toBe(true);
   });
 });

@@ -30,12 +30,18 @@ import type { FormikHelpers } from "formik";
 import CamposCalculados from "../components/cuadro/CamposCalculados.tsx";
 import Boton from "../components/common/Boton.tsx";
 import { useConfirmarLiberacion } from "../hooks/useConfirmarLiberacion.tsx";
+import type { GuardadoDelBorrador } from "../hooks/useBorradorAporte.ts";
 import AvisoEnLinea from "../components/common/AvisoEnLinea.tsx";
 import AvisoVentana from "../components/common/AvisoVentana.tsx";
 import AvisoVentanaCerrada from "../components/common/AvisoVentanaCerrada.tsx";
+import EncabezadoPagina from "../components/common/EncabezadoPagina.tsx";
+import SelectorSegmentado from "../components/forms/SelectorSegmentado.tsx";
+import DetalleOperativoLectura from "../components/cuadro/DetalleOperativoLectura.tsx";
+import CajonAportePersonal from "../components/cuadro/CajonAportePersonal.tsx";
 import DrawerOperativo from "../components/cuadro/DrawerOperativo.tsx";
 import type { ExtrasDelEnvio } from "../components/cuadro/FormOperativo.tsx";
 import { macroSegunTipo } from "../utils/tipoTransporte.util.ts";
+import { comoZonasDelRegistro } from "../utils/registroPorZonas.util.ts";
 import { AVISO_NOTA_PENDIENTE } from "../utils/notasOperativo.util.ts";
 import AccionesOperativo, {
   type AccionPrincipal,
@@ -44,6 +50,7 @@ import {
   cambioDeHorario,
   codigoDeTramite,
   hayCambiosDePersonal,
+  reemplazoDelBorrador,
 } from "../utils/edicionOperativo.util.ts";
 import type { MiembroPatrulla } from "../components/cuadro/RosterPatrulla.tsx";
 import PanelOperativos from "../components/cuadro/PanelOperativos.tsx";
@@ -96,6 +103,7 @@ import {
 import Insignia from "../components/common/Insignia.tsx";
 import { COLUMNAS_LISTADO, fechaCorta } from "../utils/listadoOperativos.util.ts";
 import { mensaje, toast } from "../utils/mensaje.ts";
+import { conPersonaReemplazada } from "../utils/personal.util.ts";
 
 /**
  * Se pide la jornada entera de una vez, y se filtra y pagina en memoria.
@@ -253,14 +261,6 @@ const MisOperativosPage = () => {
    * o recargar) para calcular el diff a aplicar y para saber si hay cambios pendientes.
    */
   const personalOriginalRef = useRef<PersonaAsignada[]>([]);
-  /**
-   * Confirmación en palabras tras asignar/retirar personal en el cajón (2026-10-01). El personal se
-   * guarda al instante; esta franja («… asignado/retirado · guardado») lo dice sin color solo
-   * (regla 6). Se limpia al cerrar el cajón.
-   */
-  const [confirmacionPersonal, setConfirmacionPersonal] = useState<
-    string | null
-  >(null);
   // Fase D: mensaje del servidor tras un 409 al guardar. Se muestra DENTRO del cajón, con
   // «Recargar datos», y conserva lo capturado (RN de bloqueo optimista). Nulo si no hay conflicto.
   const [conflictoEdicion, setConflictoEdicion] = useState<string | null>(null);
@@ -355,7 +355,6 @@ const MisOperativosPage = () => {
     setErrorEdicion(null);
     setEditando(null);
     setAgregandoAPatrulla(false);
-    setConfirmacionPersonal(null);
   }, []);
 
   const catalogos = useCatalogosFormulario(
@@ -447,14 +446,20 @@ const MisOperativosPage = () => {
   /**
    * ¿Esta edición usa el guardado DIFERIDO del personal? (2026-10-01). Solo el operativo PROPIO que
    * se corrige con «Guardar cambios» y NO es patrulla (la patrulla gestiona su personal con el
-   * roster, al instante). El APORTE (operativo ajeno, solo-personal) NO tiene «Guardar cambios», así
-   * que ahí el personal sigue al instante: no hay a dónde diferirlo.
+   * roster, al instante). El APORTE (operativo ajeno, solo-personal) lleva su propio borrador en
+   * `CajonAportePersonal` (2026-10-29).
    */
+  /*
+    TODO CAMBIO ESPERA A «GUARDAR CAMBIOS» (2026-10-24, pedido del usuario). Antes quedaba fuera
+    cualquier formulario de patrulla, y el Form 4 (un operativo suelto, sin grupo) guardaba cada
+    persona al instante. Ahora solo queda fuera la patrulla CON grupo (Form 5/6), cuyo personal se
+    gestiona con el roster, código por código.
+  */
   const esEdicionDiferida = useCallback(
     (operativo: Operativo | null, aportandoAPatrulla: boolean): boolean =>
       operativo !== null &&
       !aportandoAPatrulla &&
-      !operativo.formulario.esPatrulla &&
+      !(operativo.formulario.esPatrulla && operativo.esLote) &&
       accesoDe(operativo) === "PROPIO",
     [accesoDe],
   );
@@ -688,8 +693,28 @@ const MisOperativosPage = () => {
       };
 
       try {
+        // REGISTRO POR ZONAS (2026-10-28): se guarda el registro COMPLETO con sus zonas.
+        if (catalogos.catalogos?.cantidadPorZona && valores.zonas) {
+          const grupo = editando.grupoRegistro;
+          const hecho = await conLiberacion((confirmarLiberacion) =>
+            OperativoService.editarPorZonas(grupo, {
+              zonas: comoZonasDelRegistro(valores.zonas ?? []),
+              tipoTransporte: generales.tipoTransporte,
+              esMacrooperativo: generales.esMacrooperativo,
+              observacionesNuevas: generales.observacionesNuevas,
+              ...(confirmarLiberacion ? { confirmarLiberacion } : {}),
+            }),
+          );
+          if (hecho === null) return;
+          toast.exito(`Operativo actualizado: ${hecho.length} identificadores al día.`);
+          resaltar(editando.id);
+          setEditando(null);
+          ayudas.resetForm();
+          await cargar();
+          return;
+        }
         // PATRULLA (2026-09-18): editar los generales los aplica a TODOS los códigos del lote.
-        if (editando.grupoRegistro) {
+        if (editando.esLote) {
           const grupo = editando.grupoRegistro;
           // Transporte requerido (2026-10-07): si cambia el tipo con transporte asignado, se pregunta.
           const hecho = await conLiberacion((confirmarLiberacion) =>
@@ -777,25 +802,52 @@ const MisOperativosPage = () => {
           };
 
           try {
-            for (const baja of bajas) {
+            // «REEMPLAZAR» (2026-10-28, formulario de una sola persona): una baja y un alta son un cambio
+            // de ocupante. Va en UNA llamada que conserva el código y el turno; si el borrador cambió el
+            // horario, se fija después, como cualquier turno.
+            const reemplazo = reemplazoDelBorrador(
+              bajas,
+              altas,
+              catalogos.catalogos?.elegirUnaArea ?? false,
+            );
+            if (reemplazo) {
               aplicado(
-                await OperativoService.retirarPersonal(
+                await OperativoService.reemplazarPersonal(
                   actual.id,
-                  baja.funcionarioId,
+                  reemplazo.entrante.funcionarioId,
                 ),
               );
-            }
-            for (const alta of altas) {
-              aplicado(
-                await OperativoService.asignarPersonal(actual.id, {
-                  funcionarioId: alta.funcionarioId,
-                }),
-              );
-              const conTurno = await turnoAplicado(alta.funcionarioId, {
-                horaInicio: alta.horaInicio,
-                horaFin: alta.horaFin,
-              });
-              if (!conTurno) return;
+              if (
+                reemplazo.entrante.horaInicio !== reemplazo.saliente.horaInicio ||
+                reemplazo.entrante.horaFin !== reemplazo.saliente.horaFin
+              ) {
+                const conTurno = await turnoAplicado(reemplazo.entrante.funcionarioId, {
+                  horaInicio: reemplazo.entrante.horaInicio,
+                  horaFin: reemplazo.entrante.horaFin,
+                });
+                if (!conTurno) return;
+              }
+            } else {
+              for (const baja of bajas) {
+                aplicado(
+                  await OperativoService.retirarPersonal(
+                    actual.id,
+                    baja.funcionarioId,
+                  ),
+                );
+              }
+              for (const alta of altas) {
+                aplicado(
+                  await OperativoService.asignarPersonal(actual.id, {
+                    funcionarioId: alta.funcionarioId,
+                  }),
+                );
+                const conTurno = await turnoAplicado(alta.funcionarioId, {
+                  horaInicio: alta.horaInicio,
+                  horaFin: alta.horaFin,
+                });
+                if (!conTurno) return;
+              }
             }
             for (const turno of turnos) {
               const conTurno = await turnoAplicado(turno.funcionarioId, {
@@ -859,7 +911,9 @@ const MisOperativosPage = () => {
     [
       editando,
       cargar,
+      catalogos.catalogos?.cantidadPorZona,
       catalogos.catalogos?.tipoControlMultiple,
+      catalogos.catalogos?.elegirUnaArea,
       agregandoAPatrulla,
       esEdicionDiferida,
       empalmarEnLaLista,
@@ -1052,100 +1106,74 @@ const MisOperativosPage = () => {
     [abrirCajonAdicional],
   );
 
+  /**
+   * «Reemplazar» en la edición (2026-10-28, formulario de una sola persona): en el borrador cambia
+   * al ocupante y conserva su horario; al guardar viaja como `reemplazarPersonal`.
+   */
+  const reemplazarPersona = useCallback(
+    (salienteId: number, entrante: PersonaElegible) => {
+      setAvisoPersonal(null);
+      setEditando((actual) =>
+        actual
+          ? {
+              ...actual,
+              personal: conPersonaReemplazada(actual.personal, salienteId, entrante),
+            }
+          : actual,
+      );
+    },
+    [],
+  );
+
+  /*
+    EL PERSONAL DE LA EDICIÓN PROPIA VA AL BORRADOR: agregar, quitar y cambiar horas se acumulan en
+    `editando.personal` y se aplican al «Guardar cambios». El aporte —simple o patrulla— tiene su
+    propio borrador en `CajonAportePersonal` (2026-10-29), y la patrulla propia, el roster.
+  */
   const agregarPersona = useCallback(
-    async (persona: PersonaElegible) => {
-      if (!editando) return;
-
+    (persona: PersonaElegible) => {
       setAvisoPersonal(null);
-
-      // DIFERIDO (operativo propio): se acumula en el borrador local; NO toca el servidor ni la
-      // tabla hasta «Guardar cambios». El turno arranca heredando la ventana del operativo (lo
-      // mismo que hace el servidor al asignar); se puede ajustar con «Cambiar turno».
-      if (esEdicionDiferida(editando, agregandoAPatrulla)) {
-        setEditando((actual) =>
-          actual
-            ? {
-                ...actual,
-                personal: [
-                  ...actual.personal,
-                  {
-                    funcionarioId: persona.id,
-                    nombre: nombreDePersona(persona),
-                    area: persona.area,
-                    telefono: null,
-                    esResponsable: false,
-                    asignadoPorRol: actual.creadoPorRol,
-                    horaInicio: actual.horaInicio,
-                    horaFin: actual.horaFin,
-                  },
-                ],
-              }
-            : actual,
-        );
-        return;
-      }
-
-      // INMEDIATO (aporte a formulario ajeno: no hay «Guardar cambios»).
-      try {
-        const actualizado = await OperativoService.asignarPersonal(editando.id, {
-          funcionarioId: persona.id,
-        });
-        setEditando(actualizado);
-        empalmarEnLaLista(actualizado);
-        setConfirmacionPersonal(
-          `Se guarda al instante · ${nombreDePersona(persona)} asignado · guardado.`,
-        );
-      } catch (fallo: unknown) {
-        avisarRechazoPersonal(fallo);
-      }
+      // El turno arranca heredando la ventana del operativo (lo mismo que hace el servidor al
+      // asignar); se puede ajustar en la lista.
+      setEditando((actual) =>
+        actual
+          ? {
+              ...actual,
+              personal: [
+                ...actual.personal,
+                {
+                  funcionarioId: persona.id,
+                  nombre: nombreDePersona(persona),
+                  area: persona.area,
+                  telefono: null,
+                  // El cargo del Maestro, hasta que el servidor confirme (2026-10-27).
+                  cargo: persona.cargo?.trim() || null,
+                  esResponsable: false,
+                  asignadoPorRol: actual.creadoPorRol,
+                  horaInicio: actual.horaInicio,
+                  horaFin: actual.horaFin,
+                },
+              ],
+            }
+          : actual,
+      );
     },
-    [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
+    [],
   );
 
-  const retirarPersona = useCallback(
-    async (funcionarioId: number) => {
-      if (!editando) return;
-
-      setAvisoPersonal(null);
-
-      // DIFERIDO (operativo propio): se quita del borrador local; se aplica al «Guardar cambios».
-      if (esEdicionDiferida(editando, agregandoAPatrulla)) {
-        setEditando((actual) =>
-          actual
-            ? {
-                ...actual,
-                personal: actual.personal.filter(
-                  (persona) => persona.funcionarioId !== funcionarioId,
-                ),
-              }
-            : actual,
-        );
-        return;
-      }
-
-      // El nombre se toma ANTES de retirar: tras la respuesta ya no está en el operativo.
-      const nombreRetirado =
-        editando.personal.find(
-          (persona) => persona.funcionarioId === funcionarioId,
-        )?.nombre ?? "La persona";
-
-      // INMEDIATO (aporte).
-      try {
-        const actualizado = await OperativoService.retirarPersonal(
-          editando.id,
-          funcionarioId,
-        );
-        setEditando(actualizado);
-        empalmarEnLaLista(actualizado);
-        setConfirmacionPersonal(
-          `Se guarda al instante · ${nombreRetirado} retirado · guardado.`,
-        );
-      } catch (fallo: unknown) {
-        avisarRechazoPersonal(fallo);
-      }
-    },
-    [editando, agregandoAPatrulla, esEdicionDiferida, empalmarEnLaLista],
-  );
+  const retirarPersona = useCallback((funcionarioId: number) => {
+    setAvisoPersonal(null);
+    setEditando((actual) =>
+      actual
+        ? {
+            ...actual,
+            personal: actual.personal.filter(
+              (persona) => persona.funcionarioId !== funcionarioId,
+            ),
+          }
+        : actual,
+    );
+  }, []);
 
   /**
    * Fija el trámite de Inspección de una persona en el borrador del cajón (2026-10-07). Se aplica al
@@ -1182,58 +1210,38 @@ const MisOperativosPage = () => {
     [],
   );
 
-  /**
-   * CAMBIAR EL TURNO DE UNA PERSONA (Fase C, 2026-09-30). Igual que asignar y retirar en edición: es
-   * un `PATCH` INMEDIATO (RN-66). El servidor re-deriva la ventana del operativo (envolvente) y
-   * revalida el cruce/descanso de esa persona; devuelve el operativo al día, que se refleja en el
-   * cajón (`setEditando`) y en la fila de la lista (`empalmarEnLaLista`).
-   */
+  /** El turno de una persona, en el borrador de la edición; se aplica al «Guardar cambios». */
   const cambiarHorarioPersona = useCallback(
-    async (funcionarioId: number, horaInicio: string, horaFin: string) => {
-      if (!editando) return;
-
+    (funcionarioId: number, horaInicio: string, horaFin: string) => {
       setAvisoPersonal(null);
-
-      // DIFERIDO (operativo propio): el turno se ajusta en el borrador; se aplica al guardar.
-      if (esEdicionDiferida(editando, agregandoAPatrulla)) {
-        setEditando((actual) =>
-          actual
-            ? {
-                ...actual,
-                personal: actual.personal.map((persona) =>
-                  persona.funcionarioId === funcionarioId
-                    ? { ...persona, horaInicio, horaFin }
-                    : persona,
-                ),
-              }
-            : actual,
-        );
-        return;
-      }
-
-      try {
-        const actualizado = await conLiberacion((confirmarLiberacion) =>
-          OperativoService.actualizarTurnoPersonal(
-            editando.id,
-            funcionarioId,
-            { horaInicio, horaFin },
-            confirmarLiberacion,
-          ),
-        );
-        if (actualizado === null) return;
-        setEditando(actualizado);
-        empalmarEnLaLista(actualizado);
-      } catch (fallo: unknown) {
-        avisarRechazoPersonal(fallo);
-      }
+      setEditando((actual) =>
+        actual
+          ? {
+              ...actual,
+              personal: actual.personal.map((persona) =>
+                persona.funcionarioId === funcionarioId
+                  ? { ...persona, horaInicio, horaFin }
+                  : persona,
+              ),
+            }
+          : actual,
+      );
     },
-    [
-      editando,
-      agregandoAPatrulla,
-      esEdicionDiferida,
-      empalmarEnLaLista,
-      conLiberacion,
-    ],
+    [],
+  );
+
+  /**
+   * EL APORTE SE GUARDÓ (2026-10-29): aviso breve, cierre del cajón y relectura de la tabla. El
+   * borrador y su lote los lleva `CajonAportePersonal`.
+   */
+  const alGuardarAporte = useCallback(
+    async ({ operativo, mensaje: aviso }: GuardadoDelBorrador) => {
+      toast.exito(aviso);
+      descartarEdicion();
+      await cargar();
+      resaltar(operativo.id);
+    },
+    [descartarEdicion, cargar, resaltar],
   );
 
   /**
@@ -1307,7 +1315,7 @@ const MisOperativosPage = () => {
   /** ¿Estoy editando (no aportando) una patrulla que registré yo? Entonces se pinta el roster. */
   const editandoPatrulla =
     editando != null &&
-    Boolean(editando.grupoRegistro) &&
+    editando.esLote &&
     // El roster (cambiar inspector/aportar) es SOLO de la patrulla. El Form 8 comparte lote pero
     // no es patrulla: se edita con los generales normales, sin roster.
     editando.formulario.esPatrulla &&
@@ -1323,8 +1331,21 @@ const MisOperativosPage = () => {
       : false;
   /**
    * QUÉ MODO DEL CAJÓN. «editar» para el operativo propio (y los generales de la patrulla propia);
-   * «personal» para el aporte y el «Agregar Personal» de la patrulla, que guardan al instante.
+   * «personal» para el aporte y el «Agregar Personal» de la patrulla: `CajonAportePersonal`, con
+   * «Guardar cambios» en todas sus variantes (2026-10-29).
    */
+  /** El aviso de una fila que solo se consulta (RN-56/RN-58): por qué no se puede editar. */
+  const avisoDeCierre = (operativo: Operativo) =>
+    bloqueadoFila(operativo) ? (
+      <AvisoVentanaCerrada>
+        {cuadroCerradoFila(operativo)
+          ? `El cuadro del ${fechaCorta(operativo.cuadroFecha)} ya está cerrado: puede consultar el operativo, pero no guardar cambios.`
+          : cuadro && !cuadro.admiteEscritura
+          ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no guardar cambios.`
+          : `${ventana.mensaje} Puede consultar el operativo; los cambios no pueden guardarse hasta que su ventana vuelva a abrirse.`}
+      </AvisoVentanaCerrada>
+    ) : null;
+
   const modoCajon: "editar" | "personal" =
     editando != null && !agregandoAPatrulla && accesoDe(editando) === "PROPIO"
       ? "editar"
@@ -1332,7 +1353,7 @@ const MisOperativosPage = () => {
 
   /** Los códigos de la patrulla en edición, cada uno con su persona y si lo puedo tocar. */
   const miembrosPatrulla = useMemo<MiembroPatrulla[]>(() => {
-    if (!editando?.grupoRegistro) return [];
+    if (!editando?.esLote) return [];
     return operativos
       .filter((operativo) => operativo.grupoRegistro === editando.grupoRegistro)
       .slice()
@@ -1371,125 +1392,124 @@ const MisOperativosPage = () => {
 
   return (
     <section className="app-page-shell">
-      <header className="flex flex-col gap-2">
-        <p className="page-heading-kicker font-semibold uppercase">
-          {user?.rolName ?? "Departamento"}
-        </p>
-        <h1 className="page-heading-title">
-          Mis operativos
-        </h1>
-        {/*
-          UN SOLO DÍA: los chips del cuadro, como siempre. VARIOS DÍAS (2026-10-13): no hay un
-          cuadro que nombrar; el resumen dice cuántos operativos y cuántos cuadros abarca.
-        */}
-        {unDia ? (
-          <CamposCalculados
-            cuadro={cuadro}
-            cargando={cargandoCuadro}
-          />
-        ) : (
-          <div role="status">
-            <Insignia variante="suave">
-              {cargando
-                ? "Cargando…"
-                : resumenDelRango(rangoAplicado, operativos.length, cuadrosDelRango)}
-            </Insignia>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="form-control">
-            <label
-              className="label"
-              htmlFor="fechaDesde"
-            >
-              <span className="text-app-label text-xs uppercase tracking-[0.12em]">
-                Desde
-              </span>
-            </label>
-            <input
-              id="fechaDesde"
-              type="date"
-              className={`input input-bordered input-sm ${
-                errorRango?.campo === "desde" ? "input-error" : ""
-              }`}
-              value={rango.desde}
-              aria-invalid={errorRango?.campo === "desde"}
-              aria-describedby={errorRango ? "errorRango" : undefined}
-              onChange={(evento) => cambiarRango({ ...rango, desde: evento.target.value })}
+      {/*
+        PLANTILLA VISUAL (2026-10-24): `EncabezadoPagina`. El rango Desde–Hasta, sus atajos y
+        «Limpiar filtros» son el contexto de la pantalla y van a la derecha; los atajos son un
+        `SelectorSegmentado` (eran pastillas sueltas), con el mismo comportamiento.
+      */}
+      <EncabezadoPagina
+        modulo="Cuadro de Colores"
+        titulo="Mis operativos"
+        subtitulo="Los operativos que registró su departamento, por fecha o por rango."
+        perfil={user?.rolName}
+        chips={
+          /*
+            UN SOLO DÍA: los chips del cuadro, como siempre. VARIOS DÍAS (2026-10-13): no hay un
+            cuadro que nombrar; el resumen dice cuántos operativos y cuántos cuadros abarca.
+          */
+          unDia ? (
+            <CamposCalculados
+              cuadro={cuadro}
+              cargando={cargandoCuadro}
             />
-          </div>
-          <span
-            className="pb-2 text-app-muted"
-            aria-hidden="true"
-          >
-            →
-          </span>
-          <div className="form-control">
-            <label
-              className="label"
-              htmlFor="fechaHasta"
+          ) : (
+            <span role="status">
+              <Insignia variante="suave">
+                {cargando
+                  ? "Cargando…"
+                  : resumenDelRango(rangoAplicado, operativos.length, cuadrosDelRango)}
+              </Insignia>
+            </span>
+          )
+        }
+        contexto={
+          <>
+            <div className="form-control">
+              <label
+                className="label"
+                htmlFor="fechaDesde"
+              >
+                <span className="text-app-label text-xs uppercase tracking-[0.12em]">
+                  Desde
+                </span>
+              </label>
+              <input
+                id="fechaDesde"
+                type="date"
+                className={`input input-bordered input-sm ${
+                  errorRango?.campo === "desde" ? "input-error" : ""
+                }`}
+                value={rango.desde}
+                aria-invalid={errorRango?.campo === "desde"}
+                aria-describedby={errorRango ? "errorRango" : undefined}
+                onChange={(evento) => cambiarRango({ ...rango, desde: evento.target.value })}
+              />
+            </div>
+            <span
+              className="pb-2 text-app-muted"
+              aria-hidden="true"
             >
-              <span className="text-app-label text-xs uppercase tracking-[0.12em]">
-                Hasta
-              </span>
-            </label>
-            <input
-              id="fechaHasta"
-              type="date"
-              className={`input input-bordered input-sm ${
-                errorRango?.campo === "hasta" ? "input-error" : ""
-              }`}
-              value={rango.hasta}
-              aria-invalid={errorRango?.campo === "hasta"}
-              aria-describedby={errorRango ? "errorRango" : undefined}
-              onChange={(evento) => cambiarRango({ ...rango, hasta: evento.target.value })}
+              →
+            </span>
+            <div className="form-control">
+              <label
+                className="label"
+                htmlFor="fechaHasta"
+              >
+                <span className="text-app-label text-xs uppercase tracking-[0.12em]">
+                  Hasta
+                </span>
+              </label>
+              <input
+                id="fechaHasta"
+                type="date"
+                className={`input input-bordered input-sm ${
+                  errorRango?.campo === "hasta" ? "input-error" : ""
+                }`}
+                value={rango.hasta}
+                aria-invalid={errorRango?.campo === "hasta"}
+                aria-describedby={errorRango ? "errorRango" : undefined}
+                onChange={(evento) => cambiarRango({ ...rango, hasta: evento.target.value })}
+              />
+            </div>
+
+            {/*
+              Atajos anclados al cuadro vigente; el que coincide con el rango se marca. Con un rango
+              a mano, ninguno (`valor` "").
+            */}
+            <SelectorSegmentado
+              id="atajosRango"
+              etiqueta="Atajos de fechas"
+              etiquetaOculta
+              opciones={ATAJOS_RANGO.map(({ clave, nombre }) => ({ valor: clave, nombre }))}
+              valor={atajoDelRango ?? ""}
+              onCambiar={(valor) => {
+                const atajo = ATAJOS_RANGO.find(({ clave }) => clave === valor);
+                if (atajo) cambiarRango(rangoDeAtajo(atajo.clave, vigente));
+              }}
             />
-          </div>
 
-          {/* Atajos anclados al cuadro vigente; el que coincide con el rango se resalta. */}
-          <div
-            className="flex flex-wrap gap-1 pb-1"
-            role="group"
-            aria-label="Atajos de fechas"
-          >
-            {ATAJOS_RANGO.map(({ clave, nombre }) => {
-              const activo = atajoDelRango === clave;
-              return (
-                <button
-                  key={clave}
-                  type="button"
-                  // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
-                  className={`btn btn-sm rounded-full ${activo ? "btn-primary" : "btn-outline"}`}
-                  aria-pressed={activo}
-                  onClick={() => cambiarRango(rangoDeAtajo(clave, vigente))}
-                >
-                  {nombre}
-                </button>
-              );
-            })}
-          </div>
+            <Boton
+              variante="enlace"
+              tamano="sm"
+              onClick={limpiarFiltros}
+              deshabilitado={!tabla.filtrando && rango.desde === vigente && rango.hasta === vigente}
+            >
+              Limpiar filtros
+            </Boton>
 
-          <Boton
-            variante="enlace"
-            tamano="sm"
-            onClick={limpiarFiltros}
-            deshabilitado={!tabla.filtrando && rango.desde === vigente && rango.hasta === vigente}
-          >
-            Limpiar filtros
-          </Boton>
-        </div>
-
-        {errorRango && (
-          <p
-            id="errorRango"
-            className="text-sm text-error"
-            role="alert"
-          >
-            {errorRango.mensaje}
-          </p>
-        )}
-      </header>
+            {errorRango && (
+              <p
+                id="errorRango"
+                className="w-full text-sm text-error"
+                role="alert"
+              >
+                {errorRango.mensaje}
+              </p>
+            )}
+          </>
+        }
+      />
 
       {/* RN-56 y RN-58. Se avisa antes de intentar editar, no al guardar. */}
       {/* El mismo aviso que muestra la vista previa de «Editar ventana de carga» (2026-10-07). */}
@@ -1572,56 +1592,91 @@ const MisOperativosPage = () => {
         EDITAR, EN EL CAJÓN ÚNICO (2026-10-08): `DrawerOperativo`, el mismo del adicional y de
         Registro de operativo. «editar» para el operativo propio —personal DIFERIDO, «Guardar
         cambios»—; «personal» para el aporte y el «Agregar Personal» de la patrulla, que guardan cada
-        persona al instante. Con la ventana o el cuadro cerrados, «editar» se abre en SOLO LECTURA:
-        se consulta, no se guarda. Se monta solo mientras hay operativo: cada apertura nace limpia y
-        al cerrarse el foco vuelve al botón de la fila.
+        persona al instante. Se monta solo mientras hay operativo: cada apertura nace limpia y al
+        cerrarse el foco vuelve al botón de la fila.
+
+        «VER» Y «VER DETALLE» (2026-10-27) abren `DetalleOperativoLectura`: solo lo registrado, sin
+        controles. «Editar» aparece ahí solo si la fila lo ofrecería (propia, ventana y cuadro
+        abiertos) y abre este mismo cajón.
       */}
-      {editando && (
-        <DrawerOperativo
-          key={`${editando.id}-${modoCajon}`}
-          {...(modoCajon === "personal"
-            ? {
-                modo: "personal" as const,
-                titulo: `Personal de ${
-                  editando.grupoRegistro && editando.formulario.esPatrulla
-                    ? `patrulla ${editando.grupoRegistro}`
-                    : `operativo ${editando.identificador}`
-                }`,
-              }
-            : {
-                modo: "editar" as const,
-                // Una patrulla (Form 5/6) se nombra por su GRUPO: editar sus generales los aplica a
-                // todo el lote.
-                titulo:
-                  editando.grupoRegistro && editando.formulario.esPatrulla
-                    ? `Editar patrulla ${editando.grupoRegistro}`
-                    : undefined,
-                soloLectura: bloqueadoFila(editando) || consultaId === editando.id,
-                personalPendiente: personalSucio,
-                horarioCambiado:
-                  edicionDiferida &&
-                  cambioDeHorario(editando.personal, personalOriginalRef.current),
-                mensajeDescarte: edicionDiferida
-                  ? undefined
-                  : "Se perderán los cambios en punto de encuentro, zonales, instituciones, tipo de control y las observaciones nuevas. El personal ya quedó guardado.",
-              })}
+      {editando && consultaId === editando.id && (
+        <DetalleOperativoLectura
+          key={`${editando.id}-detalle`}
+          operativo={editando}
+          // PATRULLA (2026-10-27): todos sus códigos —mismo `grupoRegistro`— de la lista cargada.
+          grupo={
+            editando.esLote && editando.formulario.esPatrulla
+              ? operativos
+                  .filter((codigo) => codigo.grupoRegistro === editando.grupoRegistro)
+                  .sort((una, otra) => una.identificador.localeCompare(otra.identificador))
+              : undefined
+          }
           onCerrar={descartarEdicion}
+          avisoContexto={avisoDeCierre(editando)}
+          onEditar={
+            !bloqueadoFila(editando) && accesoDe(editando) === "PROPIO"
+              ? () => abrirCajon(editando, false)
+              : undefined
+          }
+        />
+      )}
+      {/*
+        EL APORTE (2026-10-29): simple o patrulla, el mismo cajón con borrador y «Guardar cambios».
+        Se monta por apertura: el borrador nace limpio cada vez.
+      */}
+      {editando && consultaId !== editando.id && modoCajon === "personal" && (
+        <CajonAportePersonal
+          key={`${editando.id}-personal`}
+          operativo={editando}
+          grupo={operativos.filter((o) => o.grupoRegistro === editando.grupoRegistro)}
+          roles={user?.rolCodes ?? []}
+          catalogos={catalogos.catalogos}
+          puntos={catalogos.puntos}
+          cargandoPuntos={catalogos.cargandoPuntos}
+          onZonalesElegidas={(zonalesIds) => {
+            void catalogos.cargarPuntosDeZonales(zonalesIds);
+          }}
+          candidatos={candidatos}
+          cargandoPersonal={cargandoPersonal}
+          bloqueado={bloqueadoFila(editando)}
+          // La ventana o el cuadro se cerraron con el cajón abierto: por qué no se puede guardar.
+          avisoContexto={avisoDeCierre(editando)}
+          conLiberacion={conLiberacion}
+          onCerrar={descartarEdicion}
+          onGuardado={(guardado) => void alGuardarAporte(guardado)}
+        />
+      )}
+      {editando && consultaId !== editando.id && modoCajon === "editar" && (
+        <DrawerOperativo
+          key={`${editando.id}-editar`}
+          modo="editar"
+          // Una patrulla (Form 5/6) se nombra por su GRUPO: editar sus generales los aplica a todo el
+          // lote.
+          titulo={
+            editando.esLote && editando.formulario.esPatrulla
+              ? `Editar patrulla ${editando.grupoRegistro}`
+              : undefined
+          }
+          personalPendiente={personalSucio}
+          horarioCambiado={
+            edicionDiferida && cambioDeHorario(editando.personal, personalOriginalRef.current)
+          }
+          mensajeDescarte={
+            edicionDiferida
+              ? undefined
+              : "Se perderán los cambios en punto de encuentro, zonales, instituciones, tipo de control y las observaciones nuevas. El personal ya quedó guardado."
+          }
+          onCerrar={descartarEdicion}
+          // Registro por zonas (2026-10-28): se edita el registro completo, con todas sus zonas.
+          grupo={operativos.filter((o) => o.grupoRegistro === editando.grupoRegistro)}
           errorServidor={errorEdicion}
           avisoContexto={
             <>
               {/*
-                VENTANA CERRADA: se abre para CONSULTAR. El aviso dice por qué no hay «Guardar
-                cambios» (RN-56/RN-58), donde se está mirando.
+                LA VENTANA O EL CUADRO SE CERRARON CON EL CAJÓN ABIERTO: el aviso dice por qué
+                «Guardar cambios» quedó apagado (RN-56/RN-58), donde se está mirando.
               */}
-              {bloqueadoFila(editando) && modoCajon === "editar" && (
-                <AvisoVentanaCerrada>
-                  {cuadroCerradoFila(editando)
-                    ? `El cuadro del ${fechaCorta(editando.cuadroFecha)} ya está cerrado: puede consultar el operativo, pero no guardar cambios.`
-                    : cuadro && !cuadro.admiteEscritura
-                    ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no guardar cambios.`
-                    : `${ventana.mensaje} Puede consultar el operativo; los cambios no pueden guardarse hasta que su ventana vuelva a abrirse.`}
-                </AvisoVentanaCerrada>
-              )}
+              {avisoDeCierre(editando)}
               {/*
                 CONFLICTO 409 (bloqueo optimista): otro guardó el operativo entre que se abrió el cajón
                 y se pulsó «Guardar». El mensaje va tal cual (regla 7) y «Recargar datos» trae la
@@ -1654,45 +1709,24 @@ const MisOperativosPage = () => {
           onZonalesElegidas={(zonalesIds) => {
             void catalogos.cargarPuntosDeZonales(zonalesIds);
           }}
-          // APORTE (Form 4 ECU / patrulla): quien aporta solo pone y quita personal de INSTRUCCIÓN;
-          // ofrecerle candidatos de otras áreas sería ofrecerle un 409. El dueño ve todas las áreas.
-          candidatos={
-            agregandoAPatrulla || accesoDe(editando) !== "PROPIO"
-              ? candidatos.filter((persona) => persona.area === "INSTRUCCION")
-              : candidatos
-          }
+          candidatos={candidatos}
           cargandoPersonal={cargandoPersonal}
-          onAgregarPersona={(persona) => void agregarPersona(persona)}
-          onRetirarPersona={(funcionarioId) => void retirarPersona(funcionarioId)}
-          // Fase C: cambiar el turno de un asignado se guarda al instante (PATCH), como asignar/retirar.
-          onCambiarHorarioPersona={(funcionarioId, horaInicio, horaFin) =>
-            void cambiarHorarioPersona(funcionarioId, horaInicio, horaFin)
-          }
+          onAgregarPersona={agregarPersona}
+          onRetirarPersona={retirarPersona}
+          onReemplazarPersona={reemplazarPersona}
+          // El turno de un asignado, en el borrador: se aplica al «Guardar cambios».
+          onCambiarHorarioPersona={cambiarHorarioPersona}
           // TRÁMITE DE INSPECCIÓN (2026-10-07): solo en la edición del operativo PROPIO (diferida),
           // donde se ajusta en el borrador y se aplica al «Guardar cambios». En el aporte no.
           onCambiarTramitePersona={
             edicionDiferida ? cambiarTramiteEnEdicion : undefined
           }
-          // En el aporte, solo son retirables las personas que este departamento asignó (las de
-          // Instrucción); las del dueño del formulario llegan en lectura. El servidor lo reafirma.
-          puedeEditarPersona={(persona) =>
-            accesoDe(editando) === "PROPIO" ||
-            (user?.rolCodes ?? []).includes(persona.asignadoPorRol)
-          }
           avisoPersonal={avisoPersonal}
           idPersonaRechazada={idPersonaRechazada}
-          confirmacionPersonal={confirmacionPersonal}
-          bloqueado={bloqueadoFila(editando) || consultaId === editando.id}
-          // DIFERIDO (2026-10-01): en la edición propia el personal se aplica al «Guardar cambios»,
-          // no al instante; se apaga el rótulo «Se guarda al instante» de la lista. En el aporte
-          // (no diferido) sigue siendo inmediato.
-          personalInmediato={!edicionDiferida}
-          // PATRULLA: «Agregar Personal» abre en solo-personal; «Editar» de generales bloquea el
-          // personal (se gestiona con las acciones fusionadas), pero deja los generales editables.
-          soloPersonal={agregandoAPatrulla || accesoDe(editando) !== "PROPIO"}
-          personalBloqueado={
-            !agregandoAPatrulla && Boolean(editando.grupoRegistro)
-          }
+          bloqueado={bloqueadoFila(editando)}
+          // PATRULLA: «Editar» de generales bloquea el personal (se gestiona con el roster), pero
+          // deja los generales editables.
+          personalBloqueado={editando.esLote}
           // ROSTER: al editar una patrulla propia, el personal se gestiona con el roster (cambiar
           // inspector conservando el código + agregar persona), no con el bloque de personal.
           miembrosPatrulla={editandoPatrulla ? miembrosPatrulla : undefined}
@@ -1711,15 +1745,7 @@ const MisOperativosPage = () => {
       <PanelOperativos
         onVerOperativo={verOperativoPorId}
         titulo="Operativos registrados"
-        cabecera={
-          <span className="badge badge-ghost badge-sm">
-            {cargando
-              ? "Cargando…"
-              : tabla.filtrando
-                ? `${tabla.coincidentes.length} de ${operativos.length} registros`
-                : `${operativos.length} ${operativos.length === 1 ? "registro" : "registros"}`}
-          </span>
-        }
+        // Sin contador en la cabecera (plantilla visual, 2026-10-24): el total va en el pie.
         tabla={tabla}
         columnas={COLUMNAS_LISTADO}
         // Con varios días (2026-10-13), una fila de cabecera por fecha en lugar de la columna.
@@ -1751,15 +1777,12 @@ const MisOperativosPage = () => {
             </p>
           )
         }
+        // La ayuda vivía fuera del panel; desde la plantilla visual (2026-10-24), en su pie.
+        nota="La Matriz Consolidada del Día es exclusiva de la Dirección. Esta pantalla muestra únicamente los operativos de sus formularios."
         porRetirar={porRetirar}
         onConfirmarRetiro={confirmarRetiro}
         onCancelarRetiro={() => setPorRetirar(null)}
       />
-
-      <p className="text-xs text-app-muted">
-        La Matriz Consolidada del Día es exclusiva de la Dirección. Esta pantalla
-        muestra únicamente los operativos de sus formularios.
-      </p>
 
       {/* Transporte requerido (2026-10-07): liberar el transporte al cambiar el tipo. */}
       {modalLiberacion}

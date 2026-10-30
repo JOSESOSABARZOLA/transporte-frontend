@@ -36,11 +36,18 @@
  * LAS ZONALES Y LOS PUNTOS SON DEL FORMULARIO (2026-10-13): nada se comparte entre formularios, así
  * que la tabla de puntos ya no lleva la columna «Formularios».
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * ACCIONES CON TEXTO Y SIN «⋮» (2026-10-24): la zonal lleva [✎ Editar] [+ Punto] [⊘ Desactivar |
+ * ↺ Reactivar] [🗑 Eliminar], todo visible; «Eliminar» apagado con el motivo del servidor. La
+ * acción propia se rotula «Punto» (el icono ya es el «+»; antes se leía «+ + Punto»).
+ * Se retiró el distintivo «X de N puntos activos» (era solo una cuenta); los avisos siguen. Los
+ * estados, con `EtiquetaEstado`, y la tabla de puntos con la cabecera de las demás.
  */
 
 import { useMemo, type FC } from "react";
 
 import AccionesFila from "../common/AccionesFila.tsx";
+import EtiquetaEstado from "../common/EtiquetaEstado.tsx";
 import Iconos from "../common/Iconos.tsx";
 import type {
   PuntoEncuentro,
@@ -203,14 +210,7 @@ const AcordeonZonales: FC<AcordeonZonalesProps> = ({
                   {grupo.nombre}
                 </span>
               </button>
-              <span className="badge badge-ghost badge-sm text-app-strong">
-                {resumen.total === 0
-                  ? "0 puntos"
-                  : `${resumen.activos} de ${resumen.total} puntos activos`}
-              </span>
-              {desactivada && (
-                <span className="badge badge-outline badge-sm">Inactiva</span>
-              )}
+              {desactivada && <EtiquetaEstado tono="inactivo">Inactiva</EtiquetaEstado>}
               {resumen.sinPuntos && zonal !== null && (
                 <span className="text-app-muted text-xs">
                   Sin puntos en este formulario
@@ -229,36 +229,26 @@ const AcordeonZonales: FC<AcordeonZonalesProps> = ({
                     procesando={procesando}
                     editar={{ onClick: () => onEditarZonal(zonal) }}
                     propia={{
-                      texto: "+ Punto",
+                      // El icono ya es el «+»: se lee «+ Punto».
+                      texto: "Punto",
                       icono: "agregar",
-                      etiqueta: "Agregar un punto a",
+                      etiqueta: "Agregar punto a",
                       onClick: () => onAgregarPunto(grupo.id),
                       motivo: desactivada
                         ? "Active la zonal para agregarle puntos."
                         : null,
                     }}
-                    menu={[
+                    estado={
                       desactivada
-                        ? {
-                            texto: "Activar zonal",
-                            icono: "activar",
-                            onClick: () => onActivarZonal(zonal),
-                          }
-                        : {
-                            texto: "Desactivar zonal",
-                            icono: "desactivar",
-                            onClick: () => onDesactivarZonal(zonal),
-                          },
-                      {
-                        texto: "Eliminar",
-                        peligro: true,
-                        separadorAntes: true,
-                        onClick: () => onEliminarZonal(zonal),
-                        motivo: zonal.puedeEliminar
-                          ? null
-                          : (zonal.motivoNoEliminar ?? MOTIVO_NO_ELIMINAR),
-                      },
-                    ]}
+                        ? { tipo: "activar", onClick: () => onActivarZonal(zonal) }
+                        : { tipo: "desactivar", onClick: () => onDesactivarZonal(zonal) }
+                    }
+                    eliminar={{
+                      onClick: () => onEliminarZonal(zonal),
+                      motivo: zonal.puedeEliminar
+                        ? null
+                        : (zonal.motivoNoEliminar ?? MOTIVO_NO_ELIMINAR),
+                    }}
                   />
                 </div>
               )}
@@ -273,8 +263,8 @@ const AcordeonZonales: FC<AcordeonZonalesProps> = ({
               >
                 {grupo.todos.length === 0 ? (
                   <p className="text-app-muted py-3 text-sm">
-                    Esta zonal todavía no tiene puntos de encuentro. Use «+
-                    Punto» para agregar el primero.
+                    Esta zonal todavía no tiene puntos de encuentro. Use
+                    «Agregar punto» para agregar el primero.
                   </p>
                 ) : grupo.visibles.length === 0 ? (
                   <p className="text-app-muted py-3 text-sm">
@@ -283,9 +273,9 @@ const AcordeonZonales: FC<AcordeonZonalesProps> = ({
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="app-data-table table table-sm">
+                    <table className="table table-sm table-zebra w-full text-sm">
                       <thead>
-                        <tr>
+                        <tr className="text-xs uppercase tracking-wider text-app-label">
                           <th scope="col">Punto de encuentro</th>
                           <th scope="col">Estado</th>
                           <th scope="col" className="text-right">
@@ -303,7 +293,7 @@ const AcordeonZonales: FC<AcordeonZonalesProps> = ({
                             <tr
                               key={punto.id}
                               data-resaltado={filaResaltada || undefined}
-                              className={`transition-colors ${filaResaltada ? "bg-success/10" : ""}`}
+                              className={`transition-colors ${filaResaltada ? "bg-success/10" : "hover:bg-primary/5"}`}
                             >
                               <td
                                 className={
@@ -313,15 +303,14 @@ const AcordeonZonales: FC<AcordeonZonalesProps> = ({
                                 {punto.nombre}
                               </td>
                               <td>
-                                <span
-                                  className={`badge badge-outline badge-sm ${activo ? "badge-success" : ""}`}
-                                >
+                                <EtiquetaEstado tono={activo ? "activo" : "inactivo"}>
                                   {activo ? "Activo" : "Inactivo"}
-                                </span>
+                                </EtiquetaEstado>
                               </td>
                               <td>
                                 <AccionesFila
                                   nombre={punto.nombre}
+                                  modo="icono"
                                   procesando={procesando}
                                   editar={{
                                     onClick: () => onEditarPunto(punto),

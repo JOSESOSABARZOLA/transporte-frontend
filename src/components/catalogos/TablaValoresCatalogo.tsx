@@ -10,17 +10,21 @@
  * EL MISMO ESTILO QUE LA TABLA DE PUNTOS (rediseño del 2026-10-12): estado en distintivo con
  * texto y nombre en gris si está desactivado.
  *
- * ESTÁNDAR DE BOTONES (2026-10-15): `AccionesFila` con [✎ Editar] [⊘ Desactivar | ↺ Activar]
- * [⋮ 🗑 Eliminar]. «Eliminar» va en el «⋮», apagado con el motivo del servidor (o «Ya se usó en un
- * cuadro: solo puede desactivarse»). Pagina de a 10 en el navegador (`Paginacion`): vuelve a la
+ * ESTÁNDAR DE BOTONES (2026-10-15): `AccionesFila` con [✎ Editar] [⊘ Desactivar | ↺ Reactivar]
+ * [🗑 Eliminar], con texto y sin «⋮» desde el 2026-10-24. «Eliminar» va visible al final, apagado con
+ * el motivo del servidor (o «Ya se usó en un cuadro: solo se puede desactivar») en su tooltip. Pagina de a 10 en el navegador (`Paginacion`): vuelve a la
  * primera cuando cambia el número de filas (búsqueda o filtro) y salta a la de la fila resaltada. La búsqueda y el
  * filtro los hace la página: aquí llegan las filas ya filtradas. La antigua `TablaCatalogo` se
  * retiró el 2026-10-13, cuando «Formularios del cuadro» pasó a su propia `TablaFormularios`.
+ *
+ * PLANTILLA VISUAL (2026-10-24): `table table-sm table-zebra` con la cabecera de las demás tablas,
+ * el estado con `EtiquetaEstado`.
  */
 
 import type { ReactNode } from "react";
 
 import AccionesFila from "../common/AccionesFila.tsx";
+import EtiquetaEstado from "../common/EtiquetaEstado.tsx";
 import Paginacion from "../common/Paginacion.tsx";
 import { usePaginaLocal } from "../../hooks/usePaginaLocal.ts";
 import type { DatosDeAdministracion } from "../../interfaces/Formulario.ts";
@@ -76,9 +80,9 @@ const TablaValoresCatalogo = <T extends Fila>({
   return (
     <div className="flex flex-col">
       <div className="overflow-x-auto">
-        <table className="app-data-table table table-sm" aria-label={etiqueta}>
+        <table className="table table-sm table-zebra w-full text-sm" aria-label={etiqueta}>
           <thead>
-            <tr>
+            <tr className="text-xs uppercase tracking-wider text-app-label">
               {columnas.map((columna) => (
                 <th key={columna.titulo} scope="col">
                   {columna.titulo}
@@ -99,7 +103,7 @@ const TablaValoresCatalogo = <T extends Fila>({
                 <tr
                   key={fila.id}
                   data-resaltado={resaltada || undefined}
-                  className={`transition-colors ${resaltada ? "bg-success/10" : ""}`}
+                  className={`transition-colors ${resaltada ? "bg-success/10" : "hover:bg-primary/5"}`}
                 >
                   {columnas.map((columna) => (
                     <td
@@ -110,11 +114,9 @@ const TablaValoresCatalogo = <T extends Fila>({
                     </td>
                   ))}
                   <td>
-                    <span
-                      className={`badge badge-outline badge-sm ${activo ? "badge-success" : ""}`}
-                    >
+                    <EtiquetaEstado tono={activo ? "activo" : "inactivo"}>
                       {activo ? "Activo" : "Inactivo"}
-                    </span>
+                    </EtiquetaEstado>
                   </td>
                   <td>
                     <AccionesFila
@@ -129,17 +131,13 @@ const TablaValoresCatalogo = <T extends Fila>({
                             }
                           : { tipo: "activar", onClick: () => onActivar(fila) }
                       }
-                      menu={[
-                        {
-                          texto: "Eliminar",
-                          peligro: true,
-                          onClick: () => onEliminar(fila),
-                          motivo:
-                            fila.puedeEliminar === false
-                              ? (fila.motivoNoEliminar ?? MOTIVO_NO_ELIMINAR)
-                              : null,
-                        },
-                      ]}
+                      eliminar={{
+                        onClick: () => onEliminar(fila),
+                        motivo:
+                          fila.puedeEliminar === false
+                            ? (fila.motivoNoEliminar ?? MOTIVO_NO_ELIMINAR)
+                            : null,
+                      }}
                     />
                   </td>
                 </tr>

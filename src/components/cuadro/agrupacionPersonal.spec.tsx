@@ -36,6 +36,7 @@ import type { Operativo } from "../../interfaces/Operativo.ts";
 import type { SeccionMatriz } from "../../interfaces/Documento.ts";
 import {
   COLUMNAS_LISTADO,
+  COLUMNAS_SESION,
   filtrarOperativos,
 } from "../../utils/listadoOperativos.util.ts";
 
@@ -63,6 +64,8 @@ const persona = (
   nombre,
   area: "OPERATIVOS",
   telefono,
+  // El cargo del Maestro (2026-10-27): sin cargo por omisión; las pruebas del cargo lo ponen.
+  cargo: null as string | null,
   esResponsable: id === 1,
   asignadoPorRol: "DMIP_OPERATIVOS" as const,
   horaInicio,
@@ -344,7 +347,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
     const general = persona(1, "BENAVIDES FERNANDO", null);
     const tecnico = persona(2, "CAMPAÑA JUAN", null);
     const instruccion = persona(3, "DIAZ ANA", null);
-    const base = { ...operativo([general]), grupoRegistro: "lote-1" };
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -392,7 +395,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
         creadoEn: "2026-09-17T20:00:00.000Z",
       },
     ];
-    const base = { ...operativo([general]), grupoRegistro: "lote-1" };
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -426,7 +429,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
     const general = persona(1, "BENAVIDES FERNANDO", null);
     const tecnico = persona(2, "CAMPAÑA JUAN", null);
     const instruccion = persona(3, "DIAZ ANA", null);
-    const base = { ...operativo([general]), grupoRegistro: "lote-1" };
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -482,7 +485,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
   it("la patrulla NO se centra: la celda fusionada se alinea arriba, como los demás", () => {
     const general = persona(1, "BENAVIDES FERNANDO", null);
     const instruccion = persona(2, "DIAZ ANA", null);
-    const base = { ...operativo([general]), grupoRegistro: "lote-1" };
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -508,7 +511,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
   it("la cabeza de la patrulla no depende del orden de llegada del grupo", () => {
     const general = persona(1, "BENAVIDES FERNANDO", null);
     const instruccion = persona(2, "DIAZ ANA", null);
-    const base = { ...operativo([general]), grupoRegistro: "lote-1" };
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -538,7 +541,7 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
   it("la patrulla se agrupa aunque los códigos tengan horarios distintos", () => {
     const general = persona(1, "BENAVIDES", null);
     const instruccion = persona(2, "DIAZ", null);
-    const base = { ...operativo([general]), grupoRegistro: "lote-1" };
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -579,8 +582,8 @@ describe("la patrulla del formulario 6 se agrupa en la lista", () => {
    */
   it("agrupa la patrulla aunque sus códigos lleguen intercalados con los de otra", () => {
     const base = operativo([persona(1, "X", null)]);
-    const enA = { ...base, grupoRegistro: "lote-A" };
-    const enB = { ...base, grupoRegistro: "lote-B" };
+    const enA = { ...base, grupoRegistro: "lote-A", esLote: true };
+    const enB = { ...base, grupoRegistro: "lote-B", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -659,7 +662,7 @@ describe("el bloque del formulario 8 se lee como un solo operativo", () => {
   it("los códigos del 8 con el mismo lote son un bloque de un solo color", () => {
     const gua = persona(1, "GUAYAQUIL", null);
     const alv = persona(2, "ALVARADO", null);
-    const base = { ...operativo([gua]), grupoRegistro: "reg-8" };
+    const base = { ...operativo([gua]), grupoRegistro: "reg-8", esLote: true };
     const { container } = render(
       <TablaOperativos
         operativos={[
@@ -692,7 +695,7 @@ describe("el bloque del formulario 8 se lee como un solo operativo", () => {
   it("en el registro del 8 el nombre se agrupa por persona con su total entre paréntesis", () => {
     const villavicencio = persona(1, "VILLAVICENCIO VACA MIGUEL ANGEL", null);
     const alvarado = persona(2, "ALVARADO", null);
-    const base = { ...operativo([villavicencio]), grupoRegistro: "reg-8" };
+    const base = { ...operativo([villavicencio]), grupoRegistro: "reg-8", esLote: true };
     render(
       <TablaOperativos
         operativos={[
@@ -736,5 +739,168 @@ describe("el bloque del formulario 8 se lee como un solo operativo", () => {
     const horario = screen.getByText(porHorario("08H00 A 12H30")).closest("td")!;
     expect(horario).toHaveClass("align-top");
     expect(horario).not.toHaveClass("text-center");
+  });
+});
+
+/*
+  EL CARGO DEL MAESTRO BAJO EL NOMBRE (2026-10-27). Es el «Cargo (opcional)» de la ficha, leído en
+  vivo: segunda línea en gris de 11 px, sin negrita, tal cual; sin cargo no hay segunda línea.
+*/
+describe("la celda Personal muestra el cargo del Maestro bajo el nombre", () => {
+  const conCargo = (base: ReturnType<typeof persona>, cargo: string | null) => ({ ...base, cargo });
+  const celdaDe = (nombre: string) => screen.getByText(nombre).closest("td") as HTMLElement;
+
+  it.each([
+    ["Mis operativos", COLUMNAS_LISTADO],
+    ["Registro", COLUMNAS_SESION],
+  ])("%s: con cargo, nombre y cargo en dos líneas", (_pantalla, columnas) => {
+    render(
+      <TablaOperativos
+        operativos={[operativo([conCargo(ULLOA, "Agente de control")])]}
+        columnas={columnas}
+      />,
+    );
+
+    const cargo = within(celdaDe("ULLOA JOSSUE")).getByText("Agente de control");
+    expect(cargo).toHaveClass("block", "text-[0.6875rem]", "font-normal", "text-app-muted");
+    expect(screen.getByText("ULLOA JOSSUE")).toHaveClass("block");
+  });
+
+  it("sin cargo (null o vacío) solo el nombre, sin «—»", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo([conCargo(ULLOA, null), conCargo(MEJIA, "  ")])]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(celdaDe("ULLOA JOSSUE").textContent).toBe("ULLOA JOSSUE");
+    expect(celdaDe("MEJÍA ARIEL").textContent).toBe("MEJÍA ARIEL");
+  });
+
+  it("con varias personas, cada nombre lleva su cargo y su teléfono en su renglón", () => {
+    render(
+      <TablaOperativos
+        operativos={[operativo([conCargo(ULLOA, "Agente"), conCargo(MEJIA, "Supervisor")])]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    const filaUlloa = celdaDe("ULLOA JOSSUE").closest("tr") as HTMLElement;
+    const filaMejia = celdaDe("MEJÍA ARIEL").closest("tr") as HTMLElement;
+    expect(within(filaUlloa).getByText("Agente")).toBeInTheDocument();
+    expect(within(filaUlloa).getByText("97 969 0786")).toBeInTheDocument();
+    expect(within(filaMejia).getByText("Supervisor")).toBeInTheDocument();
+    expect(within(filaMejia).getByText("98 342 9026")).toBeInTheDocument();
+  });
+
+  it("en las copias del 8 el cargo va bajo «Nombre (n)»", () => {
+    const base = operativo([conCargo(persona(9, "SOSA JOSE", null), "Inspector general")]);
+    render(
+      <TablaOperativos
+        operativos={[
+          { ...base, id: 1, identificador: "IG-001" },
+          { ...base, id: 2, identificador: "IG-002" },
+        ]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(within(celdaDe("SOSA JOSE (2)")).getByText("Inspector general")).toBeInTheDocument();
+  });
+
+  it("en la patrulla cada persona lleva su propio cargo", () => {
+    const general = conCargo(persona(1, "BENAVIDES FERNANDO", null), "Inspector general");
+    const tecnico = conCargo(persona(2, "CAMPAÑA JUAN", null), "Inspector técnico");
+    const base = { ...operativo([general]), grupoRegistro: "lote-1", esLote: true };
+    render(
+      <TablaOperativos
+        operativos={[
+          { ...base, id: 1, identificador: "IGNECU-001", personal: [general] },
+          { ...base, id: 2, identificador: "ITNECU-001", personal: [tecnico] },
+        ]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+
+    expect(within(celdaDe("BENAVIDES FERNANDO")).getByText("Inspector general")).toBeInTheDocument();
+    expect(within(celdaDe("CAMPAÑA JUAN")).getByText("Inspector técnico")).toBeInTheDocument();
+  });
+
+  it("se lee en vivo: al recargar con otro cargo en el Maestro, se ve el nuevo", () => {
+    const { rerender } = render(
+      <TablaOperativos
+        operativos={[operativo([conCargo(ULLOA, "Agente")])]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+    expect(screen.getByText("Agente")).toBeInTheDocument();
+
+    rerender(
+      <TablaOperativos
+        operativos={[operativo([conCargo(ULLOA, "Inspector")])]}
+        columnas={COLUMNAS_LISTADO}
+      />,
+    );
+    expect(screen.queryByText("Agente")).toBeNull();
+    expect(screen.getByText("Inspector")).toBeInTheDocument();
+  });
+
+  it("el filtro de Personal encuentra por cargo, sin tildes ni mayúsculas", () => {
+    const listado = [
+      { ...operativo([conCargo(ULLOA, "Agente de control")]), id: 1 },
+      { ...operativo([conCargo(MEJIA, "Supervisor")]), id: 2 },
+    ];
+
+    for (const buscado of ["agente", "AGÉNTE"]) {
+      expect(filtrarOperativos(listado, { personal: buscado }).map((op) => op.id)).toEqual([1]);
+    }
+    // Y por el nombre, como siempre.
+    expect(filtrarOperativos(listado, { personal: "mejia" }).map((op) => op.id)).toEqual([2]);
+  });
+});
+
+/*
+  REGISTRO POR ZONAS DEL 8 (2026-10-28) en Mis operativos: NICOLE atiende Calderón (la principal,
+  IG-043) y La Delicia (IG-030 e IG-031). UN bloque, la principal primero, y zonal, punto y tipo
+  con una línea por zona.
+*/
+describe("registro por zonas del formulario 8", () => {
+  it("es UN bloque, la zona principal primero, con una línea por zona y su rango", () => {
+    const nicole = persona(9, "SALTOS NICOLE", null, "08:00", "16:30");
+    const codigo = (id: number, identificador: string, zonal: string, esZonaPrincipal: boolean) =>
+      ({
+        ...operativo([nicole]),
+        id,
+        identificador,
+        grupoRegistro: "registro-nicole",
+        esLote: true,
+        esZonaPrincipal,
+        zonales: [{ id, codigo: zonal, nombre: zonal }],
+        puntoEncuentro: { nombre: `AMC ${zonal}` },
+      }) as Operativo;
+    render(
+      <TablaOperativos
+        operativos={[
+          codigo(1, "IG-030-28-OCT-2026", "La Delicia", false),
+          codigo(2, "IG-031-28-OCT-2026", "La Delicia", false),
+          codigo(3, "IG-043-28-OCT-2026", "Calderón", true),
+        ]}
+        columnas={COLUMNAS_LISTADO}
+        acciones={() => <button type="button">Editar</button>}
+      />,
+    );
+
+    expect(screen.getByText("SALTOS NICOLE (3)")).toBeInTheDocument();
+    const zonales = within(screen.getByRole("list", { name: "Zonal por zona" }))
+      .getAllByRole("listitem")
+      .map((linea) => linea.textContent);
+    expect(zonales).toEqual(["Calderón · IG-043", "La Delicia · IG-030 a IG-031"]);
+    const puntos = within(screen.getByRole("list", { name: "Punto por zona" }))
+      .getAllByRole("listitem")
+      .map((linea) => linea.textContent);
+    expect(puntos).toEqual(["AMC Calderón", "AMC La Delicia"]);
+    const orden = screen.getAllByText(/^IG-0\d\d-28-OCT-2026$/).map((celda) => celda.textContent);
+    expect(orden).toEqual(["IG-043-28-OCT-2026", "IG-030-28-OCT-2026", "IG-031-28-OCT-2026"]);
   });
 });
