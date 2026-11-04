@@ -23,6 +23,7 @@
 import type { EstadoPie } from "../components/common/DrawerLateral.tsx";
 import type { Operativo, PersonaAsignada } from "../interfaces/Operativo.ts";
 import { motivoHorarioPersona } from "./politicasOperativo.util.ts";
+import { identificadorCorto } from "./rangoIdentificadores.util.ts";
 
 /** Lo mínimo de una persona del borrador: quién es y su turno. */
 type PersonaDelBorrador = {
@@ -113,12 +114,38 @@ export const motivoGuardarBorrador = (
 /** Lo que viaja al servidor: el conjunto final con su turno. */
 export const comoLoteDePersonal = (
   borrador: readonly PersonaDelBorrador[],
-): { funcionarioId: number; horaInicio: string; horaFin: string }[] =>
-  borrador.map((persona) => ({
-    funcionarioId: persona.funcionarioId,
-    horaInicio: persona.horaInicio ?? "",
-    horaFin: persona.horaFin ?? "",
-  }));
+  /**
+   * PATRULLA (2026-10-31): quién reemplaza a quién (entrante → saliente). La persona nueva viaja con
+   * `reemplazaA` y el servidor le da el código de quien sale en lugar de numerar otro.
+   */
+  reemplazos: ReadonlyMap<number, number> = new Map(),
+): { funcionarioId: number; horaInicio: string; horaFin: string; reemplazaA?: number }[] =>
+  borrador.map((persona) => {
+    const reemplazaA = reemplazos.get(persona.funcionarioId);
+    return {
+      funcionarioId: persona.funcionarioId,
+      horaInicio: persona.horaInicio ?? "",
+      horaFin: persona.horaFin ?? "",
+      ...(reemplazaA !== undefined ? { reemplazaA } : {}),
+    };
+  });
+
+/**
+ * El nuevo mapa de reemplazos tras cambiar a `salienteId` por `entranteId` (2026-10-31). Si quien
+ * sale ya entraba por otro, el entrante hereda ese reemplazo (el código sigue siendo el original); y
+ * si vuelve la persona original, deja de ser un reemplazo.
+ */
+export const conReemplazo = (
+  reemplazos: ReadonlyMap<number, number>,
+  salienteId: number,
+  entranteId: number,
+): Map<number, number> => {
+  const siguiente = new Map(reemplazos);
+  const original = siguiente.get(salienteId) ?? salienteId;
+  siguiente.delete(salienteId);
+  if (original !== entranteId) siguiente.set(entranteId, original);
+  return siguiente;
+};
 
 /**
  * ¿El aporte crea un código por persona? La patrulla con grupo (5/6): sus códigos comparten
@@ -206,6 +233,15 @@ export const textoPersonalGuardado = (
   const cuantos = patrulla ? codigos.length : guardado.personal.length;
   const personas = `${cuantos} ${cuantos === 1 ? "persona" : "personas"}`;
   return patrulla
-    ? `Personal guardado: ${personas} en la patrulla ${codigos.join(" · ")}`
+    ? `Personal guardado: ${personas} en el operativo ${codigos.join(" · ")}`
     : `Personal guardado: ${personas} en ${guardado.identificador}`;
 };
+
+/**
+ * El aviso de «Editar patrulla» (2026-10-31): «Patrulla actualizada: IGECU-001 · ITECU-001», con los
+ * códigos cortos del registro tras guardar, por número. Nunca el `grupoRegistro`.
+ */
+export const textoPatrullaActualizada = (identificadores: readonly string[]): string =>
+  `Operativo actualizado: ${[...new Set(identificadores.map(identificadorCorto))]
+    .sort((una, otra) => una.localeCompare(otra, "es", { numeric: true }))
+    .join(" · ")}`;

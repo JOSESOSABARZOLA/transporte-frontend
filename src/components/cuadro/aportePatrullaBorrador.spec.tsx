@@ -191,10 +191,10 @@ const abrirAporte = async (operativos: Operativo[] = [IGNECU, INECU]) => {
 };
 
 describe("Aporte a la patrulla · se confirma con «Guardar cambios» (2026-10-29)", () => {
-  it("el título es «Personal de patrulla» con sus códigos, sin el grupoRegistro", async () => {
+  it("el título es «Personal del operativo» con sus códigos, sin el grupoRegistro", async () => {
     const cajon = await abrirAporte();
 
-    expect(cajon).toHaveAccessibleName("Personal de patrulla");
+    expect(cajon).toHaveAccessibleName("Personal del operativo");
     expect(cajon.textContent).not.toContain(GRUPO);
     expect(
       within(cajon).getByText("IGNECU-001-30-OCT-2026 · INECU-001-30-OCT-2026"),
@@ -254,11 +254,11 @@ describe("Aporte a la patrulla · se confirma con «Guardar cambios» (2026-10-2
     expect(OperativoService.asignarPersonal).not.toHaveBeenCalled();
     expect(
       await screen.findByText(
-        "Personal guardado: 3 personas en la patrulla IGNECU-001-30-OCT-2026 · INECU-001-30-OCT-2026 · INECU-002-30-OCT-2026",
+        "Personal guardado: 3 personas en el operativo IGNECU-001-30-OCT-2026 · INECU-001-30-OCT-2026 · INECU-002-30-OCT-2026",
       ),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Personal de patrulla" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: "Personal del operativo" })).toBeNull(),
     );
   });
 
@@ -295,7 +295,7 @@ describe("Aporte a la patrulla · se confirma con «Guardar cambios» (2026-10-2
     await userEvent.click(within(cajon).getByRole("button", { name: "Cancelar" }));
 
     expect(await screen.findByText("¿Descartar cambios?")).toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Personal de patrulla" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Personal del operativo" })).toBeInTheDocument();
   });
 });
 
@@ -320,7 +320,7 @@ describe.each([
     ],
     titulo: "Personal de operativo OCECU-001-30-OCT-2026",
   },
-  { caso: "Form 6 · patrulla", operativos: [IGNECU, INECU], titulo: "Personal de patrulla" },
+  { caso: "Form 6 · patrulla", operativos: [IGNECU, INECU], titulo: "Personal del operativo" },
 ])("$caso admite Instrucción aportada", ({ operativos, titulo }) => {
   it("el cajón muestra «Guardar cambios» y no guarda al instante", async () => {
     const cajon = await abrirAporte(operativos);
@@ -378,7 +378,7 @@ describe("Jornada · el aporte a la patrulla también va al borrador (2026-10-29
       />,
     );
 
-    const cajon = await screen.findByRole("dialog", { name: "Personal de patrulla" });
+    const cajon = await screen.findByRole("dialog", { name: "Personal del operativo" });
     expect(cajon.textContent).not.toContain(GRUPO);
     expect(await within(cajon).findByText("LOPEZ LUIS")).toBeInTheDocument();
 

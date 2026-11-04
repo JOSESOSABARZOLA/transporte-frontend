@@ -400,10 +400,10 @@ describe("DetalleOperativoLectura · patrulla (2026-10-27)", () => {
     render(
       <DetalleOperativoLectura operativo={GRUPO[0]} grupo={GRUPO} onCerrar={vi.fn()} />,
     );
-    return screen.getByRole("dialog", { name: "Detalle de patrulla" });
+    return screen.getByRole("dialog", { name: "Detalle del operativo" });
   };
 
-  it("el título es «Detalle de patrulla», sin el UUID, y debajo van los dos identificadores", () => {
+  it("el título es «Detalle del operativo», sin el UUID, y debajo van los dos identificadores", () => {
     const cajon = pintarPatrulla();
 
     expect(cajon.textContent).not.toContain(UUID);
@@ -437,7 +437,7 @@ describe("DetalleOperativoLectura · patrulla (2026-10-27)", () => {
 
     expect(within(resumen).getByText("08H00 a 16H30")).toBeInTheDocument();
     expect(within(resumen).getByText("2 personas")).toBeInTheDocument();
-    expect(within(resumen).getByText("2 códigos de patrulla")).toBeInTheDocument();
+    expect(within(resumen).getByText("2 códigos")).toBeInTheDocument();
   });
 
   it("un operativo suelto no repite su identificador en cada persona", () => {

@@ -492,6 +492,18 @@ export interface ResultadoBaja {
   ordenesEmitidas: number;
 }
 
+/**
+ * `DELETE /operativos/registro/:grupoRegistro` (2026-10-31): el registro por zonas COMPLETO, todo
+ * o nada. Cada código con PV-10: borrado, o desactivado si tiene órdenes emitidas.
+ */
+export interface ResultadoBajaDeRegistro {
+  retirados: number;
+  eliminados: number;
+  desactivados: number;
+  identificadores: string[];
+  identificadoresDesactivados: string[];
+}
+
 /** Respuesta paginada del backend. FASE4 §8.1. */
 export interface RespuestaPaginada<T> {
   datos: T[];

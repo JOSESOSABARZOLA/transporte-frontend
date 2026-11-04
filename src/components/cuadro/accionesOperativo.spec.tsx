@@ -27,6 +27,7 @@ vi.mock("../../services/operativo.service.ts", () => ({
     consultar: vi.fn(),
     actualizar: vi.fn(),
     retirar: vi.fn(),
+    retirarRegistro: vi.fn(),
     crearAdicional: vi.fn(),
     obtener: vi.fn(),
     asignarPersonal: vi.fn(),
@@ -252,7 +253,7 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
       "Es un operativo adicional: los adicionales no se encadenan.",
     );
 
-    const deLaPatrulla = boton(filaDe("IGECU-001"), "Agregar adicional", "IGECU-001");
+    const deLaPatrulla = boton(filaDe("IGECU-001"), "Agregar adicional", "IGECU-001, ITECU-001");
     expect(deLaPatrulla).toHaveAttribute("aria-disabled", "true");
     expect(deLaPatrulla).toHaveAccessibleDescription(
       "Este formulario no admite operativos adicionales.",
@@ -263,12 +264,77 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
     );
   });
 
-  it("la patrulla lleva «Editar» una sola vez, en la cabeza; cada persona conserva su «Eliminar»", async () => {
+  /*
+    LA PATRULLA 5/6 ES UN OPERATIVO (2026-10-31): sus acciones van UNA vez, en una celda combinada
+    sobre todos sus códigos —«Todo el operativo»— y actúan sobre toda la patrulla. Ya no hay
+    «Eliminar» por persona: quitar a una sola se hace en «Editar operativo».
+  */
+  it("la patrulla lleva sus acciones UNA vez, en una celda «Todo el operativo» sobre sus dos códigos", async () => {
     await pintar(patrulla());
 
-    expect(boton(filaDe("IGECU-001"), "Editar", "IGECU-001")).not.toHaveAttribute("aria-disabled");
-    expect(boton(filaDe("ITECU-001"), "Editar", "ITECU-001")).toBeNull();
-    expect(boton(filaDe("ITECU-001"), "Eliminar", "ITECU-001")).toBeInTheDocument();
+    const celda = screen.getByText("Todo el operativo").closest("td") as HTMLTableCellElement;
+    expect(celda.rowSpan).toBe(2);
+    for (const accion of ["Editar", "Ver detalle", "Eliminar"]) {
+      expect(screen.getAllByRole("button", { name: new RegExp(`^${accion} `) })).toHaveLength(1);
+    }
+    expect(boton(filaDe("ITECU-001"), "Eliminar", "ITECU-001")).toBeNull();
+  });
+
+  it("«Eliminar» de la patrulla confirma el operativo completo, con sus códigos y personas, y retira todo en una llamada", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(OperativoService.retirarRegistro).mockResolvedValue({
+      retirados: 2,
+      eliminados: 2,
+      desactivados: 0,
+      identificadores: ["IGECU-001", "ITECU-001"],
+      identificadoresDesactivados: [],
+    });
+    const [ig, it_] = patrulla();
+    await pintar([
+      { ...ig, personal: [{ ...ig.personal[0], nombre: "SALAZAR SOTO TATIANA PILAR" }] },
+      { ...it_, personal: [{ ...it_.personal[0], nombre: "ALVAREZ CASAS RENE ALIRIO" }] },
+    ] as Operativo[]);
+
+    await usuario.click(screen.getByRole("button", { name: "Eliminar IGECU-001, ITECU-001" }));
+    const modal = screen.getByRole("alertdialog", { name: "¿Eliminar el operativo completo?" });
+    expect(
+      within(modal).getByText(
+        "Se quitarán los 2 códigos del operativo y su personal quedará libre. Esta acción no se puede deshacer.",
+      ),
+    ).toBeInTheDocument();
+    const lista = within(modal).getByRole("list", { name: "Códigos que se retiran" });
+    expect(within(lista).getAllByRole("listitem").map((fila) => fila.textContent)).toEqual([
+      "IGECU-001 · SALAZAR SOTO TATIANA PILAR",
+      "ITECU-001 · ALVAREZ CASAS RENE ALIRIO",
+    ]);
+    expect(within(modal).getByText("Para quitar a una sola persona, use Editar operativo.")).toBeInTheDocument();
+    await usuario.click(within(modal).getByRole("button", { name: "Eliminar operativo" }));
+
+    await waitFor(() => expect(OperativoService.retirarRegistro).toHaveBeenCalledWith("lote-1"));
+    expect(OperativoService.retirarRegistro).toHaveBeenCalledTimes(1);
+    expect(OperativoService.retirar).not.toHaveBeenCalled();
+    expect(await screen.findByText("Operativo eliminado · 2 códigos retirados")).toBeInTheDocument();
+  });
+
+  it("quien solo APORTA a la patrulla ve «Agregar personal» y «Ver detalle», sin Eliminar", async () => {
+    const ajena = patrulla().map((codigo) => ({
+      ...codigo,
+      creadoPorRol: "DMIP_INSPECCIONES",
+      formulario: {
+        ...codigo.formulario,
+        rolDueno: "DMIP_INSPECCIONES",
+        roles: [
+          { rol: "DMIP_INSPECCIONES", acceso: "ESCRITURA" },
+          { rol: "DMIP_OPERATIVOS", acceso: "APORTA" },
+        ],
+      },
+    })) as Operativo[];
+    await pintar(ajena);
+
+    expect(screen.getByRole("button", { name: "Agregar personal IGECU-001, ITECU-001" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver detalle IGECU-001, ITECU-001" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Eliminar / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Editar / })).toBeNull();
   });
 
   it("«Eliminar» pide confirmación en rojo y, al confirmar, avisa", async () => {
@@ -345,5 +411,130 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
     const cajon = await screen.findByRole("dialog", { name: "Detalle del operativo" });
     expect(within(cajon).queryByRole("button", { name: "Editar" })).toBeNull();
     expect(within(cajon).getAllByRole("button", { name: "Cerrar" }).length).toBeGreaterThan(0);
+  });
+});
+
+/*
+  REGISTRO POR ZONAS DEL 8 (2026-10-31): el operativo es UNO aunque tenga varios códigos. SALAZAR SOTO
+  con 11 códigos en 2 zonas —La Mariscal (principal) IG-001 a IG-004 y Manuela Sáenz IG-005 a IG-011—.
+  Las acciones van una vez, en la celda combinada, y actúan sobre todo el registro.
+*/
+describe("Mis operativos · acciones del registro por zonas (2026-10-31)", () => {
+  const FORMULARIO_8: Operativo["formulario"] = {
+    ...FORMULARIO_PMO,
+    codigo: "INSP",
+    nombre: "Inspecciones técnicas y generales",
+    numero: 8,
+    rolDueno: "DMIP_OPERATIVOS",
+  };
+  const SALAZAR = {
+    funcionarioId: 300,
+    nombre: "SALAZAR SOTO ANA",
+    area: "GENERAL",
+    telefono: null,
+    cargo: null,
+    esResponsable: false,
+    asignadoPorRol: "DMIP_OPERATIVOS",
+    horaInicio: "08:00",
+    horaFin: "15:00",
+  } as unknown as Operativo["personal"][number];
+  const numero = (n: number) => `IG-${String(n).padStart(3, "0")}`;
+  const codigo = (n: number, parcial: Partial<Operativo> = {}) =>
+    operativo({
+      id: 100 + n,
+      identificador: numero(n),
+      grupoRegistro: "registro-salazar",
+      esLote: true,
+      esZonaPrincipal: n <= 4,
+      formulario: FORMULARIO_8,
+      zonales:
+        n <= 4
+          ? [{ id: 1, codigo: "MAR", nombre: "Zonal La Mariscal" }]
+          : [{ id: 2, codigo: "SAE", nombre: "Zonal Manuela Sáenz" }],
+      personal: [SALAZAR],
+      ...parcial,
+    });
+  const registro = (parcial: Partial<Operativo> = {}) =>
+    Array.from({ length: 11 }, (_, i) => codigo(i + 1, parcial));
+  const RANGO = "IG-001 a IG-011";
+
+  it("las acciones van UNA vez, nombradas con el rango del registro", async () => {
+    await pintar(registro());
+
+    for (const accion of ["Editar", "Agregar adicional", "Ver detalle", "Eliminar"]) {
+      expect(screen.getAllByRole("button", { name: new RegExp(`^${accion} IG-`) })).toHaveLength(1);
+      expect(screen.getByRole("button", { name: `${accion} ${RANGO}` })).toBeInTheDocument();
+    }
+  });
+
+  it("«Eliminar» pide confirmar el operativo completo y retira los 11 códigos en una llamada", async () => {
+    const usuario = userEvent.setup();
+    vi.mocked(OperativoService.retirarRegistro).mockResolvedValue({
+      retirados: 11,
+      eliminados: 11,
+      desactivados: 0,
+      identificadores: Array.from({ length: 11 }, (_, i) => numero(i + 1)),
+      identificadoresDesactivados: [],
+    });
+    await pintar(registro());
+
+    await usuario.click(screen.getByRole("button", { name: `Eliminar ${RANGO}` }));
+    const modal = screen.getByRole("alertdialog", { name: "¿Eliminar el operativo completo?" });
+    expect(
+      within(modal).getByText(
+        "Se quitarán los 11 códigos (IG-001 a IG-011) de SALAZAR SOTO ANA en Zonal La Mariscal y Zonal Manuela Sáenz. Esta acción no se puede deshacer.",
+      ),
+    ).toBeInTheDocument();
+    await usuario.click(within(modal).getByRole("button", { name: "Eliminar operativo" }));
+
+    await waitFor(() =>
+      expect(OperativoService.retirarRegistro).toHaveBeenCalledWith("registro-salazar"),
+    );
+    expect(OperativoService.retirarRegistro).toHaveBeenCalledTimes(1);
+    expect(OperativoService.retirar).not.toHaveBeenCalled();
+  });
+
+  it("«Ver detalle» muestra el registro completo: el rango y una sección por zona, la principal primero", async () => {
+    const usuario = userEvent.setup();
+    await pintar(registro());
+
+    await usuario.click(screen.getByRole("button", { name: `Ver detalle ${RANGO}` }));
+
+    const cajon = await screen.findByRole("dialog", { name: /Detalle del operativo/ });
+    expect(within(cajon).getByText(RANGO)).toBeInTheDocument();
+    expect(within(cajon).queryByText("registro-salazar")).toBeNull();
+    const zonas = within(cajon)
+      .getAllByRole("region", { name: /^Zona \d · / })
+      .map((seccion) => seccion.getAttribute("aria-label"));
+    expect(zonas).toEqual(["Zona 1 · Zonal La Mariscal", "Zona 2 · Zonal Manuela Sáenz"]);
+    expect(within(cajon).getByText("IG-005 a IG-011 · 7 códigos")).toBeInTheDocument();
+    expect(within(cajon).getByText("11 códigos · 2 zonas")).toBeInTheDocument();
+  });
+
+  it("de otro departamento: Editar y Eliminar apagados con su motivo", async () => {
+    await pintar(registro({ creadoPorRol: "DMIP_INSPECCIONES" }));
+
+    expect(screen.getByRole("button", { name: `Editar ${RANGO}` })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: `Eliminar ${RANGO}` })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("en consulta (cuadro cerrado): solo «Ver detalle»", async () => {
+    await pintar(
+      registro({
+        cuadroFecha: sumarDias(VIGENTE, -2),
+        cuadroEstado: "CERRADO",
+        admiteEdicion: false,
+      }),
+    );
+
+    expect(screen.getByRole("button", { name: `Ver detalle ${RANGO}` })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: `Editar ${RANGO}` })).toBeNull();
+    expect(screen.queryByRole("button", { name: `Eliminar ${RANGO}` })).toBeNull();
   });
 });

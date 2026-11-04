@@ -39,6 +39,7 @@ const CANDIDATOS: PersonaElegible[] = [
     elegible: true,
     motivo: null,
     nivelFatiga: "VERDE",
+    nivelCarga: "VERDE",
     sugerido: true,
   },
   {
@@ -50,6 +51,7 @@ const CANDIDATOS: PersonaElegible[] = [
     elegible: true,
     motivo: null,
     nivelFatiga: "AMBAR",
+    nivelCarga: "AMBAR",
     sugerido: true,
   },
 ];
@@ -298,145 +300,206 @@ describe("SelectorPersonal · lista compacta (P-02)", () => {
   });
 });
 
-describe("SelectorPersonal · carga alta: se pregunta ANTES de agregar (2026-10-30)", () => {
-  /** BAUTISTA, disponible, con «Carga Alta»; CHALCO, disponible y de la misma área, con carga baja. */
-  const ALTA: PersonaElegible = {
-    ...CANDIDATOS[1],
-    nivelFatiga: "ROJO",
-    indiceCarga: 14,
-    operativosAsignados: 7,
-  };
-  const BAJA: PersonaElegible = {
-    id: 3,
-    apellidos: "CHALCO",
-    nombres: "ANA",
-    area: "INSTRUCCION",
-    cargo: "Instructora",
+describe("SelectorPersonal · carga por OPERATIVOS de la semana (2026-10-30)", () => {
+  /** Los seis de la Unidad de Operativos del 30-oct, como los devuelve ya el servidor. */
+  const op = (
+    id: number,
+    apellidos: string,
+    nombres: string,
+    operativos: number,
+    indiceCarga: number,
+    sugerido = false,
+  ): PersonaElegible => ({
+    id,
+    apellidos,
+    nombres,
+    area: "OPERATIVOS",
+    cargo: "Agente",
     elegible: true,
     motivo: null,
-    nivelFatiga: "VERDE",
-    indiceCarga: 2,
-    operativosAsignados: 1,
-  };
+    operativosAsignados: operativos,
+    indiceCarga,
+    nivelFatiga: "ROJO",
+    nivelCarga: operativos >= 3 ? "ROJO" : operativos >= 2 ? "AMBAR" : "VERDE",
+    sugerido,
+  });
+  const BAUTISTA = op(161, "BAUTISTA", "JOAN", 2, 16.5, true);
+  const BOLANOS = op(162, "BOLANOS", "JHON", 2, 16.5, true);
+  const AGUIRRE = op(221, "AGUIRRE", "FLAVIO", 2, 17, true);
+  const VELASQUEZ = op(176, "VELASQUEZ", "CHRISTIAN", 3, 25);
+  const ABAD = op(224, "ABAD", "VERONICA", 3, 25.5);
+  const YUNDA = op(193, "YUNDA", "JESSICA", 4, 38);
+  const SEIS = [YUNDA, ABAD, VELASQUEZ, AGUIRRE, BOLANOS, BAUTISTA];
 
-  /** El «+ Agregar» de la tarjeta de un disponible (la tarjeta lleva el nombre en su `title`). */
-  const agregarDe = (nombre: string) => {
-    const tarjeta = screen.getByTitle(nombre).parentElement?.parentElement as HTMLElement;
-    return within(tarjeta).getByRole("button", { name: /^\+ (Agregar|Asignar)$/ });
-  };
+  const pintarSeis = (props: Partial<ComponentProps<typeof SelectorPersonal>> = {}) =>
+    pintar({ candidatos: SEIS, agregadas: [], ...props });
 
-  it("con Carga Alta abre el modal y NO agrega hasta confirmar; sugiere a quien tiene menos carga", async () => {
+  /** La tarjeta de un disponible (lleva el nombre en su `title`). */
+  const tarjetaDe = (nombre: string) =>
+    screen.getByTitle(nombre).parentElement?.parentElement as HTMLElement;
+  const agregarDe = (nombre: string) =>
+    within(tarjetaDe(nombre)).getByRole("button", { name: /^\+ (Agregar|Asignar)$/ });
+
+  it("la etiqueta coincide con «N op. esta semana»: 2 op. Media y Sugerido; 3 o más, Alta", () => {
+    pintarSeis();
+
+    for (const nombre of ["BAUTISTA JOAN", "BOLANOS JHON", "AGUIRRE FLAVIO"]) {
+      const tarjeta = tarjetaDe(nombre);
+      expect(within(tarjeta).getByText("Carga Media")).toBeInTheDocument();
+      expect(within(tarjeta).getByText("Sugerido")).toBeInTheDocument();
+      expect(within(tarjeta).getByText(/2 op\. esta semana/)).toBeInTheDocument();
+    }
+    for (const nombre of ["VELASQUEZ CHRISTIAN", "ABAD VERONICA", "YUNDA JESSICA"]) {
+      const tarjeta = tarjetaDe(nombre);
+      expect(within(tarjeta).getByText("Carga Alta")).toBeInTheDocument();
+      expect(within(tarjeta).queryByText("Sugerido")).toBeNull();
+    }
+  });
+
+  it("el contador de «Ver reparto de carga» cuenta por operativos: 0/3/3", () => {
+    pintarSeis();
+
+    expect(
+      screen.getByText("Carga Baja: 0; Carga Media: 3; Carga Alta: 3."),
+    ).toBeInTheDocument();
+  });
+
+  it("orden: nivel → operativos → índice → apellido", () => {
+    pintarSeis();
+
+    const nombres = screen
+      .getAllByTitle(/^(BAUTISTA|BOLANOS|AGUIRRE|VELASQUEZ|ABAD|YUNDA) /)
+      .map((nodo) => nodo.getAttribute("title"));
+    expect(nombres).toEqual([
+      "BAUTISTA JOAN",
+      "BOLANOS JHON",
+      "AGUIRRE FLAVIO",
+      "VELASQUEZ CHRISTIAN",
+      "ABAD VERONICA",
+      "YUNDA JESSICA",
+    ]);
+  });
+
+  it("con Carga Media se agrega directo, sin modal", async () => {
     const usuario = userEvent.setup();
     const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], ALTA, BAJA], onAgregar });
+    pintarSeis({ onAgregar });
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    await usuario.click(agregarDe("BAUTISTA JOAN"));
 
-    const modal = screen.getByRole("alertdialog", { name: "BAUTISTA LUIS tiene carga alta" });
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onAgregar).toHaveBeenCalledWith(BAUTISTA);
+  });
+
+  it("con Carga Alta abre el modal y no agrega; lista a Bautista, Bolaños y Aguirre con su etiqueta", async () => {
+    const usuario = userEvent.setup();
+    const onAgregar = vi.fn();
+    pintarSeis({ onAgregar });
+
+    await usuario.click(agregarDe("VELASQUEZ CHRISTIAN"));
+
+    const modal = screen.getByRole("alertdialog", {
+      name: "VELASQUEZ CHRISTIAN tiene carga alta",
+    });
     expect(onAgregar).not.toHaveBeenCalled();
     expect(
       within(modal).getByText(
-        "Ya tiene 7 operativos esta semana. Considere repartir con quien tenga menos carga.",
+        "Ya tiene 3 operativos esta semana. Considere repartir con quien tenga menos carga.",
       ),
     ).toBeInTheDocument();
-    expect(
-      within(modal).getByText("Con menos carga: CHALCO ANA (1 op. esta semana)"),
-    ).toBeInTheDocument();
-    for (const nombre of ["Elegir a CHALCO ANA", "Agregar igual", "Cancelar"]) {
-      expect(within(modal).getByRole("button", { name: nombre })).toBeInTheDocument();
+    const lista = within(modal).getByRole("list", { name: "Con menos carga" });
+    const filas = within(lista).getAllByRole("listitem");
+    expect(filas.map((fila) => within(fila).getByTitle(/./).getAttribute("title"))).toEqual([
+      "BAUTISTA JOAN",
+      "BOLANOS JHON",
+      "AGUIRRE FLAVIO",
+    ]);
+    for (const fila of filas) {
+      expect(within(fila).getByText("Carga Media")).toBeInTheDocument();
+      expect(within(fila).getByText("2 op. esta semana")).toBeInTheDocument();
     }
+    expect(within(modal).getByRole("button", { name: "Agregar igual" })).toBeInTheDocument();
+    expect(within(modal).getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+  });
+
+  it("«Elegir» agrega a esa persona en su lugar", async () => {
+    const usuario = userEvent.setup();
+    const onAgregar = vi.fn();
+    pintarSeis({ onAgregar });
+
+    await usuario.click(agregarDe("VELASQUEZ CHRISTIAN"));
+    await usuario.click(screen.getByRole("button", { name: "Elegir a BOLANOS JHON" }));
+
+    expect(onAgregar).toHaveBeenCalledTimes(1);
+    expect(onAgregar).toHaveBeenCalledWith(BOLANOS);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   it("«Agregar igual» agrega a la persona elegida", async () => {
     const usuario = userEvent.setup();
     const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], ALTA, BAJA], onAgregar });
+    pintarSeis({ onAgregar });
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    await usuario.click(agregarDe("VELASQUEZ CHRISTIAN"));
     await usuario.click(screen.getByRole("button", { name: "Agregar igual" }));
 
     expect(onAgregar).toHaveBeenCalledTimes(1);
-    expect(onAgregar).toHaveBeenCalledWith(ALTA);
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-  });
-
-  it("«Elegir a <sugerida>» agrega a la sugerida en su lugar", async () => {
-    const usuario = userEvent.setup();
-    const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], ALTA, BAJA], onAgregar });
-
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
-    await usuario.click(screen.getByRole("button", { name: "Elegir a CHALCO ANA" }));
-
-    expect(onAgregar).toHaveBeenCalledTimes(1);
-    expect(onAgregar).toHaveBeenCalledWith(BAJA);
+    expect(onAgregar).toHaveBeenCalledWith(VELASQUEZ);
   });
 
   it("Cancelar, Escape o el velo no agregan a nadie", async () => {
     const usuario = userEvent.setup();
     const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], ALTA, BAJA], onAgregar });
+    pintarSeis({ onAgregar });
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    await usuario.click(agregarDe("YUNDA JESSICA"));
     await usuario.click(screen.getByRole("button", { name: "Cancelar" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    await usuario.click(agregarDe("YUNDA JESSICA"));
     await usuario.keyboard("{Escape}");
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    await usuario.click(agregarDe("YUNDA JESSICA"));
     fireEvent.click(document.querySelector("[data-velo-mensaje]") as Element);
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
 
     expect(onAgregar).not.toHaveBeenCalled();
   });
 
-  it("sin nadie con menos carga, solo [Agregar igual] y [Cancelar]", async () => {
+  it("todos en Alta: nadie Sugerido y el modal sin lista (solo «Agregar igual» y «Cancelar»)", async () => {
     const usuario = userEvent.setup();
-    const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], ALTA], onAgregar });
+    pintar({ candidatos: [VELASQUEZ, ABAD, YUNDA], agregadas: [] });
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    expect(screen.queryByText("Sugerido")).toBeNull();
+
+    await usuario.click(agregarDe("ABAD VERONICA"));
 
     const modal = screen.getByRole("alertdialog");
-    expect(within(modal).queryByText(/Con menos carga/)).not.toBeInTheDocument();
+    expect(within(modal).queryByRole("list")).toBeNull();
     expect(within(modal).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "Cancelar",
       "Agregar igual",
+      "Cancelar",
     ]);
-  });
-
-  it("con Carga Baja o Media no hay modal y se agrega directo", async () => {
-    const usuario = userEvent.setup();
-    const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], CANDIDATOS[1], BAJA], onAgregar });
-
-    await usuario.click(agregarDe("BAUTISTA LUIS")); // Carga Media
-    await usuario.click(agregarDe("CHALCO ANA")); // Carga Baja
-
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onAgregar).toHaveBeenNthCalledWith(1, CANDIDATOS[1]);
-    expect(onAgregar).toHaveBeenNthCalledWith(2, BAJA);
   });
 
   it("«Completar con N de menor carga» no abre el modal", async () => {
     const usuario = userEvent.setup();
     const onAgregar = vi.fn();
-    pintar({ candidatos: [CANDIDATOS[0], ALTA], onAgregar });
+    pintar({ candidatos: [VELASQUEZ], agregadas: [], onAgregar });
 
     await usuario.click(screen.getByRole("button", { name: "Completar con 1 de menor carga" }));
 
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onAgregar).toHaveBeenCalledWith(ALTA);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(onAgregar).toHaveBeenCalledWith(VELASQUEZ);
   });
 
-  it("ya no se muestra el aviso breve (Toast) de carga alta", async () => {
+  it("ya no sale el aviso breve (Toast) de carga alta", async () => {
     const usuario = userEvent.setup();
     const info = vi.spyOn(toast, "info");
-    pintar({ candidatos: [CANDIDATOS[0], ALTA] });
+    pintarSeis();
 
-    await usuario.click(agregarDe("BAUTISTA LUIS"));
+    await usuario.click(agregarDe("VELASQUEZ CHRISTIAN"));
     await usuario.click(screen.getByRole("button", { name: "Agregar igual" }));
 
     expect(info).not.toHaveBeenCalled();

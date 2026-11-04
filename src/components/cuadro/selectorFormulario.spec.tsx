@@ -205,6 +205,40 @@ describe("el selector de formulario de P-01", () => {
     expect(caja).toHaveFocus();
   });
 
+  it("la lista va en un portal fijo, fuera del panel, con el ancho de la caja", async () => {
+    // El panel del formulario lleva `backdrop-blur`: dentro de él, la cabecera de la tabla de abajo
+    // se pintaba encima de la lista (2026-11-04).
+    const { container } = render(
+      <SelectorFormulario formularios={LISTA} seleccionado="OCF" onSeleccionar={vi.fn()} />,
+    );
+    const lista = await abrir();
+    const panel = lista.parentElement as HTMLElement;
+
+    expect(container.contains(lista)).toBe(false);
+    expect(panel.parentElement).toBe(document.body);
+    expect(panel.style.position).toBe("fixed");
+    expect(panel.style.zIndex).toBe("9999");
+    expect(panel).toHaveClass("bg-base-100");
+    // Sin `app-shell-surface`: en el tema oscuro su degradado translúcido dejaba ver la tabla.
+    expect(panel).not.toHaveClass("app-shell-surface");
+  });
+
+  it("un clic dentro del portal no la cierra; uno fuera, sí", async () => {
+    render(
+      <div>
+        <SelectorFormulario formularios={LISTA} seleccionado="OCF" onSeleccionar={vi.fn()} />
+        <p>Operativos de este formulario</p>
+      </div>,
+    );
+    await abrir();
+
+    await userEvent.click(screen.getByRole("combobox", { name: /Buscar formulario/ }));
+    expect(screen.getByRole("listbox", { name: "Formularios" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Operativos de este formulario"));
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
   it("los recientes se pintan como fichas «N · CÓDIGO» y cambian al pulsarlos", async () => {
     const elegir = vi.fn();
     render(

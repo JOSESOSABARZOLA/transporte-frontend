@@ -29,6 +29,7 @@ import type {
   RegistrarPorZonas,
   RespuestaPaginada,
   ResultadoBaja,
+  ResultadoBajaDeRegistro,
 } from "../interfaces/Operativo";
 
 /** `GET /operativos`. Paginado; el servidor decide qué filas ve cada rol. */
@@ -187,6 +188,17 @@ const retirar = async (
   return data;
 };
 
+/**
+ * `DELETE /operativos/registro/:grupoRegistro` (2026-10-31): retira el registro por zonas del 8
+ * COMPLETO —todos sus códigos, todo o nada—, y también la patrulla 5/6 (2026-10-31).
+ */
+const retirarRegistro = async (grupoRegistro: string): Promise<ResultadoBajaDeRegistro> => {
+  const { data } = await httpClient.delete<ResultadoBajaDeRegistro>(
+    `/operativos/registro/${grupoRegistro}`,
+  );
+  return data;
+};
+
 /** `POST /operativos/:id/personal`. Devuelve el operativo con sus alertas al día. */
 const asignarPersonal = async (
   id: number,
@@ -274,7 +286,8 @@ const actualizarTurnoPersonal = async (
  */
 const guardarPersonal = async (
   id: number,
-  personal: { funcionarioId: number; horaInicio: string; horaFin: string }[],
+  // `reemplazaA` (2026-10-31): en la patrulla, la persona toma el código de quien sale.
+  personal: { funcionarioId: number; horaInicio: string; horaFin: string; reemplazaA?: number }[],
   confirmarLiberacion = false,
 ): Promise<Operativo> => {
   const { data } = await httpClient.put<Operativo>(
@@ -314,6 +327,7 @@ export const OperativoService = {
   editar,
   editarPatrulla,
   retirar,
+  retirarRegistro,
   asignarPersonal,
   reemplazarPersonal,
   retirarPersonal,

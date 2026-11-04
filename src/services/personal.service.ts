@@ -36,6 +36,11 @@ export interface ConsultaElegibles {
   fin?: string;
   horaInicio?: string;
   horaFin?: string;
+  /**
+   * El registro (`grupoRegistro`) que se edita o al que se aporta (2026-10-31): sus códigos no
+   * cuentan en `operativosDelDia`, así nadie aparece cruzado con su propio operativo.
+   */
+  excluirRegistro?: string;
 }
 
 /**

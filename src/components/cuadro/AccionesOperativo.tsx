@@ -66,8 +66,14 @@ type AccionesOperativoProps = {
    * aporta a ella: «Agregar personal» no cabe en el casillero principal, que ya es «Editar».
    */
   masAcciones?: { etiqueta: string; onClick: () => void }[];
-  eliminar: AccionCondicionada;
+  /** `null`: el casillero queda vacío (2026-10-31: quien solo APORTA a la patrulla no la elimina). */
+  eliminar: AccionCondicionada | null;
   procesando?: boolean;
+  /**
+   * Un rótulo sobre los botones (2026-10-31): «Todo el operativo» en la celda combinada de la patrulla
+   * y del registro por zonas, donde las acciones actúan sobre todos sus códigos.
+   */
+  rotulo?: string;
 };
 
 const PRINCIPAL: Record<"editar" | "personal", { rotulo: string; icono: NombreIcono }> = {
@@ -92,6 +98,7 @@ const AccionesOperativo: FC<AccionesOperativoProps> = ({
   masAcciones = [],
   eliminar,
   procesando = false,
+  rotulo: rotuloGrupo,
 }) => {
   /*
     «Ver» ya no es un botón propio: la consulta la da «Ver detalle». Fuera de una fila de consulta,
@@ -107,7 +114,7 @@ const AccionesOperativo: FC<AccionesOperativoProps> = ({
       ? (editar.motivo ?? EN_CURSO)
       : null;
 
-  return (
+  const botones = (
     <div className="app-acciones-icono" data-acciones-operativo>
       <Casillero>
         {editar && rotulo && (
@@ -160,7 +167,7 @@ const AccionesOperativo: FC<AccionesOperativoProps> = ({
       </Casillero>
 
       <Casillero>
-        {!consulta && (
+        {!consulta && eliminar && (
           <BotonIcono
             icono="eliminar"
             rotulo="Eliminar"
@@ -173,6 +180,13 @@ const AccionesOperativo: FC<AccionesOperativoProps> = ({
           />
         )}
       </Casillero>
+    </div>
+  );
+  if (!rotuloGrupo) return botones;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span className="text-xs text-app-muted">{rotuloGrupo}</span>
+      {botones}
     </div>
   );
 };

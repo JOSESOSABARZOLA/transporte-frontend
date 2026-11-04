@@ -460,12 +460,12 @@ describe("registrar un adicional desde el cajón", () => {
     const cajon = screen.getByRole("dialog", { name: "Operativo adicional" });
 
     // Se hereda sola; su horario nace en blanco y es lo único que falta.
-    const inicio = await within(cajon).findByLabelText(/Hora de inicio de/);
+    const inicio = await within(cajon).findByLabelText(/^Hora de inicio de (?!l operativo)/);
     await waitFor(() =>
       expect(within(cajon).getByText(/1 campo por completar/)).toBeInTheDocument(),
     );
     await userEvent.type(inicio, "08:00");
-    await userEvent.type(within(cajon).getByLabelText(/Hora de fin de/), "12:00");
+    await userEvent.type(within(cajon).getByLabelText(/^Hora de fin de (?!l operativo)/), "12:00");
 
     // Tras registrar, la jornada trae también el adicional.
     vi.mocked(OperativoService.consultar).mockResolvedValue({

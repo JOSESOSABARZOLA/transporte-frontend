@@ -15,7 +15,12 @@ import {
   ordenarPorPersona,
   ordenarPorPersonaYZona,
 } from "./agrupacionForm8.util";
-import { lineasDeZona } from "./zonasDelBloque.util.ts";
+import {
+  bloquesDeZona,
+  lineasDeZona,
+  prioridadDelTransporte,
+  resumenDelRegistro,
+} from "./zonasDelBloque.util.ts";
 
 describe("agruparPorClave", () => {
   it("junta los de la misma clave y respeta el orden de aparición", () => {
@@ -151,5 +156,53 @@ describe("registro por zonas del 8 (2026-10-28)", () => {
       (f) => f.identificador,
     );
     expect(ordenadas.map((f) => f.identificador)).toEqual(["IG-030", "IG-031", "IG-032", "IG-043"]);
+  });
+});
+
+describe("bloquesDeZona (2026-10-30)", () => {
+  type Codigo = { identificador: string; zonal: string; principal: boolean };
+  const campos = {
+    zonal: (f: Codigo) => f.zonal,
+    punto: (f: Codigo) => `AMC ${f.zonal}`,
+    tipo: () => "CCF / ITCC",
+    instituciones: () => "AMC",
+    identificador: (f: Codigo) => f.identificador,
+    esPrincipal: (f: Codigo) => f.principal,
+  };
+  const codigo = (n: number, zonal: string, principal: boolean): Codigo => ({
+    identificador: `IG-${String(n).padStart(3, "0")}-31-OCT-2026`,
+    zonal,
+    principal,
+  });
+
+  it("la principal primero como Z1, cada zona con sus filas por número y su rango", () => {
+    const bloques = bloquesDeZona(
+      [
+        codigo(12, "Manuela Sáenz", false),
+        codigo(11, "Manuela Sáenz", false),
+        codigo(2, "La Mariscal", true),
+        codigo(1, "La Mariscal", true),
+      ],
+      campos,
+    );
+
+    expect(bloques.map((b) => [b.marca, b.zonal, b.esPrincipal, b.rango])).toEqual([
+      ["Z1", "La Mariscal", true, "IG-001 a IG-002 · 2 controles"],
+      ["Z2", "Manuela Sáenz", false, "IG-011 a IG-012 · 2 controles"],
+    ]);
+    expect(bloques[0].filas.map((f) => f.identificador)).toEqual([
+      "IG-001-31-OCT-2026",
+      "IG-002-31-OCT-2026",
+    ]);
+  });
+
+  it("resumen, singular y prioridad del transporte", () => {
+    const bloques = bloquesDeZona([codigo(1, "La Mariscal", true)], campos);
+
+    expect(bloques[0].rango).toBe("IG-001 · 1 control");
+    expect(resumenDelRegistro(bloques)).toBe("1 control · 1 zona");
+    expect(resumenDelRegistro(bloques, 16)).toBe("16 controles · 1 zona");
+    expect(prioridadDelTransporte(bloques)).toBe("Prioridad: La Mariscal");
+    expect(prioridadDelTransporte([])).toBeNull();
   });
 });

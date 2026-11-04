@@ -65,11 +65,18 @@ import {
   type FiltrosListado,
 } from "../../utils/listadoOperativos.util.ts";
 import {
-  agruparPorClave,
   ordenarPorPersona,
   ordenarPorPersonaYZona,
 } from "../../utils/agrupacionForm8.util.ts";
-import { esRegistroPorZonas, lineasDeZona } from "../../utils/zonasDelBloque.util.ts";
+import {
+  bloquesDeZona,
+  esRegistroPorZonas,
+  lineasDeZona,
+  prioridadDelTransporte,
+  resumenDelRegistro,
+  type BloqueDeZona,
+} from "../../utils/zonasDelBloque.util.ts";
+import { gruposDeOperativos } from "../../utils/grupoOperativos.util.ts";
 import { horarioLegible } from "../../utils/texto.util.ts";
 import { notaDeComposicion, notasDe } from "../../utils/notasDeTabla.util.ts";
 import { ATRIBUTO_FILA } from "../../hooks/useDestelloDeFila.ts";
@@ -98,82 +105,6 @@ const COLUMNAS_POR_PERSONA: readonly ColumnaOperativo[] = [
   "personal",
   "telefono",
 ];
-
-/**
- * Columnas que se comparan para decidir si dos operativos son «la misma copia» del formulario 8
- * (todas menos identificador y formulario). Se comparan por su TEXTO —lo mismo que ve el usuario—
- * vía `valorDeColumna`, así la celda fusionada nunca miente.
- */
-const COLUMNAS_DE_FUSION: readonly ColumnaOperativo[] = [
-  "horario",
-  "personal",
-  "telefono",
-  "zonal",
-  "punto",
-  "tipoControl",
-  "transporte",
-  "conductor",
-  "estado",
-  "observaciones",
-];
-
-/**
- * Clave de fusión de las copias del formulario 8: operativos de UNA sola persona idénticos salvo
- * el identificador. `null` = no se agrupa (más de una persona). Ver `agrupacionForm8.util.ts`.
- */
-const claveDeFusion = (operativo: Operativo): string | null => {
-  // PATRULLA (Form 5/6): los operativos de un mismo registro-lote (`grupoRegistro`) se agrupan como
-  // «una sola patrulla», cada persona con su código por área en su fila. Se comparan las columnas
-  // fusionadas —SIN personal ni teléfono, que bajan por fila— para que la celda combinada nunca
-  // mienta; el UUID evita fusionar patrullas distintas del mismo horario.
-  //
-  // Y SIN observaciones (2026-09-17): la bitácora es por operativo y la persona que APORTA el DMIT
-  // (INECU) nace sin notas propias, mientras el registrante (IGNECU/ITNECU) sí las tiene. Si
-  // entrara en la clave, el aportado quedaría siempre en un grupo aparte en cuanto la patrulla
-  // tuviera una nota. La celda fusionada muestra las notas de coordinación del registrante.
-  // Y SIN horario (2026-09-21): el `grupoRegistro` (UUID) YA identifica a la patrulla —no hace falta
-  // el horario para no fundir dos distintas—, y cada persona lleva su ventana EFECTIVA (RN-66), que
-  // puede diferir (el aporte del DMIT a otra hora). Si el horario entrara en la clave, ese código se
-  // saldría de la patrulla y se pintaría como un operativo aparte —lo reportado—. Baja POR PERSONA
-  // cuando difiere (ver `GrupoForm6Operativos`).
-  // REGISTRO POR ZONAS DEL 8 (2026-10-28): UN bloque por registro. Zonal, punto y tipo cambian por
-  // zona y NO parten el bloque: se dicen en una línea por zona (ver `GrupoForm6Operativos`).
-  if (esRegistroPorZonas(operativo)) {
-    return JSON.stringify([
-      "ZONAS",
-      operativo.cuadroFecha,
-      operativo.grupoRegistro,
-      operativo.esAdicional,
-      ...(["transporte", "conductor", "estado"] as const).map((columna) =>
-        valorDeColumna(operativo, columna),
-      ),
-    ]);
-  }
-  if (operativo.esLote) {
-    return JSON.stringify([
-      "F6",
-      // Con un rango de varios días (2026-10-13) nunca se funden filas de cuadros distintos.
-      operativo.cuadroFecha,
-      operativo.grupoRegistro,
-      operativo.esAdicional,
-      ...COLUMNAS_DE_FUSION.filter(
-        (columna) =>
-          columna !== "personal" &&
-          columna !== "telefono" &&
-          columna !== "observaciones" &&
-          columna !== "horario",
-      ).map((columna) => valorDeColumna(operativo, columna)),
-    ]);
-  }
-  if (operativo.personal.length !== 1) return null;
-  return JSON.stringify([
-    "F8",
-    operativo.cuadroFecha,
-    operativo.personal[0].funcionarioId,
-    operativo.esAdicional,
-    ...COLUMNAS_DE_FUSION.map((columna) => valorDeColumna(operativo, columna)),
-  ]);
-};
 
 /**
  * Anchos (2026-10-13). Formulario, Personal y Tipo de control se parten en varias líneas
@@ -256,6 +187,12 @@ const VerOperativo = createContext<((operativoId: number) => void) | undefined>(
 const Destacado = createContext<number | null>(null);
 
 /**
+ * Cuántos códigos tiene cada registro (`grupoRegistro`) en TODO el listado (2026-10-30), para que
+ * el «(n)» y «16 controles · 2 zonas» no cuenten solo lo que entra en la página o en el filtro.
+ */
+const TotalesPorRegistro = createContext<ReadonlyMap<string, number> | undefined>(undefined);
+
+/**
  * Los atributos de la PRIMERA fila de un operativo: su ancla (`data-operativo-id`) para que la
  * nota «Comparte con X» la encuentre, y el destello si es la pedida (`useDestelloDeFila`).
  */
@@ -296,6 +233,12 @@ type TablaOperativosProps = {
     esCabeza: boolean,
   ) => ReactNode;
   /**
+   * REGISTRO POR ZONAS DEL 8 (2026-10-31): las acciones del registro COMPLETO, una vez en la celda
+   * combinada. El operativo es UNO aunque tenga varios códigos: Editar, Ver detalle y Eliminar
+   * actúan sobre todos. Sin ella, cae a `accionesFilaPatrulla` con la cabeza.
+   */
+  accionesRegistro?: (cabeza: Operativo, grupo: Operativo[]) => ReactNode;
+  /**
    * Clases de la columna de acciones (2026-10-13). P-02 la fija al ancho de su grupo y la alinea
    * a la derecha; sin ella, la de siempre.
    */
@@ -320,6 +263,8 @@ type TablaOperativosProps = {
   onVerOperativo?: (operativoId: number) => void;
   /** La fila que destella porque la pidió una nota «Comparte con X» (`useDestelloDeFila`). */
   destacadoId?: number | null;
+  /** Códigos por registro en todo el listado (`useTablaOperativos`). Sin él, cuenta la página. */
+  totalesPorRegistro?: ReadonlyMap<string, number>;
 };
 
 const TablaOperativos: FC<TablaOperativosProps> = ({
@@ -330,19 +275,21 @@ const TablaOperativos: FC<TablaOperativosProps> = ({
   onFiltroChange,
   acciones,
   accionesFilaPatrulla,
+  accionesRegistro,
   columnaAcciones = COLUMNA_ACCIONES,
   resaltadoId = null,
   agruparPorFecha = false,
   conteoPorFecha,
   onVerOperativo,
   destacadoId = null,
+  totalesPorRegistro,
 }) => {
   const conFiltros = Boolean(onFiltroChange);
   // La columna de acciones existe si hay acción por operativo O de patrulla.
   const hayAcciones = Boolean(acciones ?? accionesFilaPatrulla);
   const totalColumnas = columnas.length + (hayAcciones ? 1 : 0);
 
-  const grupos = agruparPorClave(operativos, claveDeFusion);
+  const grupos = gruposDeOperativos(operativos);
   const cuantosEl = (fecha: string): number =>
     conteoPorFecha?.[fecha] ??
     operativos.filter((operativo) => operativo.cuadroFecha === fecha).length;
@@ -351,6 +298,7 @@ const TablaOperativos: FC<TablaOperativosProps> = ({
     <ConColumnaTransporte.Provider value={columnas.includes("transporte")}>
     <VerOperativo.Provider value={onVerOperativo}>
     <Destacado.Provider value={destacadoId}>
+    <TotalesPorRegistro.Provider value={totalesPorRegistro}>
     <div className="overflow-x-auto">
       {/*
         SIN `table-zebra`: rayaba por `<tr>`, y un operativo (o un grupo de copias del 8) puede
@@ -433,12 +381,29 @@ const TablaOperativos: FC<TablaOperativosProps> = ({
                   La PATRULLA (Form 5/6, `esLote`) va SIEMPRE por su componente, aunque
                   lleve un solo código: así sus acciones fusionadas se ofrecen desde el primero.
                 */}
-                {grupo[0].esLote ? (
+                {/*
+                  Registro por zonas con más de una zona —o con códigos que el filtro dejó fuera—:
+                  dos niveles. Con una sola zona, como antes (`GrupoForm6Operativos`).
+                */}
+                {esRegistroPorZonas(grupo[0]) &&
+                (bloquesDeOperativos(grupo).length > 1 ||
+                  (totalesPorRegistro?.get(grupo[0].grupoRegistro) ?? 0) > grupo.length) ? (
+                <GrupoPorZonasOperativos
+                  operativos={grupo}
+                  columnas={columnas}
+                  acciones={acciones}
+                  accionesFilaPatrulla={accionesFilaPatrulla}
+                  accionesRegistro={accionesRegistro}
+                  claseAcciones={columnaAcciones.td}
+                  bandaGris={indiceGrupo % 2 === 0}
+                />
+              ) : grupo[0].esLote ? (
                 <GrupoForm6Operativos
                   operativos={grupo}
                   columnas={columnas}
                   acciones={acciones}
                   accionesFilaPatrulla={accionesFilaPatrulla}
+                  accionesRegistro={accionesRegistro}
                   claseAcciones={columnaAcciones.td}
                   bandaGris={indiceGrupo % 2 === 0}
                 />
@@ -466,6 +431,7 @@ const TablaOperativos: FC<TablaOperativosProps> = ({
         </tbody>
       </table>
     </div>
+    </TotalesPorRegistro.Provider>
     </Destacado.Provider>
     </VerOperativo.Provider>
     </ConColumnaTransporte.Provider>
@@ -623,7 +589,9 @@ const CeldaConductor: FC<{
   operativo: Operativo;
   rowSpan?: number;
   alin: string;
-}> = ({ operativo, rowSpan, alin }) => {
+  /** Una línea de contexto debajo (2026-10-30): «Prioridad: <zona principal>». */
+  pie?: string | null;
+}> = ({ operativo, rowSpan, alin, pie }) => {
   const conTransporte = useContext(ConColumnaTransporte);
   const asignados = operativo.transporteAsignado ?? [];
   const propios =
@@ -679,6 +647,7 @@ const CeldaConductor: FC<{
   return (
     <td className={`px-2 py-1 ${alin}`} rowSpan={rowSpan}>
       {contenido}
+      {pie && <span className="mt-1 block text-xs text-app-muted">{pie}</span>}
     </td>
   );
 };
@@ -693,9 +662,15 @@ const Celda: FC<{
   rowSpan?: number;
   /** Centra la celda: los grupos de copias del 8 la fusionan y el dato va centrado. */
   centrado?: boolean;
-}> = ({ operativo, columna, rowSpan, centrado }) => {
+  /**
+   * Registro por zonas (2026-10-31): centrada solo en vertical —el texto sigue a la izquierda—,
+   * como todas las celdas combinadas del bloque, y con el borde que abre la zona si toca.
+   */
+  alMedio?: boolean;
+  borde?: string;
+}> = ({ operativo, columna, rowSpan, centrado, alMedio, borde }) => {
   const texto = valorDeColumna(operativo, columna);
-  const alin = centrado ? "align-middle text-center" : "align-top";
+  const alin = `${centrado ? "align-middle text-center" : alMedio ? "align-middle" : "align-top"}${borde ? ` ${borde}` : ""}`;
   const verOperativo = useContext(VerOperativo);
 
   if (columna === "conductor") {
@@ -709,6 +684,8 @@ const Celda: FC<{
         campo={CAMPO_ALERTADO[columna as keyof typeof CAMPO_ALERTADO]}
         rowSpan={rowSpan}
         centrado={centrado}
+        alMedio={alMedio}
+        className={borde}
       >
         {columna === "observaciones" ? (
           // Una tarjeta por nota (2026-10-19), con la compartida: `NotasObservacion`, el mismo
@@ -993,10 +970,10 @@ const GrupoForm8Operativos: FC<{
  * cualquier otro operativo—, para que la patrulla recién registrada salga alineada con el resto y
  * no como un bloque centrado aparte.
  *
- * ACCIONES (2026-09-18; grupo único desde el 2026-10-13): la patrulla es UN operativo. Cada fila
- * lleva su grupo en la columna «Acciones» (`accionesFilaPatrulla`): la acción principal solo en la
- * PRIMERA —«Editar» para el registrante, «Agregar Personal» para quien aporta— y en CADA una el
- * menú con el «Eliminar» de esa persona. Sin él, cae a la acción por operativo.
+ * ACCIONES (2026-09-18; grupo único desde el 2026-10-13): el registro es UN operativo. La PATRULLA
+ * (5/6) lleva desde el 2026-10-31 UNA celda combinada sobre todos sus códigos, «Todo el operativo»
+ * (`accionesRegistro`): sin «Eliminar» por persona. El lote del 8 que no es patrulla sigue con su
+ * grupo por fila (`accionesFilaPatrulla`). Sin ninguno, cae a la acción por operativo.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 const GrupoForm6Operativos: FC<{
@@ -1008,6 +985,8 @@ const GrupoForm6Operativos: FC<{
     grupo: Operativo[],
     esCabeza: boolean,
   ) => ReactNode;
+  /** Las acciones de la patrulla COMPLETA (2026-10-31): una vez, en una celda combinada. */
+  accionesRegistro?: (cabeza: Operativo, grupo: Operativo[]) => ReactNode;
   claseAcciones?: string;
   bandaGris: boolean;
 }> = ({
@@ -1015,10 +994,14 @@ const GrupoForm6Operativos: FC<{
   columnas,
   acciones,
   accionesFilaPatrulla,
+  accionesRegistro,
   claseAcciones = "",
   bandaGris,
 }) => {
   const destacadoId = useContext(Destacado);
+  // La patrulla (5/6) lleva sus acciones UNA vez, sobre todos sus códigos (2026-10-31).
+  const esPatrullaConAcciones =
+    Boolean(accionesRegistro) && operativos[0]?.formulario.esPatrulla === true;
   // ORDEN DETERMINISTA DE LA PATRULLA (2026-09-18). Los códigos del grupo pueden llegar en distinto
   // orden según la pantalla (P-01 antepone los aportes recién puestos; P-02 los trae del servidor).
   // Se ordenan por identificador para que la CABEZA —de la que cuelgan «Editar»/«Agregar Personal»—
@@ -1186,12 +1169,18 @@ const GrupoForm6Operativos: FC<{
             })}
 
             {/*
-              Acciones en su columna, un grupo por fila: la acción principal del grupo UNA vez, en la
-              primera, y el «Eliminar» de cada persona en SU fila. La celda NO se fusiona: así el
-              «Eliminar» sale en Acciones, por persona. Sin `accionesFilaPatrulla`, cae a la acción
-              por operativo.
+              LA PATRULLA (5/6) ES UN OPERATIVO (2026-10-31): sus acciones van UNA vez, en una celda
+              combinada sobre todos sus códigos («Todo el operativo», `accionesRegistro`), y actúan
+              sobre toda la patrulla. Ya no hay «Eliminar» por persona: quitar a una sola se hace en
+              «Editar operativo». El lote del 8 que no es patrulla sigue con una celda por fila.
             */}
-            {accionesFilaPatrulla ? (
+            {esPatrullaConAcciones ? (
+              indice === 0 && (
+                <td className={`px-2 py-1 align-middle ${claseAcciones}`} rowSpan={total}>
+                  {accionesRegistro?.(cabeza, ordenados)}
+                </td>
+              )
+            ) : accionesFilaPatrulla ? (
               <td className={`px-2 py-1 align-top ${claseAcciones}`}>
                 {accionesFilaPatrulla(operativo, ordenados, indice === 0)}
               </td>
@@ -1203,6 +1192,213 @@ const GrupoForm6Operativos: FC<{
           </tr>
         );
       })}
+    </>
+  );
+};
+
+/** Las zonas de un registro por zonas del listado (ver `bloquesDeZona`). */
+const bloquesDeOperativos = (operativos: readonly Operativo[]): BloqueDeZona<Operativo>[] =>
+  bloquesDeZona(operativos, {
+    zonal: (operativo) => valorDeColumna(operativo, "zonal"),
+    punto: (operativo) => valorDeColumna(operativo, "punto"),
+    tipo: (operativo) => valorDeColumna(operativo, "tipoControl"),
+    instituciones: (operativo) => operativo.instituciones.join(", "),
+    identificador: (operativo) => operativo.identificador,
+    esPrincipal: (operativo) => operativo.esZonaPrincipal,
+  });
+
+/** El borde que abre cada zona: separa un bloque de zona del siguiente, como en el Excel. */
+const BORDE_ZONA = "border-t border-base-300";
+
+/** Columnas que cambian por zona: abarcan solo las filas de su zona. */
+const COLUMNAS_DE_ZONA: readonly ColumnaOperativo[] = ["zonal", "punto", "tipoControl"];
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * EL REGISTRO POR ZONAS DEL 8, EN DOS NIVELES. 2026-10-30 (igual que la Matriz y su PDF).
+ *
+ *   · lo del OPERATIVO —formulario, horario, persona, teléfono, transporte, conductor, estado,
+ *     notas y ACCIONES— es una celda que abarca todas las filas;
+ *   · lo de la ZONA —zonal (con «IG-001 a IG-010 · 10 controles» y «Zona principal»), punto y
+ *     tipo— abarca solo las filas de su zona, y cada zona abre con un borde;
+ *   · el identificador va por fila, con la marca de su zona (Z1, Z2…).
+ * El «(n)» y «16 controles · 2 zonas» cuentan el registro entero (`TotalesPorRegistro`). Con una
+ * sola zona, el registro sigue por `GrupoForm6Operativos`, sin cambios.
+ *
+ * LAS ACCIONES SON DEL REGISTRO COMPLETO (2026-10-31): el operativo es UNO aunque tenga varios
+ * códigos. Van una vez, en la celda combinada (`accionesRegistro`), y la página las arma sobre TODO
+ * el registro: «Editar» abre el cajón con todas sus zonas (`editarPorZonas`), «Ver detalle» el
+ * registro completo y «Eliminar» retira todos sus códigos (`DELETE /operativos/registro/:grupo`).
+ * Antes se pasaba la cabeza a `accionesFilaPatrulla` y «Eliminar» borraba solo el primer código.
+ * Lo mismo vale para la patrulla 5/6 (2026-10-31): sus acciones van una vez, sin «Eliminar» por persona.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+const GrupoPorZonasOperativos: FC<{
+  operativos: Operativo[];
+  columnas: ColumnaOperativo[];
+  acciones?: (operativo: Operativo) => ReactNode;
+  accionesFilaPatrulla?: (
+    operativo: Operativo,
+    grupo: Operativo[],
+    esCabeza: boolean,
+  ) => ReactNode;
+  /** Las acciones del registro COMPLETO (2026-10-31): Editar, Ver detalle y Eliminar actúan sobre todo. */
+  accionesRegistro?: (cabeza: Operativo, grupo: Operativo[]) => ReactNode;
+  claseAcciones?: string;
+  bandaGris: boolean;
+}> = ({
+  operativos,
+  columnas,
+  acciones,
+  accionesFilaPatrulla,
+  accionesRegistro,
+  claseAcciones = "",
+  bandaGris,
+}) => {
+  const destacadoId = useContext(Destacado);
+  const totales = useContext(TotalesPorRegistro);
+  const bloques = bloquesDeOperativos(operativos);
+  const filas = bloques.flatMap((bloque) => bloque.filas);
+  const cabeza = filas[0];
+  const total = filas.length;
+  const enElRegistro = totales?.get(cabeza.grupoRegistro) ?? total;
+  const persona = filasDePersonal(cabeza)[0];
+  const resumen = resumenDelRegistro(bloques, enElRegistro);
+
+  return (
+    <>
+      {bloques.map((bloque) =>
+        bloque.filas.map((operativo, enLaZona) => {
+          const indice = filas.indexOf(operativo);
+          const abarcaZona = bloque.filas.length > 1 ? bloque.filas.length : undefined;
+          return (
+            <tr
+              key={operativo.id}
+              {...anclaDeFila(operativo.id)}
+              className={`${claseDestello(operativo.id, destacadoId)}${bandaGris ? "bg-base-200 " : ""}hover:bg-primary/5`}
+            >
+              {columnas.map((columna) => {
+                if (columna === "identificador") {
+                  return (
+                    <td
+                      key={columna}
+                      className={`px-2 py-1 align-top${enLaZona === 0 ? ` ${BORDE_ZONA}` : ""}`}
+                    >
+                      <span className="whitespace-nowrap">
+                        <Insignia
+                          variante={bloque.esPrincipal ? "suave" : "neutro"}
+                          title={bloque.zonal}
+                          className="mr-1"
+                        >
+                          {bloque.marca}
+                        </Insignia>
+                        <span className="font-mono text-xs font-semibold">
+                          {operativo.identificador}
+                        </span>
+                      </span>
+                    </td>
+                  );
+                }
+
+                if (COLUMNAS_DE_ZONA.includes(columna)) {
+                  if (enLaZona !== 0) return null;
+                  if (columna === "zonal") {
+                    return (
+                      <td
+                        key={columna}
+                        // Ancho mínimo (2026-10-31): «Zonal La Mariscal» en una o dos líneas y el
+                        // rango «IG-001 a IG-010 · 10 controles» en una sola.
+                        className={`min-w-[11rem] px-2 py-1 align-middle ${BORDE_ZONA}`}
+                        rowSpan={abarcaZona}
+                      >
+                        <span className="block font-semibold text-app-strong">{bloque.zonal}</span>
+                        <span className="block whitespace-nowrap text-xs text-app-muted">
+                          {bloque.rango}
+                        </span>
+                        {bloque.esPrincipal && (
+                          <span className="block text-xs font-semibold text-primary">
+                            Zona principal
+                          </span>
+                        )}
+                      </td>
+                    );
+                  }
+                  return (
+                    <Celda
+                      key={columna}
+                      operativo={bloque.filas[0]}
+                      columna={columna}
+                      rowSpan={abarcaZona}
+                      alMedio
+                      borde={BORDE_ZONA}
+                    />
+                  );
+                }
+
+                // Lo del operativo: una vez, en la primera fila, abarcando el registro entero.
+                if (indice !== 0) return null;
+                if (columna === "personal") {
+                  return (
+                    <CeldaAlerta
+                      key={columna}
+                      alertas={cabeza.alertas}
+                      campo="personal"
+                      rowSpan={total}
+                      alMedio
+                      pie={resumen}
+                    >
+                      {persona &&
+                        nombreConCargo(`${persona.nombre} (${enElRegistro})`, persona.cargo)}
+                    </CeldaAlerta>
+                  );
+                }
+                if (columna === "telefono") {
+                  return (
+                    <td
+                      key={columna}
+                      className="px-2 py-1 align-middle whitespace-nowrap text-xs"
+                      rowSpan={total}
+                    >
+                      <TextoTelefono telefono={persona?.telefono ?? null} />
+                    </td>
+                  );
+                }
+                if (columna === "conductor") {
+                  return (
+                    <CeldaConductor
+                      key={columna}
+                      operativo={cabeza}
+                      rowSpan={total}
+                      alin="align-middle"
+                      pie={prioridadDelTransporte(bloques)}
+                    />
+                  );
+                }
+                return (
+                  <Celda
+                    key={columna}
+                    operativo={cabeza}
+                    columna={columna}
+                    rowSpan={total}
+                    alMedio
+                  />
+                );
+              })}
+
+              {/* Las acciones, UNA vez por operativo: una celda que abarca el registro entero. */}
+              {indice === 0 && (accionesRegistro || accionesFilaPatrulla || acciones) && (
+                <td className={`px-2 py-1 align-middle ${claseAcciones}`} rowSpan={total}>
+                  {accionesRegistro
+                    ? accionesRegistro(cabeza, filas)
+                    : accionesFilaPatrulla
+                      ? accionesFilaPatrulla(cabeza, filas, true)
+                      : acciones?.(cabeza)}
+                </td>
+              )}
+            </tr>
+          );
+        }),
+      )}
     </>
   );
 };

@@ -36,9 +36,11 @@ import type { RolDepartamental } from "../config/env.ts";
 import type { Operativo, PersonaAsignada } from "../interfaces/Operativo.ts";
 import { nombreDePersona, type PersonaElegible } from "../interfaces/Personal.ts";
 import { OperativoService } from "../services/operativo.service.ts";
+import { identificadorCorto } from "../utils/rangoIdentificadores.util.ts";
 import { funcionarioDelRechazo, presentarError } from "../utils/errorApi.util.ts";
 import {
   comoLoteDePersonal,
+  conReemplazo,
   esAporteDePatrulla,
   estadoPieDelBorrador,
   hayHorariosInvalidos,
@@ -137,10 +139,48 @@ export const useBorradorAporte = ({
     [operativo, roles],
   );
 
+  // PATRULLA (2026-10-31): quién reemplaza a quién (entrante → saliente original). Viaja como
+  // `reemplazaA` y el servidor conserva el código.
+  const [reemplazos, setReemplazos] = useState<ReadonlyMap<number, number>>(() => new Map());
+
   const quitar = useCallback((funcionarioId: number) => {
     setRechazo(null);
     setPersonal((actual) => actual.filter((fila) => fila.funcionarioId !== funcionarioId));
+    setReemplazos((actuales) => {
+      if (!actuales.has(funcionarioId)) return actuales;
+      const siguiente = new Map(actuales);
+      siguiente.delete(funcionarioId);
+      return siguiente;
+    });
   }, []);
+
+  /**
+   * «Cambiar por…» de la patrulla (2026-10-31): la persona nueva ocupa el lugar —y al guardar el
+   * CÓDIGO— de quien sale, con su mismo horario. Nada se guarda todavía.
+   */
+  const cambiar = useCallback(
+    (salienteId: number, entrante: PersonaElegible) => {
+      if (!operativo) return;
+      setRechazo(null);
+      setPersonal((actual) =>
+        actual.map((fila) =>
+          fila.funcionarioId === salienteId
+            ? {
+                ...fila,
+                funcionarioId: entrante.id,
+                nombre: nombreDePersona(entrante),
+                area: entrante.area,
+                telefono: null,
+                cargo: entrante.cargo?.trim() || null,
+                asignadoPorRol: rolQueAgrega(operativo, roles) as RolDepartamental,
+              }
+            : fila,
+        ),
+      );
+      setReemplazos((actuales) => conReemplazo(actuales, salienteId, entrante.id));
+    },
+    [operativo, roles],
+  );
 
   const cambiarHorario = useCallback(
     (funcionarioId: number, horaInicio: string, horaFin: string) => {
@@ -166,18 +206,34 @@ export const useBorradorAporte = ({
     [operativo, roles],
   );
 
-  // El rótulo de cada persona nueva: «Nuevo» o, en la patrulla, el código que tendrá.
+  // El rótulo de cada persona nueva: «Nuevo» o, en la patrulla, el código que tendrá. Quien
+  // reemplaza a otro conserva su código: «IGECU-001 · cambio» (2026-10-31).
   const rotulosNuevos = useMemo(
     () =>
       new Map(
         personal
           .filter((fila) => resumen.idsNuevos.has(fila.funcionarioId))
-          .map((fila) => [
-            fila.funcionarioId,
-            rotuloDeNuevo(fila.area, esPatrulla, prefijosPorArea),
-          ]),
+          .map((fila) => {
+            const saliente = reemplazos.get(fila.funcionarioId);
+            const codigo = saliente !== undefined ? inicial.codigoDe.get(saliente) : undefined;
+            return [
+              fila.funcionarioId,
+              codigo
+                ? `${identificadorCorto(codigo)} · cambio`
+                : rotuloDeNuevo(fila.area, esPatrulla, prefijosPorArea),
+            ];
+          }),
       ),
-    [personal, resumen, esPatrulla, prefijosPorArea],
+    [personal, resumen, esPatrulla, prefijosPorArea, reemplazos, inicial],
+  );
+
+  /** El código de quien ya estaba en la patrulla («IGECU-001»), para pintarlo junto a su nombre. */
+  const codigoDe = useCallback(
+    (funcionarioId: number): string | null => {
+      const codigo = inicial.codigoDe.get(funcionarioId);
+      return codigo ? identificadorCorto(codigo) : null;
+    },
+    [inicial],
   );
 
   /**
@@ -192,7 +248,7 @@ export const useBorradorAporte = ({
       const guardado = await conLiberacion((confirmarLiberacion) =>
         OperativoService.guardarPersonal(
           operativo.id,
-          comoLoteDePersonal(personal),
+          comoLoteDePersonal(personal, reemplazos),
           confirmarLiberacion,
         ),
       );
@@ -207,7 +263,7 @@ export const useBorradorAporte = ({
     } finally {
       setGuardando(false);
     }
-  }, [conLiberacion, operativo, personal, esPatrulla]);
+  }, [conLiberacion, operativo, personal, reemplazos, esPatrulla]);
 
   return {
     iniciar,
@@ -217,6 +273,8 @@ export const useBorradorAporte = ({
     personal,
     agregar,
     quitar,
+    cambiar,
+    codigoDe,
     cambiarHorario,
     resumen,
     horariosInvalidos,

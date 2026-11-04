@@ -136,6 +136,13 @@ export const CATALOGO_PARAMETROS: Record<string, EntradaCatalogo> = {
 
   // ── Carga y fatiga ──
   PERIODO_EQUIDAD: en("carga", "Período de reparto de la carga", [REGISTRO]),
+  // Carga del personal por operativos del período (2026-10-30): la etiqueta Baja/Media/Alta.
+  CARGA_OP_MEDIA: en("carga", "Carga del personal · operativos para Media", [
+    REGISTRO,
+  ]),
+  CARGA_OP_ALTA: en("carga", "Carga del personal · operativos para Alta", [
+    REGISTRO,
+  ]),
   EQUIDAD_MARGEN: en("carga", "Margen de equidad", [REGISTRO]),
   FATIGA_UMBRAL_AMBAR: en("carga", "Índice de fatiga · paso a ámbar", [
     REGISTRO,

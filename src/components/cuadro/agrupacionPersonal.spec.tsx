@@ -39,6 +39,7 @@ import {
   COLUMNAS_SESION,
   filtrarOperativos,
 } from "../../utils/listadoOperativos.util.ts";
+import { paginaDelOperativo, paginarPorGrupos } from "../../utils/grupoOperativos.util.ts";
 
 // ─────────────────────────── P-01 y P-02 ───────────────────────────
 
@@ -861,46 +862,134 @@ describe("la celda Personal muestra el cargo del Maestro bajo el nombre", () => 
 });
 
 /*
-  REGISTRO POR ZONAS DEL 8 (2026-10-28) en Mis operativos: NICOLE atiende Calderón (la principal,
-  IG-043) y La Delicia (IG-030 e IG-031). UN bloque, la principal primero, y zonal, punto y tipo
-  con una línea por zona.
+  REGISTRO POR ZONAS DEL 8, EN DOS NIVELES (2026-10-30), en Mis operativos. VIZCAINO TRUJILLO atiende
+  La Mariscal (la principal, IG-001 a IG-010) y Manuela Sáenz (IG-011 a IG-016): lo del operativo
+  —persona, transporte, acciones— abarca las 16 filas; zonal, punto y tipo, solo las de su zona.
+  Y la paginación cuenta el registro como UN operativo: nunca lo parte entre páginas.
 */
 describe("registro por zonas del formulario 8", () => {
-  it("es UN bloque, la zona principal primero, con una línea por zona y su rango", () => {
-    const nicole = persona(9, "SALTOS NICOLE", null, "08:00", "16:30");
-    const codigo = (id: number, identificador: string, zonal: string, esZonaPrincipal: boolean) =>
-      ({
-        ...operativo([nicole]),
-        id,
-        identificador,
-        grupoRegistro: "registro-nicole",
-        esLote: true,
-        esZonaPrincipal,
-        zonales: [{ id, codigo: zonal, nombre: zonal }],
-        puntoEncuentro: { nombre: `AMC ${zonal}` },
-      }) as Operativo;
+  const vizcaino = {
+    ...persona(197, "VIZCAINO TRUJILLO MAYRA ROCIO", "0987471922", "08:00", "13:00"),
+    cargo: "Inspectora General",
+  };
+  const numero = (n: number) => `IG-${String(n).padStart(3, "0")}-31-OCT-2026`;
+  const codigo = (n: number, zonal: string, esZonaPrincipal: boolean, grupo = "registro-vizcaino") =>
+    ({
+      ...operativo([vizcaino]),
+      id: n,
+      identificador: numero(n),
+      cuadroFecha: "2026-10-31",
+      grupoRegistro: grupo,
+      esLote: true,
+      esZonaPrincipal,
+      zonales: [{ id: n, codigo: zonal, nombre: zonal }],
+      puntoEncuentro: { nombre: `AMC ${zonal.replace("Zonal ", "")}` },
+    }) as Operativo;
+  // El servidor puede entregarlas en cualquier orden: Manuela Sáenz llega primero.
+  const registro = [
+    ...[11, 12, 13, 14, 15, 16].map((n) => codigo(n, "Zonal Manuela Sáenz", false)),
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => codigo(n, "Zonal La Mariscal", true)),
+  ];
+  const pintar = (operativos: Operativo[], totales?: ReadonlyMap<string, number>) =>
     render(
       <TablaOperativos
-        operativos={[
-          codigo(1, "IG-030-28-OCT-2026", "La Delicia", false),
-          codigo(2, "IG-031-28-OCT-2026", "La Delicia", false),
-          codigo(3, "IG-043-28-OCT-2026", "Calderón", true),
-        ]}
+        operativos={operativos}
         columnas={COLUMNAS_LISTADO}
-        acciones={() => <button type="button">Editar</button>}
+        acciones={(op) => <button type="button">{`Ver ${op.identificador}`}</button>}
+        totalesPorRegistro={totales}
       />,
     );
+  const celdaCon = (texto: string) => screen.getByText(texto).closest("td") as HTMLTableCellElement;
 
-    expect(screen.getByText("SALTOS NICOLE (3)")).toBeInTheDocument();
-    const zonales = within(screen.getByRole("list", { name: "Zonal por zona" }))
-      .getAllByRole("listitem")
-      .map((linea) => linea.textContent);
-    expect(zonales).toEqual(["Calderón · IG-043", "La Delicia · IG-030 a IG-031"]);
-    const puntos = within(screen.getByRole("list", { name: "Punto por zona" }))
-      .getAllByRole("listitem")
-      .map((linea) => linea.textContent);
-    expect(puntos).toEqual(["AMC Calderón", "AMC La Delicia"]);
-    const orden = screen.getAllByText(/^IG-0\d\d-28-OCT-2026$/).map((celda) => celda.textContent);
-    expect(orden).toEqual(["IG-043-28-OCT-2026", "IG-030-28-OCT-2026", "IG-031-28-OCT-2026"]);
+  it("persona con cargo, (16) y «16 controles · 2 zonas», y «Prioridad» bajo el conductor", () => {
+    pintar(registro);
+
+    expect(celdaCon("VIZCAINO TRUJILLO MAYRA ROCIO (16)").rowSpan).toBe(16);
+    expect(screen.getByText("Inspectora General")).toBeInTheDocument();
+    expect(screen.getByText("16 controles · 2 zonas")).toBeInTheDocument();
+    expect(celdaCon("Prioridad: Zonal La Mariscal").rowSpan).toBe(16);
+  });
+
+  it("cada zona es su bloque, la principal primero, con su rango y sus marcas Z1/Z2", () => {
+    pintar(registro);
+
+    const mariscal = celdaCon("Zonal La Mariscal");
+    expect(mariscal.rowSpan).toBe(10);
+    expect(within(mariscal).getByText("IG-001 a IG-010 · 10 controles")).toBeInTheDocument();
+    expect(within(mariscal).getByText("Zona principal")).toBeInTheDocument();
+    const saenz = celdaCon("Zonal Manuela Sáenz");
+    expect(saenz.rowSpan).toBe(6);
+    expect(within(saenz).getByText("IG-011 a IG-016 · 6 controles")).toBeInTheDocument();
+    expect(celdaCon("AMC Manuela Sáenz").rowSpan).toBe(6);
+
+    const identificadores = screen
+      .getAllByText(/^IG-0\d\d-31-OCT-2026$/)
+      .map((nodo) => nodo.closest("td")?.textContent);
+    expect(identificadores).toEqual([
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `Z1${numero(n)}`),
+      ...[11, 12, 13, 14, 15, 16].map((n) => `Z2${numero(n)}`),
+    ]);
+  });
+
+  it("todas las celdas combinadas van centradas en vertical, del operativo y de la zona", () => {
+    const { container } = pintar(registro);
+
+    const combinadas = [...container.querySelectorAll("td[rowspan]")] as HTMLTableCellElement[];
+    expect(combinadas.length).toBeGreaterThan(0);
+    for (const celda of combinadas) {
+      expect(celda.classList.contains("align-middle")).toBe(true);
+      expect(celda.classList.contains("align-top")).toBe(false);
+    }
+  });
+
+  it("el separador abre cada zona en Identificador, Zonal, Punto y Tipo; el rango en una línea", () => {
+    pintar(registro);
+
+    const abre = (texto: string) =>
+      (screen.getByText(texto, { exact: false }).closest("td") as HTMLTableCellElement).classList;
+    expect(abre(numero(11)).contains("border-t")).toBe(true);
+    expect(abre(numero(12)).contains("border-t")).toBe(false);
+    expect(abre("Zonal Manuela Sáenz").contains("border-t")).toBe(true);
+    expect(abre("AMC Manuela Sáenz").contains("border-t")).toBe(true);
+    // La primera fila de Z2 abre con borde en sus cuatro celdas: identificador, zonal, punto y tipo.
+    const filaZ2 = screen.getByText(numero(11), { exact: false }).closest("tr") as HTMLElement;
+    expect(filaZ2.querySelectorAll("td.border-t")).toHaveLength(4);
+    expect(screen.getByText("IG-011 a IG-016 · 6 controles").classList).toContain("whitespace-nowrap");
+  });
+
+  it("las acciones van UNA vez por operativo, en una celda que abarca las 16 filas", () => {
+    pintar(registro);
+
+    const botones = screen.getAllByRole("button", { name: /^Ver IG-/ });
+    expect(botones).toHaveLength(1);
+    expect((botones[0].closest("td") as HTMLTableCellElement).rowSpan).toBe(16);
+  });
+
+  it("el (n) cuenta el registro entero aunque el filtro deje solo una zona", () => {
+    pintar(
+      registro.filter((op) => op.esZonaPrincipal),
+      new Map([["registro-vizcaino", 16]]),
+    );
+
+    expect(screen.getByText("VIZCAINO TRUJILLO MAYRA ROCIO (16)")).toBeInTheDocument();
+    expect(screen.getByText("16 controles · 1 zona")).toBeInTheDocument();
+  });
+
+  it("con 10 por página el registro entra completo en la página 1 y el siguiente pasa a la 2", () => {
+    const otro = { ...operativo([ULLOA]), id: 99, cuadroFecha: "2026-10-31" } as Operativo;
+    const primera = paginarPorGrupos([...registro, otro], 0, 10);
+
+    expect(primera.total).toBe(2);
+    expect(primera.filas).toHaveLength(17);
+    expect(paginarPorGrupos([...registro, otro], 1, 1).filas.map((op) => op.id)).toEqual([99]);
+    expect(paginaDelOperativo([...registro, otro], 99, 1)).toBe(1);
+    expect(paginaDelOperativo([...registro, otro], 16, 1)).toBe(0);
+  });
+
+  it("con una sola zona sigue como antes: zonal y punto en listas", () => {
+    pintar([1, 2].map((n) => codigo(n, "Zonal La Mariscal", true)));
+
+    expect(screen.getByRole("list", { name: "Zonal por zona" })).toBeInTheDocument();
+    expect(screen.queryByText("Zona principal")).toBeNull();
   });
 });

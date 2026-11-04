@@ -43,6 +43,7 @@ import BannerJornada from "./BannerJornada.tsx";
 import CeldaAlerta from "../cuadro/CeldaAlerta.tsx";
 import { nombreConCargo } from "../cuadro/NombreConCargo.tsx";
 import NotasDeFila, { ProveedorNotas } from "../cuadro/NotasDeFila.tsx";
+import GrupoPorZonas from "../cuadro/GrupoPorZonas.tsx";
 import { useAnclaDeFila } from "../../hooks/useAnclaDeFila.ts";
 import FilaSinCarga from "./FilaSinCarga.tsx";
 import type { FilaJornada, SeccionJornada } from "../../interfaces/Jornada.ts";
@@ -57,6 +58,7 @@ import {
   ordenarPorPersonaYZona,
 } from "../../utils/agrupacionForm8.util.ts";
 import {
+  esBloquePorZonas,
   esRegistroPorZonas,
   lineasDeZona,
   type LineaDeZona,
@@ -263,6 +265,18 @@ const TablaJornada: FC<TablaJornadaProps> = ({
  * varios `<tbody>` siguen alineados, pero el navegador los trata como grupos
  * independientes para el desplazamiento con teclado, y la jornada se lee de corrido.
  */
+/** Las columnas de la tabla sin «Acciones»: con más, la tabla pinta la acción de personal. */
+const COLUMNAS_SIN_ACCIONES = COLUMNAS.length - 1;
+
+/**
+ * El pendiente COLECTIVO de un registro: un área le falta solo si no la cubre NINGUNO de sus códigos
+ * (la intersección), como en la patrulla (`GrupoForm6`).
+ */
+const pendienteComun = (filas: readonly FilaJornada[]): AreaPersonal[] =>
+  filas
+    .map((fila) => fila.areasPendientesDelRol)
+    .reduce((comunes, propias) => comunes.filter((area) => propias.includes(area)));
+
 const Seccion: FC<{
   seccion: SeccionJornada;
   /** Cuántas columnas pinta la tabla (sin Acciones si nadie asigna personal). */
@@ -299,6 +313,27 @@ const Seccion: FC<{
           bloqueado={bloqueado}
           motivoBloqueo={motivoBloqueo}
           bandaGris={indiceGrupo % 2 === 0}
+        />
+      ) : esBloquePorZonas(grupo) ? (
+        // Registro por zonas con varias zonas (2026-10-31): la MISMA estructura de la Matriz.
+        <GrupoPorZonas
+          key={grupo[0].id}
+          filas={grupo}
+          bandaGris={indiceGrupo % 2 === 0}
+          acciones={
+            columnas > COLUMNAS_SIN_ACCIONES
+              ? (cabeza, filas) => (
+                  <AccionDePersonal
+                    fila={cabeza}
+                    seccion={seccion}
+                    onEditarPersonal={onEditarPersonal}
+                    bloqueado={bloqueado}
+                    motivoBloqueo={motivoBloqueo}
+                    areasPendientes={pendienteComun(filas)}
+                  />
+                )
+              : undefined
+          }
         />
       ) : grupo[0].esLote ? (
         <GrupoForm6
@@ -662,47 +697,68 @@ const RestoDeLaFila: FC<{
           className={`px-3 py-1 ${centrado ? "align-middle text-center" : "align-top"} ${BORDE_OPERATIVO}`}
           rowSpan={abarca}
         >
-          {seccion.puedeEditarPersonal && (
-            <>
-              {/* Icono con su tooltip (plantilla visual, 2026-10-24); apagado, el motivo. */}
-              <BotonIcono
-                icono="agregar"
-                rotulo="Agregar personal"
-                nombre={fila.identificador}
-                variante="acento"
-                motivo={bloqueado ? motivoBloqueo : null}
-                procesando={bloqueado}
-                alinear="fin"
-                onClick={() => onEditarPersonal(fila, seccion)}
-              />
-
-              {/*
-                QUÉ FALTA DE LO QUE A ESTE DEPARTAMENTO LE TOCA PONER.
-                Es el aviso por fila, y ocupa el sitio de la notificación que no existe:
-                cuando otro departamento registra el operativo, esta línea es lo que le dice
-                al que consulta que le toca mover ficha.
-
-                EN TEXTO NEUTRO Y A PROPÓSITO. El color de atención va en el resumen de la
-                cabecera, que se lee una vez; aquí, en una tabla de doce columnas y decenas de
-                filas, un distintivo de color por fila deja de señalar nada. Y el nombre se
-                escribe entero —nunca el código del enumerado— porque `NOMBRE_AREA` es la
-                única traducción del sistema.
-              */}
-              {(areasPendientes ?? fila.areasPendientesDelRol).length > 0 && (
-                <span className="mt-1 block text-xs text-app-muted">
-                  Falta{" "}
-                  {(areasPendientes ?? fila.areasPendientesDelRol)
-                    .map((area) => NOMBRE_AREA[area])
-                    .join(", ")}
-                </span>
-              )}
-            </>
-          )}
+          <AccionDePersonal
+            fila={fila}
+            seccion={seccion}
+            onEditarPersonal={onEditarPersonal}
+            bloqueado={bloqueado}
+            motivoBloqueo={motivoBloqueo}
+            areasPendientes={areasPendientes}
+          />
         </td>
       )}
     </>
   );
 };
+
+/**
+ * «Agregar personal» y el «Falta …» del departamento: la acción de la fila. Salió de
+ * `RestoDeLaFila` el 2026-10-31 para que la use también el registro por zonas (`GrupoPorZonas`).
+ */
+const AccionDePersonal: FC<{
+  fila: FilaJornada;
+  seccion: SeccionJornada;
+  onEditarPersonal: (fila: FilaJornada, seccion: SeccionJornada) => void;
+  bloqueado: boolean;
+  motivoBloqueo: string | null;
+  areasPendientes?: AreaPersonal[];
+}> = ({ fila, seccion, onEditarPersonal, bloqueado, motivoBloqueo, areasPendientes }) =>
+  seccion.puedeEditarPersonal ? (
+    <>
+      {/* Icono con su tooltip (plantilla visual, 2026-10-24); apagado, el motivo. */}
+      <BotonIcono
+        icono="agregar"
+        rotulo="Agregar personal"
+        nombre={fila.identificador}
+        variante="acento"
+        motivo={bloqueado ? motivoBloqueo : null}
+        procesando={bloqueado}
+        alinear="fin"
+        onClick={() => onEditarPersonal(fila, seccion)}
+      />
+
+      {/*
+        QUÉ FALTA DE LO QUE A ESTE DEPARTAMENTO LE TOCA PONER.
+        Es el aviso por fila, y ocupa el sitio de la notificación que no existe:
+        cuando otro departamento registra el operativo, esta línea es lo que le dice
+        al que consulta que le toca mover ficha.
+
+        EN TEXTO NEUTRO Y A PROPÓSITO. El color de atención va en el resumen de la
+        cabecera, que se lee una vez; aquí, en una tabla de doce columnas y decenas de
+        filas, un distintivo de color por fila deja de señalar nada. Y el nombre se
+        escribe entero —nunca el código del enumerado— porque `NOMBRE_AREA` es la
+        única traducción del sistema.
+      */}
+      {(areasPendientes ?? fila.areasPendientesDelRol).length > 0 && (
+        <span className="mt-1 block text-xs text-app-muted">
+          Falta{" "}
+          {(areasPendientes ?? fila.areasPendientesDelRol)
+            .map((area) => NOMBRE_AREA[area])
+            .join(", ")}
+        </span>
+      )}
+    </>
+  ) : null;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════

@@ -59,6 +59,8 @@ type PanelOperativosProps = {
     grupo: Operativo[],
     esCabeza: boolean,
   ) => ReactNode;
+  /** El registro por zonas del 8, COMPLETO (2026-10-31): sus acciones una vez, sobre todos sus códigos. */
+  accionesRegistro?: (cabeza: Operativo, grupo: Operativo[]) => ReactNode;
   /** Con varios días (P-02): una fila de cabecera por fecha. */
   agruparPorFecha?: boolean;
   /** Una línea bajo la paginación (P-02: «Ordenado por fecha…»). */
@@ -82,6 +84,7 @@ const PanelOperativos: FC<PanelOperativosProps> = ({
   mensajeVacio,
   acciones,
   accionesFilaPatrulla,
+  accionesRegistro,
   agruparPorFecha = false,
   pie,
   nota,
@@ -121,11 +124,13 @@ const PanelOperativos: FC<PanelOperativosProps> = ({
           acciones={acciones}
           // La patrulla (Form 5/6): su acción principal en la cabeza y el menú en cada fila.
           accionesFilaPatrulla={accionesFilaPatrulla}
+          accionesRegistro={accionesRegistro}
           columnaAcciones={COLUMNA_ACCIONES}
           agruparPorFecha={agruparPorFecha}
           conteoPorFecha={conteoPorFecha}
           onVerOperativo={irAOperativo}
           destacadoId={tabla.destacadoId}
+          totalesPorRegistro={tabla.totalesPorRegistro}
         />
 
         {tabla.coincidentes.length > 0 && (

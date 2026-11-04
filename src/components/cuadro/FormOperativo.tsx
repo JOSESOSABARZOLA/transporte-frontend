@@ -65,7 +65,7 @@ import {
   type FormikHelpers,
   type FormikProps,
 } from "formik";
-import { useContext, useEffect, useRef, useState, type FC, type Ref } from "react";
+import { useContext, useEffect, useRef, useState, type FC, type ReactNode, type Ref } from "react";
 
 import {
   esquemaOperativo,
@@ -104,7 +104,11 @@ import { conNotaPendiente } from "../../utils/notasOperativo.util.ts";
 import {
   conteoSemaforo,
   hayCargaCalculada,
+  horarioMasComun,
+  motivoCruces,
+  nivelDeCargaPersonal,
   NOMBRE_AREA,
+  type HorarioDelOperativo,
 } from "../../utils/personal.util.ts";
 import {
   CAMPOS_DEL_FORMULARIO,
@@ -132,6 +136,11 @@ import SelectorPersonal, {
   type PersonaAgregada,
 } from "./SelectorPersonal.tsx";
 import SelectorZonalPunto from "./SelectorZonalPunto.tsx";
+import {
+  conFaltaDeComposicion,
+  personalPorArea,
+} from "../../utils/personalPorArea.util.ts";
+import type { AreaPersonal } from "../../interfaces/Formulario.ts";
 import SelectorTipoControl from "./SelectorTipoControl.tsx";
 import SelectorTipoTransporte from "./SelectorTipoTransporte.tsx";
 import SugerenciaCompartirUnidad from "./SugerenciaCompartirUnidad.tsx";
@@ -148,6 +157,11 @@ export type VarianteFormOperativo = "pagina" | "drawer";
 export type ExtrasDelEnvio = {
   /** Se sumó la nota escrita sin «Agregar»: el aviso de éxito lo menciona. */
   notaPendienteAgregada: boolean;
+  /**
+   * EDITAR PATRULLA (2026-10-31): ¿cambiaron los datos comunes (no el personal)? Lo pone el cajón; si
+   * no cambiaron, solo se guarda el personal y no se envía el PATCH de la patrulla.
+   */
+  generalesCambiaron?: boolean;
 };
 
 /**
@@ -205,6 +219,10 @@ export type EstadoEnvio = {
   zonalesIds: number[];
   /** Ya se intentó enviar (`submitCount > 0`): el pie pasa de gris a rojo («Falta: …»). */
   intentado: boolean;
+  /** Cuántas personas elegidas se cruzan con otro operativo del día (2026-10-31): apaga Guardar. */
+  cruces: number;
+  /** Las áreas que le faltan a la patrulla (2026-11-04): el pie las nombra en ámbar, sin apagar. */
+  faltaComposicion: AreaPersonal[];
 };
 
 /**
@@ -213,11 +231,14 @@ export type EstadoEnvio = {
  */
 const ReporteroDeEstado: FC<{
   faltantes: string[];
+  cruces: number;
+  faltaComposicion: AreaPersonal[];
   onEstadoEnvio: (estado: EstadoEnvio) => void;
-}> = ({ faltantes, onEstadoEnvio }) => {
+}> = ({ faltantes, cruces, faltaComposicion, onEstadoEnvio }) => {
   const { values, dirty, submitCount } = useFormikContext<ValoresOperativo>();
   const intentado = submitCount > 0;
   const clave = faltantes.join("|");
+  const claveComposicion = faltaComposicion.join("|");
   // Como texto, para que el efecto no se dispare con cada arreglo nuevo de las mismas zonales.
   const zonales = values.zonalesIds.join(",");
 
@@ -227,8 +248,11 @@ const ReporteroDeEstado: FC<{
       hayCambios: dirty,
       zonalesIds: zonales === "" ? [] : zonales.split(",").map(Number),
       intentado,
+      cruces,
+      faltaComposicion:
+        claveComposicion === "" ? [] : (claveComposicion.split("|") as AreaPersonal[]),
     });
-  }, [clave, dirty, zonales, intentado, onEstadoEnvio]);
+  }, [clave, dirty, zonales, intentado, cruces, claveComposicion, onEstadoEnvio]);
 
   return null;
 };
@@ -311,9 +335,15 @@ const PieDelAlta: FC<{
   variante: VarianteFormOperativo;
   /** El texto de «listo» propio (registro por zonas, 2026-10-28). Sin él, el de siempre. */
   textoListo?: string;
+  /** «Revise los horarios · N personas se cruzan…» (2026-10-31): manda sobre el resto y apaga. */
+  motivoCruce: string | null;
+  /** Las áreas que le faltan a la patrulla (2026-11-04): ámbar y sin apagar «Registrar». */
+  faltaComposicion: AreaPersonal[];
 }> = ({
   variante,
   textoListo,
+  motivoCruce,
+  faltaComposicion,
   faltantes,
   efectivos,
   hayDatos,
@@ -326,7 +356,9 @@ const PieDelAlta: FC<{
   const { values, submitCount } = useFormikContext<ValoresOperativo>();
   const [confirmandoLimpiar, setConfirmandoLimpiar] = useState(false);
 
-  const estadoPie = textoListo
+  const estadoPie = motivoCruce
+    ? { tono: "error" as const, texto: motivoCruce }
+    : textoListo
     ? estadoPieDrawer({
         esEdicion: false,
         hayCambios: false,
@@ -335,14 +367,17 @@ const PieDelAlta: FC<{
         nombrarFaltantes: true,
         textoListo,
       })
-    : estadoPieAlta({
-        faltantes,
-        intentado: submitCount > 0,
-        efectivos,
-        tipoTransporte: values.tipoTransporte,
-        compartirCon:
-          values.eleccionCompartir === "COMPARTIR" ? values.compartirConIdentificador : null,
-      });
+    : conFaltaDeComposicion(
+        estadoPieAlta({
+          faltantes,
+          intentado: submitCount > 0,
+          efectivos,
+          tipoTransporte: values.tipoTransporte,
+          compartirCon:
+            values.eleccionCompartir === "COMPARTIR" ? values.compartirConIdentificador : null,
+        }),
+        faltaComposicion,
+      );
 
   return (
     <>
@@ -373,6 +408,7 @@ const PieDelAlta: FC<{
           tamano="lg"
           cargando={guardando}
           deshabilitado={bloqueado}
+          motivoDeshabilitado={motivoCruce}
         >
           {guardando ? "Guardando…" : textoAccion}
         </Boton>
@@ -502,8 +538,11 @@ type FormOperativoProps = {
   tramitePorLote?: boolean;
   /** Personal en solo lectura (2026-09-14, form 8 al editar): el resto del formulario sigue vivo. */
   personalBloqueado?: boolean;
-  /** Oculta el bloque de personal (2026-09-18, patrulla con su roster): solo los generales. */
-  personalOculto?: boolean;
+  /**
+   * El horario del operativo, FIJO (el aporte, 2026-10-31): quien se agrega lo hereda y no se edita.
+   * Sin él, en el alta arranca con la primera persona y al editar con el más común del personal.
+   */
+  horarioFijo?: HorarioDelOperativo | null;
   /** Al asignar una persona, propone su zonal (2026-09-24). Solo el alta. */
   proponerZonalDePersona?: boolean;
   /**
@@ -518,6 +557,12 @@ type FormOperativoProps = {
   rotulosNuevos?: ReadonlyMap<number, string>;
   /** Junto a quien llega en lectura, por qué (el aporte, 2026-10-29). */
   rotuloLectura?: string;
+  /**
+   * EDITAR PATRULLA (2026-10-31): el código de cada persona junto a su nombre y su «Cambiar por…».
+   * `detalleDePersona` reemplaza al de la zonal del Maestro (solo del registro por zonas).
+   */
+  detalleDePersona?: (persona: PersonaAgregada) => ReactNode;
+  accionDePersona?: (persona: PersonaAgregada) => ReactNode;
   /** Subtítulo del cajón «Reparto de carga» del alta (p. ej. «<formulario> · semana N»). */
   repartoSubtitulo?: string;
   /**
@@ -572,13 +617,15 @@ const FormOperativo: FC<FormOperativoProps> = ({
   onCambiarTramitePersona,
   tramitePorLote = false,
   personalBloqueado = false,
-  personalOculto = false,
+  horarioFijo = null,
   proponerZonalDePersona = false,
   idForm,
   onEstadoEnvio,
   idsNuevos,
   rotulosNuevos,
   rotuloLectura,
+  detalleDePersona,
+  accionDePersona,
   repartoSubtitulo,
   fechaJornada = null,
   operativoId = null,
@@ -613,6 +660,17 @@ const FormOperativo: FC<FormOperativoProps> = ({
   const [verReparto, setVerReparto] = useState(false);
 
   /*
+    HORARIO DEL OPERATIVO Y CRUCES (2026-10-31). El horario con que arranca se fija al montar: el del
+    aporte o, al editar, el más común del personal. El selector avisa cuántas personas elegidas se
+    cruzan con otro operativo del día; mientras haya alguna, el pie lo dice y no se guarda.
+  */
+  const [horarioInicial] = useState<HorarioDelOperativo | null>(() =>
+    horarioFijo ?? (modo === "edicion" ? horarioMasComun(personalAgregado) : null),
+  );
+  const [cruces, setCruces] = useState(0);
+  const motivoCruce = motivoCruces(cruces);
+
+  /*
     UNA PERSONA Y UN TIPO DE PERSONAL (2026-10-28): lo deciden dos datos del formulario, no su número.
     Al editar, el tipo queda fijado por la persona registrada (su prefijo ya está en el identificador).
   */
@@ -629,6 +687,12 @@ const FormOperativo: FC<FormOperativoProps> = ({
           fijo: tipoFijo,
         }
       : undefined;
+  /*
+    PERSONAL POR ÁREA (2026-11-04): con Inspector General y Técnico en las áreas del catálogo, una
+    pestaña por área y sin «Todas»; en la patrulla, el área que falta. Lo decide el catálogo, no el
+    número. El modo de un solo tipo (el 8) devuelve `null` y sigue con sus tarjetas.
+  */
+  const porArea = personalPorArea(catalogos, candidatos, personalAgregado);
   /** «IG para Inspector General e IT para Inspector Técnico», del catálogo. */
   const prefijosDelTipo = (catalogos?.prefijosPorArea ?? [])
     .map((fila) => `${fila.prefijo} para ${NOMBRE_AREA[fila.area].split(" - ")[0]}`)
@@ -677,6 +741,7 @@ const FormOperativo: FC<FormOperativoProps> = ({
             personal: "Indique el horario (inicio y fin) de cada persona asignada.",
           };
         }
+        if (motivoCruce) return { personal: `${motivoCruce}.` };
         return {};
       }}
       /*
@@ -764,7 +829,7 @@ const FormOperativo: FC<FormOperativoProps> = ({
 
         const deshabilitadoGenerales = bloqueado || soloPersonal;
 
-        const tarjetaPersonal = !personalOculto && (
+        const tarjetaPersonal = (
           <div
             // Destino del foco cuando lo que falta es el personal o su horario (`FocoAlPrimerError`).
             id={ID_BLOQUE_PERSONAL}
@@ -782,7 +847,7 @@ const FormOperativo: FC<FormOperativoProps> = ({
                     ref={refBotonReparto}
                     onClick={() => setVerReparto(true)}
                     expandido={verReparto}
-                    conteo={conteoSemaforo(candidatos)}
+                    conteo={conteoSemaforo(candidatos, nivelDeCargaPersonal)}
                   />
                 ) : undefined
               }
@@ -794,6 +859,7 @@ const FormOperativo: FC<FormOperativoProps> = ({
                 onAgregar={agregarConZonal}
                 onRetirar={onRetirarPersona}
                 tipoUnico={tipoUnicoDePersonal}
+                porArea={porArea}
                 onReemplazar={
                   porZonas && onReemplazarPersona && modo === "alta"
                     ? (salienteId, entrante) => {
@@ -824,19 +890,24 @@ const FormOperativo: FC<FormOperativoProps> = ({
                 listaCompacta
                 // El horario de cada persona, con sus dos campos a la vista (regla 14, RN-66).
                 horarioInline
+                horarioInicial={horarioInicial}
+                horarioFijo={horarioFijo !== null}
+                onCrucesCambian={setCruces}
                 conGuardarCambios={modo === "edicion"}
                 idsNuevos={idsNuevos}
                 rotulosNuevos={rotulosNuevos}
                 rotuloLectura={rotuloLectura}
+                accionDePersona={accionDePersona}
                 detalleDePersona={
-                  porZonas
+                  detalleDePersona ??
+                  (porZonas
                     ? (persona) => {
                         const zonal = zonalDelMaestro(persona.funcionarioId);
                         return `Zonal en el Maestro: ${
                           zonal === null ? "sin zonal" : (nombreDeZonal(zonal) ?? "otra zonal")
                         }`;
                       }
-                    : undefined
+                    : undefined)
                 }
                 // El título de la tarjeta («Personal y horario *») reemplaza al rótulo del bloque.
                 ocultarEtiqueta
@@ -1128,7 +1199,7 @@ const FormOperativo: FC<FormOperativoProps> = ({
             */}
             <div
               className={`grid grid-cols-1 gap-4 ${
-                !enCajon && !personalOculto ? "lg:grid-cols-[11fr_9fr] lg:items-start" : ""
+                !enCajon ? "lg:grid-cols-[11fr_9fr] lg:items-start" : ""
               }`}
             >
               {tarjetaPersonal}
@@ -1180,6 +1251,8 @@ const FormOperativo: FC<FormOperativoProps> = ({
                 guardando={guardando}
                 onLimpiar={onLimpiar}
                 onCancelar={onCancelar}
+                motivoCruce={motivoCruce}
+                faltaComposicion={porArea?.faltan ?? []}
                 textoListo={
                   porZonas
                     ? textoListoPorZonas(nombreTipoTransporte(values.tipoTransporte), zonas)
@@ -1188,9 +1261,14 @@ const FormOperativo: FC<FormOperativoProps> = ({
               />
             )}
 
-            <FocoAlPrimerError personalPrimero={!personalOculto} />
+            <FocoAlPrimerError personalPrimero />
             {onEstadoEnvio && (
-              <ReporteroDeEstado faltantes={faltantes} onEstadoEnvio={onEstadoEnvio} />
+              <ReporteroDeEstado
+                faltantes={faltantes}
+                cruces={cruces}
+                faltaComposicion={porArea?.faltan ?? []}
+                onEstadoEnvio={onEstadoEnvio}
+              />
             )}
             {onValoresCambian && (
               <ReporteroDeValores onValoresCambian={onValoresCambian} />

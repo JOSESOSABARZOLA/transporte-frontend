@@ -75,7 +75,7 @@ describe("RepartoCarga · contenido compartido", () => {
             cuotaJusta: 22,
             desviacionCarga: -11,
             nivelEquidad: "DEBAJO",
-            nivelFatiga: "AMBAR",
+            nivelCarga: "AMBAR",
           }),
         ]}
         cuota={22}
@@ -90,16 +90,16 @@ describe("RepartoCarga · contenido compartido", () => {
     const relleno = container.querySelector<HTMLDivElement>(".absolute.bg-warning");
     expect(relleno).not.toBeNull();
     expect(relleno?.style.width).toMatch(/^45\.4/);
-    // Color = fatiga AMBAR → `warning`, el MISMO tono que el badge «Carga media».
+    // Color = carga AMBAR → `warning`, el MISMO tono que el badge «Carga media».
     expect(screen.getByText("Carga Media").className).toContain("badge-warning");
   });
 
-  it("el color de la barra = la fatiga y coincide con el badge de la persona", () => {
+  it("el color de la barra = el nivel de carga y coincide con el badge de la persona", () => {
     const { container } = render(
       <RepartoCarga
         personas={[
-          persona({ id: 1, apellidos: "BAJA", indiceCarga: 5, nivelFatiga: "VERDE" }),
-          persona({ id: 2, apellidos: "ALTA", indiceCarga: 30, nivelFatiga: "ROJO" }),
+          persona({ id: 1, apellidos: "BAJA", indiceCarga: 5, nivelCarga: "VERDE" }),
+          persona({ id: 2, apellidos: "ALTA", indiceCarga: 30, nivelCarga: "ROJO" }),
         ]}
         cuota={15}
         idsAgregados={[]}
@@ -127,7 +127,7 @@ describe("RepartoCarga · contenido compartido", () => {
             indiceCarga: 25,
             desviacionCarga: 11.5,
             nivelEquidad: "ENCIMA",
-            nivelFatiga: "ROJO",
+            nivelCarga: "ROJO",
           }),
           persona({
             id: 2,
@@ -339,7 +339,7 @@ describe("RepartoCarga · contenido compartido", () => {
             elegible: false,
             motivo: "Ocupado 07H00–10H00 con OCFIJ-001",
             indiceCarga: 12,
-            nivelFatiga: "ROJO",
+            nivel: "ROJO",
           },
         ]}
         cuota={4}

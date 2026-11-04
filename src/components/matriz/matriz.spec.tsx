@@ -1088,61 +1088,84 @@ describe("un operativo que no es lote va suelto aunque tenga id de registro", ()
 });
 
 /*
-  REGISTRO POR ZONAS DEL 8 (2026-10-28): UN bloque por registro, una línea por zona con su rango, la
-  principal primero, y cada fila sigue sumando las columnas de la cabecera (la línea ocupa Zonal,
-  Punto y Tipo).
+  REGISTRO POR ZONAS DEL 8, EN DOS NIVELES (2026-10-30). VIZCAINO TRUJILLO atiende La Mariscal
+  (la principal, IG-001 a IG-010) y Manuela Sáenz (IG-011 a IG-016). Lo del operativo abarca las 16
+  filas; zonal, punto, tipo e instituciones abarcan solo las de su zona.
 */
 describe("registro por zonas del formulario 8", () => {
-  const nicole = {
-    funcionarioId: 9,
-    nombre: "SALTOS NICOLE",
-    telefono: null,
+  const vizcaino = {
+    funcionarioId: 197,
+    nombre: "VIZCAINO TRUJILLO MAYRA ROCIO",
+    telefono: "0987471922",
+    cargo: "Inspectora General",
     esResponsable: false,
     horaInicio: "08:00",
-    horaFin: "16:30",
+    horaFin: "13:00",
   };
-  const codigo = (id: number, identificador: string, zonal: string, esZonaPrincipal: boolean) =>
+  const numero = (n: number) => `IG-${String(n).padStart(3, "0")}-31-OCT-2026`;
+  const codigo = (n: number, zonal: string, esZonaPrincipal: boolean) =>
     fila({
-      id,
-      identificador,
-      grupoRegistro: "registro-nicole",
+      id: n,
+      identificador: numero(n),
+      grupoRegistro: "registro-vizcaino",
       esLote: true,
       esZonaPrincipal,
-      horario: "08H00 A 16H30",
+      horario: "08H00 A 13H00",
       esNocturno: false,
       zonales: [zonal],
-      puntoEncuentro: `AMC ${zonal}`,
+      puntoEncuentro: `AMC ${zonal.replace("Zonal ", "")}`,
       tipoControl: "CCF / ITCC",
-      personal: [nicole],
+      instituciones: ["AMC"],
+      personal: [vizcaino],
     });
+  // El servidor puede entregarlas en cualquier orden: Manuela Sáenz llega primero.
+  const filas = [
+    ...[11, 12, 13, 14, 15, 16].map((n) => codigo(n, "Zonal Manuela Sáenz", false)),
+    ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => codigo(n, "Zonal La Mariscal", true)),
+  ];
   const pintar = () =>
     render(
       <TablaMatriz
-        secciones={[
-          seccion({
-            numero: 8,
-            totalOperativos: 3,
-            filas: [
-              codigo(1, "IG-030", "La Delicia", true),
-              codigo(2, "IG-031", "La Delicia", true),
-              codigo(3, "IG-043", "Calderón", false),
-            ],
-          }),
-        ]}
+        secciones={[seccion({ numero: 8, totalOperativos: 16, filas })]}
         mensajeVacio="Sin datos"
       />,
     );
+  const celdaCon = (texto: string) => screen.getByText(texto).closest("td") as HTMLTableCellElement;
 
-  it("sale como UN bloque con una línea por zona, la principal primero", () => {
+  it("lo del operativo abarca las 16 filas: persona con cargo, (16) y «16 controles · 2 zonas»", () => {
     pintar();
 
-    expect(screen.getByText("SALTOS NICOLE (3)")).toBeInTheDocument();
-    const zonas = within(screen.getByRole("list", { name: "Zonas del registro" }))
-      .getAllByRole("listitem")
-      .map((linea) => linea.textContent);
-    expect(zonas).toEqual([
-      "La Delicia · AMC La Delicia · CCF / ITCC · IG-030 a IG-031",
-      "Calderón · AMC Calderón · CCF / ITCC · IG-043",
+    expect(celdaCon("VIZCAINO TRUJILLO MAYRA ROCIO (16)").rowSpan).toBe(16);
+    expect(screen.getByText("Inspectora General")).toBeInTheDocument();
+    expect(screen.getByText("16 controles · 2 zonas")).toBeInTheDocument();
+    expect(celdaCon("0987471922").rowSpan).toBe(16);
+    expect(celdaCon("Prioridad: Zonal La Mariscal").rowSpan).toBe(16);
+  });
+
+  it("cada zona es su bloque: La Mariscal (principal) 10 filas y Manuela Sáenz 6, con su rango", () => {
+    pintar();
+
+    const mariscal = celdaCon("Zonal La Mariscal");
+    expect(mariscal.rowSpan).toBe(10);
+    expect(within(mariscal).getByText("IG-001 a IG-010 · 10 controles")).toBeInTheDocument();
+    expect(within(mariscal).getByText("Zona principal")).toBeInTheDocument();
+
+    const saenz = celdaCon("Zonal Manuela Sáenz");
+    expect(saenz.rowSpan).toBe(6);
+    expect(within(saenz).getByText("IG-011 a IG-016 · 6 controles")).toBeInTheDocument();
+    expect(within(saenz).queryByText("Zona principal")).toBeNull();
+    expect(celdaCon("AMC Manuela Sáenz").rowSpan).toBe(6);
+  });
+
+  it("identificadores por fila, la zona principal primero, con su marca Z1 o Z2", () => {
+    pintar();
+
+    const identificadores = screen
+      .getAllByText(/^IG-0\d\d-31-OCT-2026$/, { exact: false })
+      .map((nodo) => nodo.closest("td")?.textContent);
+    expect(identificadores).toEqual([
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `Z1${numero(n)}`),
+      ...[11, 12, 13, 14, 15, 16].map((n) => `Z2${numero(n)}`),
     ]);
   });
 
@@ -1151,7 +1174,25 @@ describe("registro por zonas del formulario 8", () => {
     const tablaHtml = container.querySelector("table") as HTMLTableElement;
     const esperadas = columnasDeCabecera(tablaHtml);
     const delGrupo = ocupacionPorFila(tablaHtml).filter((f) => /IG-0\d\d/.test(f.texto));
-    expect(delGrupo).toHaveLength(3);
+    expect(delGrupo).toHaveLength(16);
     for (const f of delGrupo) expect(f.columnas).toBe(esperadas);
+  });
+
+  it("con una sola zona sigue como antes: una línea en la celda de zonas", () => {
+    render(
+      <TablaMatriz
+        secciones={[
+          seccion({
+            numero: 8,
+            totalOperativos: 2,
+            filas: [1, 2].map((n) => codigo(n, "Zonal La Mariscal", true)),
+          }),
+        ]}
+        mensajeVacio="Sin datos"
+      />,
+    );
+
+    expect(screen.getByRole("list", { name: "Zonas del registro" })).toBeInTheDocument();
+    expect(screen.queryByText("Zona principal")).toBeNull();
   });
 });

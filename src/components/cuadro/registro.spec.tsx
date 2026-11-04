@@ -438,8 +438,8 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
     render(
       <SelectorPersonal
         candidatos={[
-          { ...candidatos[0], nivelFatiga: "VERDE", sugerido: true },
-          { ...candidatos[1], nivelFatiga: "ROJO", sugerido: false },
+          { ...candidatos[0], nivelCarga: "VERDE", sugerido: true },
+          { ...candidatos[1], nivelCarga: "ROJO", sugerido: false },
         ]}
         cargando={false}
         agregadas={[]}
@@ -474,6 +474,7 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
         indiceCarga: 34,
         operativosAsignados: 4,
         nivelFatiga: "ROJO",
+        nivelCarga: "ROJO",
         cuotaJusta: 17,
         desviacionCarga: 17,
         nivelEquidad: "ENCIMA",
@@ -484,6 +485,7 @@ describe("caso 7 · el personal y el rechazo al asignar", () => {
         indiceCarga: 0,
         operativosAsignados: 0,
         nivelFatiga: "VERDE",
+        nivelCarga: "VERDE",
         cuotaJusta: 17,
         desviacionCarga: -17,
         nivelEquidad: "DEBAJO",

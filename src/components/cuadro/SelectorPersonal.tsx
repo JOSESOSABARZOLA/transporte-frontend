@@ -54,6 +54,7 @@
  */
 
 import {
+  useEffect,
   useId,
   useMemo,
   useRef,
@@ -74,6 +75,7 @@ import Iconos from "../common/Iconos.tsx";
 import Insignia from "../common/Insignia.tsx";
 import MensajeModal from "../common/MensajeModal.tsx";
 import Paginacion from "../common/Paginacion.tsx";
+import Tooltip from "../common/Tooltip.tsx";
 import {
   nombreDePersona,
   type PersonaElegible,
@@ -85,8 +87,10 @@ import {
   cruzaMedianoche,
 } from "../../utils/horario.util.ts";
 import {
+  nivelDeCargaPersonal,
+  operativosDeLaSemana,
   pideConfirmarCarga,
-  sugerenciaDeMenorCarga,
+  sugerenciasDeMenorCarga,
   textoModalCargaAlta,
   compararPorCarga,
   conteoSemaforo as contarSemaforo,
@@ -95,8 +99,23 @@ import {
   hayCargaCalculada,
   NOMBRE_AREA,
   turnoDePrimera,
+  avisoCruceSeleccionado,
+  cierreOcupacion,
+  etiquetaOcupacion,
+  horarioCompleto,
+  lineaOperativoDelDia,
+  ocupacionDe,
+  ORDEN_OCUPACION,
+  type HorarioDelOperativo,
+  type Ocupacion,
 } from "../../utils/personal.util.ts";
 import { motivoHorarioPersona } from "../../utils/politicasOperativo.util.ts";
+import {
+  nombreCortoDeArea,
+  rotuloNuevoConPrefijo,
+  textoDeAreas,
+  type PersonalPorArea,
+} from "../../utils/personalPorArea.util.ts";
 import { normalizar } from "../../utils/texto.util.ts";
 import EtiquetaCarga from "../common/EtiquetaCarga.tsx";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
@@ -306,6 +325,11 @@ type SelectorPersonalProps = {
    */
   detalleDePersona?: (persona: PersonaAgregada) => ReactNode;
   /**
+   * Una acción propia junto a cada persona de la lista compacta (2026-10-31: «Cambiar por…» de la
+   * patrulla, que conserva el código). Solo para quien se puede tocar (`editable`).
+   */
+  accionDePersona?: (persona: PersonaAgregada) => ReactNode;
+  /**
    * UNA PERSONA Y UN TIPO DE PERSONAL (2026-10-28): formularios con `elegirUnaArea` y
    * `maxPersonas = 1` (hoy el 8). Antes de la lista va «Tipo de personal», obligatorio y sin «Todas»;
    * la lista, el buscador y «No disponibles» muestran solo ese tipo; con una persona elegida, las
@@ -314,10 +338,33 @@ type SelectorPersonalProps = {
    */
   tipoUnico?: TipoUnicoDePersonal;
   /**
+   * PERSONAL POR ÁREA, SIN «TODAS» (2026-11-04): formularios cuyo catálogo admite Inspector General e
+   * Inspector Técnico a la vez (`personalPorArea`). Una pestaña por área, arrancando en General; la
+   * lista, el buscador, la paginación, «No disponibles» y «Completar con N» solo del área activa;
+   * cada seleccionado con su área (y, en la patrulla, su prefijo); y el área que falta a la patrulla
+   * con un punto ámbar y «Falta». Sin él, como siempre. `tipoUnico` (el 8) manda sobre esto.
+   */
+  porArea?: PersonalPorArea | null;
+  /**
    * «Reemplazar»: la persona nueva toma el lugar de la elegida conservando horario y cantidad
    * (`conPersonaReemplazada`). Sin él, se quita a la elegida y se agrega a la nueva.
    */
   onReemplazar?: (salienteId: number, entrante: PersonaElegible) => void;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════════
+   * HORARIO DEL OPERATIVO (2026-10-31, solo interfaz: RN-66 intacta). En la lista compacta, sobre la
+   * lista va «Horario del operativo *»: quien se agrega lo hereda (y se cambia por persona como
+   * siempre), y con él cada disponible dice «Ocupado» o «Se cruza» con sus otros operativos del día
+   * (`operativosDelDia`). No viaja al servidor: siguen viajando los horarios por persona.
+   *
+   * `horarioInicial`: el del alta (la primera persona) o, al editar, el más común del personal.
+   * `horarioFijo`: el aporte lo toma del operativo y no se edita.
+   * `onCrucesCambian`: cuántas personas ELEGIDAS se cruzan con otro operativo, para el pie.
+   * ═══════════════════════════════════════════════════════════════════════════════
+   */
+  horarioInicial?: HorarioDelOperativo | null;
+  horarioFijo?: boolean;
+  onCrucesCambian?: (cuantas: number) => void;
 };
 
 /** Configuración del modo «un solo tipo de personal» (2026-10-28). */
@@ -369,8 +416,13 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   rotulosNuevos,
   rotuloLectura,
   detalleDePersona,
+  accionDePersona,
   tipoUnico,
+  porArea = null,
   onReemplazar,
+  horarioInicial = null,
+  horarioFijo = false,
+  onCrucesCambian,
 }) => {
   // El verbo de las acciones de asignación: «Agregar» en el borrador del alta, «Asignar» al editar.
   const verboAsignar = horarioInline ? "Agregar" : "Asignar";
@@ -452,7 +504,10 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
    * (2026-10-05) son los MISMOS datos que pinta el reparto, contados por nivel.
    */
   const hayCarga = useMemo(() => hayCargaCalculada(candidatos), [candidatos]);
-  const conteoSemaforo = useMemo(() => contarSemaforo(candidatos), [candidatos]);
+  const conteoSemaforo = useMemo(
+    () => contarSemaforo(candidatos, nivelDeCargaPersonal),
+    [candidatos],
+  );
 
   // ── Reparto de carga (2026-10-01) ────────────────────────────────────────────────
   // El modo solo cambia los TEXTOS del reparto; las acciones reusan onAgregar/onRetirar del selector.
@@ -466,6 +521,92 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     (persona) => persona.cuotaJusta !== undefined,
   )?.cuotaJusta;
   const filasReparto = useMemo(() => candidatos.map(filaDePersona), [candidatos]);
+
+  /*
+    ═══════════════════════════════════════════════════════════════════════════════
+    HORARIO DEL OPERATIVO Y OCUPACIÓN DEL DÍA (2026-10-31). El horario lo hereda quien se agrega y
+    contra él cada disponible dice «Ocupado» o «Se cruza» (`ocupacionDe`, espejo de RN-28). A cada
+    persona ELEGIDA se la juzga por SU horario. Si el horario cambia, se pregunta si aplicarlo a
+    quienes tenían el anterior. El servidor sigue decidiendo el cruce al guardar.
+    ═══════════════════════════════════════════════════════════════════════════════
+  */
+  const [horario, setHorario] = useState<{ horaInicio: string; horaFin: string }>(() => {
+    const base = horarioInicial ?? turnoDePrimera(agregadas);
+    return { horaInicio: base.horaInicio ?? "", horaFin: base.horaFin ?? "" };
+  });
+  const horarioValido: HorarioDelOperativo | null = horarioCompleto(horario) ? horario : null;
+  // El último horario completo: contra él se pregunta si aplicar el nuevo a los ya agregados.
+  const [horarioConfirmado, setHorarioConfirmado] = useState<HorarioDelOperativo | null>(
+    () => (horarioCompleto(horario) ? horario : null),
+  );
+  const [porAplicar, setPorAplicar] = useState<{
+    anterior: HorarioDelOperativo;
+    nuevo: HorarioDelOperativo;
+    ids: number[];
+  } | null>(null);
+
+  const ocupaciones = useMemo(
+    () =>
+      new Map<number, Ocupacion>(
+        candidatos.map((persona) => [persona.id, ocupacionDe(persona, horarioValido)]),
+      ),
+    [candidatos, horarioValido],
+  );
+  const ocupacionDeCandidato = (persona: PersonaElegible): Ocupacion =>
+    ocupaciones.get(persona.id) ?? ocupacionDe(persona, horarioValido);
+  const seCruza = (persona: PersonaElegible) => ocupacionDeCandidato(persona).estado === "CRUCE";
+
+  /** Agrega y le pone el horario del operativo, si lo hay (el resto de la pantalla no cambia). */
+  const agregarConHorario = (persona: PersonaElegible) => {
+    onAgregar(persona);
+    if (horarioValido && onCambiarHorario) {
+      onCambiarHorario(persona.id, horarioValido.horaInicio, horarioValido.horaFin);
+    }
+  };
+
+  /** Al salir del campo: si el horario completo cambió, ¿se aplica a quienes tenían el anterior? */
+  const confirmarHorario = () => {
+    if (!horarioValido || horarioFijo) return;
+    const anterior = horarioConfirmado;
+    setHorarioConfirmado(horarioValido);
+    if (
+      !anterior ||
+      (anterior.horaInicio === horarioValido.horaInicio && anterior.horaFin === horarioValido.horaFin)
+    ) {
+      return;
+    }
+    const ids = agregadas
+      .filter(
+        (persona) =>
+          persona.editable !== false &&
+          persona.horaInicio === anterior.horaInicio &&
+          persona.horaFin === anterior.horaFin,
+      )
+      .map((persona) => persona.funcionarioId);
+    if (ids.length > 0 && onCambiarHorario) {
+      setPorAplicar({ anterior, nuevo: horarioValido, ids });
+    }
+  };
+
+  /** Las ELEGIDAS que se cruzan con otro operativo, juzgadas por su propio horario. */
+  const crucesElegidas = useMemo(() => {
+    const porId = new Map(candidatos.map((persona) => [persona.id, persona]));
+    const cruces = new Map<number, Ocupacion>();
+    for (const elegida of agregadas) {
+      const candidato = porId.get(elegida.funcionarioId);
+      const suyo = {
+        horaInicio: elegida.horaInicio ?? "",
+        horaFin: elegida.horaFin ?? "",
+      };
+      if (!candidato || !horarioCompleto(suyo)) continue;
+      const ocupacion = ocupacionDe(candidato, suyo);
+      if (ocupacion.estado === "CRUCE") cruces.set(elegida.funcionarioId, ocupacion);
+    }
+    return cruces;
+  }, [candidatos, agregadas]);
+  useEffect(() => {
+    onCrucesCambian?.(crucesElegidas.size);
+  }, [crucesElegidas, onCrucesCambian]);
 
 
   // `RepartoCarga` agrega por id; el selector espera la persona completa.
@@ -531,8 +672,19 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   const tipo: AreaPersonal | null = tipoUnico
     ? (tipoUnico.fijo ?? agregadas[0]?.area ?? tipoMarcado)
     : null;
+  /*
+    POR ÁREA (2026-11-04): siempre hay un área activa —sin «Todas»—. Se deriva y no se guarda: si el
+    catálogo llega después, o el área marcada deja de estar entre las pestañas, cae en la primera
+    (General). El modo de un solo tipo (el 8) manda sobre esto.
+  */
+  const porAreaActivo = tipoUnico ? null : porArea;
+  const areaPestana: AreaPersonal | null = porAreaActivo
+    ? area !== null && porAreaActivo.areas.includes(area)
+      ? area
+      : porAreaActivo.areas[0]
+    : area;
   /** El filtro de área efectivo: el tipo elegido en ese modo; si no, la pestaña. */
-  const areaFiltro = tipoUnico ? tipo : area;
+  const areaFiltro = tipoUnico ? tipo : areaPestana;
   /** Sin tipo elegido no hay lista: solo el texto que pide elegirlo. */
   const ocultarLista = Boolean(tipoUnico) && tipo === null;
   /** La persona que «Reemplazar» sustituye: la elegida, en el modo de un solo tipo. */
@@ -541,7 +693,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   /** «+ Agregar» o, con alguien elegido en el modo de un solo tipo, «Reemplazar». */
   const aplicarEleccion = (persona: PersonaElegible) => {
     if (!saliente) {
-      onAgregar(persona);
+      agregarConHorario(persona);
       return;
     }
     if (onReemplazar) {
@@ -549,15 +701,16 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
       return;
     }
     onRetirar(saliente.funcionarioId);
-    onAgregar(persona);
+    agregarConHorario(persona);
   };
 
   /**
    * CARGA ALTA ANTES DE AGREGAR (2026-10-30; reemplaza al aviso breve, que tapaba el pie del alta).
    * «+ Agregar» o «Reemplazar» sobre alguien con «Carga Alta» NO agrega todavía: deja la elección
-   * pendiente y abre un `MensajeModal` advertencia con [Elegir a <sugerida>] · [Agregar igual] ·
-   * [Cancelar]. Es solo un aviso: «Agregar igual» siempre está y ninguna regla de elegibilidad
-   * cambia. «Completar con N de menor carga» y «Asignar visibles» no pasan por aquí.
+   * pendiente y abre un `MensajeModal` advertencia: hasta tres personas con menos operativos, cada
+   * una con su etiqueta y [Elegir], y abajo [Agregar igual] y «Cancelar». Es solo un aviso: «Agregar
+   * igual» siempre está y ninguna regla de elegibilidad cambia. «Completar con N de menor carga» y
+   * «Asignar visibles» no pasan por aquí. «Carga Alta» es por OPERATIVOS (`nivelCarga`, 2026-10-30).
    *
    * `via` recuerda qué botón se pulsó: «elegir» respeta el reemplazo del modo de un solo tipo;
    * «agregar» suma sin más, como el «+ Agregar» de siempre.
@@ -568,18 +721,18 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   } | null>(null);
   const aplicar = (persona: PersonaElegible, via: "agregar" | "elegir") => {
     if (via === "elegir") aplicarEleccion(persona);
-    else onAgregar(persona);
+    else agregarConHorario(persona);
   };
   const conAvisoDeCarga = (persona: PersonaElegible, via: "agregar" | "elegir") => {
     if (pideConfirmarCarga(persona)) setPendienteCarga({ persona, via });
     else aplicar(persona, via);
   };
   const agregarUna = (persona: PersonaElegible) => conAvisoDeCarga(persona, "agregar");
-  const sugeridaCarga = pendienteCarga
-    ? sugerenciaDeMenorCarga(pendienteCarga.persona, candidatos, idsAgregados)
-    : null;
+  const sugeridasCarga = pendienteCarga
+    ? sugerenciasDeMenorCarga(pendienteCarga.persona, candidatos, idsAgregados, horarioValido)
+    : [];
   const textosCarga = pendienteCarga
-    ? textoModalCargaAlta(pendienteCarga.persona, sugeridaCarga)
+    ? textoModalCargaAlta(pendienteCarga.persona)
     : null;
   /** Resuelve el modal: agrega a quien se indique (o a nadie, con `null`) y lo cierra. */
   const resolverCarga = (persona: PersonaElegible | null) => {
@@ -590,33 +743,62 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     <MensajeModal
       variante="advertencia"
       titulo={textosCarga.titulo}
-      mensaje={
+      mensaje={textosCarga.mensaje}
+      onSecundario={() => resolverCarga(null)}
+      pie={
         <>
-          <span className="block">{textosCarga.mensaje}</span>
-          {textosCarga.sugerencia && (
-            <span className="mt-1 block font-medium text-app-strong">
-              {textosCarga.sugerencia}
-            </span>
-          )}
+          <Boton
+            variante="secundario"
+            tamano="lg"
+            className="w-full"
+            onClick={() => resolverCarga(pendienteCarga.persona)}
+          >
+            Agregar igual
+          </Boton>
+          <Boton variante="enlace" tamano="sm" onClick={() => resolverCarga(null)}>
+            Cancelar
+          </Boton>
         </>
       }
-      textoPrincipal={
-        sugeridaCarga ? `Elegir a ${nombreDePersona(sugeridaCarga)}` : "Agregar igual"
-      }
-      onPrincipal={() =>
-        resolverCarga(sugeridaCarga ?? pendienteCarga.persona)
-      }
-      accionExtra={
-        sugeridaCarga
-          ? {
-              texto: "Agregar igual",
-              onClick: () => resolverCarga(pendienteCarga.persona),
-            }
-          : undefined
-      }
-      textoSecundario="Cancelar"
-      onSecundario={() => resolverCarga(null)}
-    />
+    >
+      {sugeridasCarga.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold text-app-label">Con menos carga:</p>
+          <ul
+            aria-label="Con menos carga"
+            className="flex flex-col divide-y divide-base-200 rounded-box border border-base-300"
+          >
+            {sugeridasCarga.map((sugerida) => {
+              const nombre = nombreDePersona(sugerida);
+              return (
+                <li
+                  key={sugerida.id}
+                  className="flex items-center justify-between gap-2 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-app-strong" title={nombre}>
+                      {nombre}
+                    </p>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-app-muted">
+                      {sugerida.nivelCarga && <EtiquetaCarga nivel={sugerida.nivelCarga} />}
+                      {operativosDeLaSemana(sugerida.operativosAsignados, true)}
+                    </span>
+                  </div>
+                  <Boton
+                    variante="acento"
+                    tamano="sm"
+                    aria-label={`Elegir a ${nombre}`}
+                    onClick={() => resolverCarga(sugerida)}
+                  >
+                    Elegir
+                  </Boton>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </MensajeModal>
   );
   const elegir = (persona: PersonaElegible) => conAvisoDeCarga(persona, "elegir");
 
@@ -668,19 +850,18 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
       agregadas.map((persona) => persona.funcionarioId),
     );
 
-    // Orden de la lista (2026-10-01): SUGERIDOS primero, luego menor carga y, a igualdad, alfabético.
-    // Los sugeridos son los que están bajo su cuota —a quienes conviene repartir—, así que encabezan.
+    // Orden de la lista (2026-10-30): nivel de carga → operativos de la semana → índice → apellido
+    // (`compararPorCarga`). Los «Sugerido» —los que menos operativos tienen— quedan arriba solos.
+    // Antes (2026-10-31): libres, luego ocupados sin cruce, luego quien se cruza con el horario.
     return candidatos
       .filter((persona) => !yaAgregadas.has(persona.id))
-      .sort((a, b) => {
-        if (Boolean(a.sugerido) !== Boolean(b.sugerido)) {
-          return a.sugerido ? -1 : 1;
-        }
-        const porCarga = compararPorCarga(a, b);
-        if (porCarga !== 0) return porCarga;
-        return nombreDePersona(a).localeCompare(nombreDePersona(b));
-      });
-  }, [candidatos, agregadas]);
+      .sort(
+        (una, otra) =>
+          ORDEN_OCUPACION[ocupaciones.get(una.id)?.estado ?? "LIBRE"] -
+            ORDEN_OCUPACION[ocupaciones.get(otra.id)?.estado ?? "LIBRE"] ||
+          compararPorCarga(una, otra),
+      );
+  }, [candidatos, agregadas, ocupaciones]);
 
   /**
    * Las áreas que de verdad hay entre los candidatos, con cuántos quedan en cada una.
@@ -771,7 +952,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
 
   /** Agrega de una vez lo que el filtro dejó a la vista. No duplica: salen de `visibles`. */
   const asignarVisibles = () => {
-    for (const persona of asignables) onAgregar(persona);
+    for (const persona of asignables) agregarConHorario(persona);
   };
 
   /**
@@ -826,10 +1007,14 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
 
   /** Cupo real lleno (R4): «+ Agregar» se apaga con «Cupo completo». Sin cupo, nunca. */
   const cupoCompleto = cupo !== null && agregadas.length >= cupo;
-  /** «Completar con N de menor carga»: hasta cuatro elegibles, y no más que los cupos libres. */
-  const nCompletar = cuantosCompletar(asignables.length, agregadas.length, cupo);
+  /**
+   * «Completar con N de menor carga»: hasta cuatro elegibles, y no más que los cupos libres. Desde el
+   * 2026-10-31 salta a quien se cruza con el horario del operativo.
+   */
+  const completables = asignables.filter((persona) => !seCruza(persona));
+  const nCompletar = cuantosCompletar(completables.length, agregadas.length, cupo);
   const completar = () => {
-    for (const persona of asignables.slice(0, nCompletar)) onAgregar(persona);
+    for (const persona of completables.slice(0, nCompletar)) agregarConHorario(persona);
   };
   const motivoCompletar = cupoCompleto
     ? "Cupo completo"
@@ -849,10 +1034,10 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         {NOMBRE_AREA[persona.area]}
         {persona.cargo ? ` · ${persona.cargo}` : ""}
       </span>
-      {persona.nivelFatiga && (
+      {persona.nivelCarga && (
         <span className="mt-0.5 flex flex-wrap gap-1">
-          <EtiquetaCarga nivel={persona.nivelFatiga} />
-          {persona.sugerido && (
+          <EtiquetaCarga nivel={persona.nivelCarga} />
+          {persona.sugerido && !seCruza(persona) && (
             <span className="badge badge-primary badge-sm">Sugerido</span>
           )}
         </span>
@@ -993,6 +1178,37 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
    * hay cargo, no se escribe nada en su lugar. El no disponible lleva su motivo en ámbar, tal cual
    * lo redacta el servidor (PV-37).
    */
+  /**
+   * «Ocupado 08H00–16H30» (ámbar suave) o «Se cruza 18H00–22H00» (rojo), con el globito «Ese día ya
+   * está en:» —una línea por operativo y, al final, si choca o no con el horario—. Enfocable, para
+   * que el globito se abra con el teclado y al tocar en el móvil. El texto es la señal (regla 6).
+   * El icono de información al final y el cursor de clic dicen que abre el globito (2026-10-31).
+   */
+  const etiquetaDeOcupacion = (ocupacion: Ocupacion) => {
+    const texto = etiquetaOcupacion(ocupacion);
+    if (!texto) return null;
+    const globito = [
+      "Ese día ya está en:",
+      ...ocupacion.operativos.map(lineaOperativoDelDia),
+      cierreOcupacion(ocupacion, horarioValido),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return (
+      <Tooltip texto={globito}>
+        <span tabIndex={0} className="inline-flex cursor-pointer rounded-full">
+          <Insignia
+            variante={ocupacion.estado === "CRUCE" ? "error" : "avisoSuave"}
+            className="gap-1 whitespace-nowrap"
+          >
+            {texto}
+            <Iconos nombre="informacion" />
+          </Insignia>
+        </span>
+      </Tooltip>
+    );
+  };
+
   const tarjetaCandidato = (persona: PersonaElegible) => {
     const nombre = nombreDePersona(persona);
     const detalle = [
@@ -1005,11 +1221,22 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
       .filter(Boolean)
       .join(" · ");
 
+    const ocupacion = ocupacionDeCandidato(persona);
+    const cruza = ocupacion.estado === "CRUCE";
     return (
       <div
         key={persona.id}
-        className={`flex items-center justify-between gap-2 rounded-box border border-base-300 p-2 ${
-          persona.elegible ? "" : "bg-base-200"
+        data-ocupacion={ocupacion.estado}
+        /*
+          Con cruce, fondo blanco y borde rojo suave (2026-10-31): la señal es la etiqueta «Se cruza»,
+          no el fondo. «Ocupado» y libre, el borde de siempre.
+        */
+        className={`flex items-center justify-between gap-2 rounded-box border p-2 ${
+          !persona.elegible
+            ? "border-base-300 bg-base-200"
+            : cruza
+              ? "border-[color:color-mix(in_srgb,var(--app-msg-error-fg)_35%,transparent)] bg-base-100"
+              : "border-base-300"
         }`}
       >
         <div className="min-w-0 flex-1">
@@ -1027,14 +1254,16 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
               {detalle}
             </p>
           )}
-          {(persona.nivelFatiga || persona.sugerido) && (
+          {(persona.nivelCarga || persona.sugerido || ocupacion.estado !== "LIBRE") && (
             <span className="mt-1 flex flex-wrap items-center gap-1">
-              {persona.nivelFatiga && <EtiquetaCarga nivel={persona.nivelFatiga} />}
-              {persona.sugerido && (
+              {persona.nivelCarga && <EtiquetaCarga nivel={persona.nivelCarga} />}
+              {/* «Sugerido» nunca marca a quien se cruza con el horario (2026-10-31). */}
+              {persona.sugerido && !cruza && (
                 <span className="badge badge-primary badge-sm whitespace-nowrap">
                   Sugerido
                 </span>
               )}
+              {etiquetaDeOcupacion(ocupacion)}
             </span>
           )}
           {!persona.elegible && persona.motivo && (
@@ -1066,16 +1295,32 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   if (listaCompacta) {
     const totalEfectivos = cupo ?? candidatos.length;
     const sinNadie = agregadas.length === 0;
+    // La patrulla con un área sin nadie (2026-11-04): ámbar y «· falta Inspector Técnico».
+    const faltanAreas = porAreaActivo?.faltan ?? [];
     const tonoContador = sinNadie
       ? faltaTrasIntento
         ? "text-error"
         : "text-warning"
-      : "text-success";
-    const turnoBase = turnoDePrimera(agregadas);
-    const textoHorarioBase =
-      turnoBase.horaInicio && turnoBase.horaFin
-        ? `Horario por defecto: ${comoHoraInstitucional(turnoBase.horaInicio)} a ${comoHoraInstitucional(turnoBase.horaFin)}`
-        : "Horario por defecto: el de la primera persona que agregue";
+      : faltanAreas.length > 0
+        ? "text-warning"
+        : "text-success";
+    /** El área de una elegida: la suya o, si no la trae (la Jornada), la de su candidatura. */
+    const areaDeElegida = (persona: PersonaAgregada): AreaPersonal | undefined =>
+      persona.area ??
+      candidatos.find((candidato) => candidato.id === persona.funcionarioId)?.area;
+    /**
+     * «Inspector General - DMIP» bajo el nombre y, en la patrulla, el código que tendrá quien se suma:
+     * «· Nuevo IGECU-… al guardar». En el alta todos son nuevos; en los cajones, los de `idsNuevos`, y
+     * si el cajón ya lo rotula («Nuevo código IGECU… al guardar») no se repite.
+     */
+    const lineaDeArea = (persona: PersonaAgregada, areaPersona: AreaPersonal): string => {
+      const prefijo = porAreaActivo?.prefijos.get(areaPersona);
+      const esNueva = idsNuevos ? idsNuevos.has(persona.funcionarioId) : true;
+      const yaRotulada = rotulosNuevos?.has(persona.funcionarioId) ?? false;
+      return prefijo && esNueva && !yaRotulada
+        ? `${NOMBRE_AREA[areaPersona]} · ${rotuloNuevoConPrefijo(prefijo)}`
+        : NOMBRE_AREA[areaPersona];
+    };
 
     return (
       <div className="flex flex-col gap-3">
@@ -1085,29 +1330,106 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             aria-live="polite"
             className={`inline-flex items-center gap-1.5 text-sm font-semibold ${tonoContador}`}
           >
-            <Iconos nombre={sinNadie ? "alerta" : "check"} />
+            <Iconos nombre={sinNadie || faltanAreas.length > 0 ? "alerta" : "check"} />
             {tipoUnico
               ? sinNadie
                 ? "Sin persona elegida"
                 : `${agregadas.length} ${agregadas.length === 1 ? "persona" : "personas"}`
               : `${agregadas.length} de ${totalEfectivos} efectivos`}
             {sinNadie && faltaTrasIntento ? " · agregue al menos una persona" : ""}
+            {faltanAreas.length > 0 ? ` · falta ${textoDeAreas(faltanAreas)}` : ""}
           </span>
-          <span className="flex items-center gap-2">
-            {onCambiarHorario && (
-              <span
-                className="text-xs text-app-muted"
-                title="Se copia a cada persona que agregue; puede cambiarlo en cada una."
-              >
-                {textoHorarioBase}
-              </span>
-            )}
-            {botonRepartoPropioVisible}
-          </span>
+          <span className="flex items-center gap-2">{botonRepartoPropioVisible}</span>
         </div>
         {repartoAparte}
         {modalCarga}
         {listaDeHoras}
+
+        {/*
+          HORARIO DEL OPERATIVO (2026-10-31): lo hereda quien se agrega y con él se ve quién está
+          libre. En el aporte viene del operativo y no se edita. No viaja al servidor (RN-66).
+        */}
+        {onCambiarHorario &&
+          (horarioFijo ? (
+            <p className="text-sm text-app-strong">
+              <span className="font-semibold">Horario del operativo:</span>{" "}
+              {horarioValido
+                ? `${comoHoraInstitucional(horarioValido.horaInicio)} a ${comoHoraInstitucional(horarioValido.horaFin)}`
+                : "sin horario"}
+            </p>
+          ) : (
+            <div
+              role="group"
+              aria-label="Horario del operativo"
+              className="flex flex-wrap items-center gap-2"
+              // Se pregunta al salir del grupo, no al pasar del inicio al fin.
+              onBlur={(evento) => {
+                if (evento.currentTarget.contains(evento.relatedTarget as Node | null)) return;
+                confirmarHorario();
+              }}
+            >
+              <span className="text-sm font-semibold text-app-label">
+                Horario del operativo <span aria-hidden="true">*</span>
+              </span>
+              <input
+                type="text"
+                list={idHoras}
+                aria-label="Hora de inicio del operativo"
+                className="input input-bordered input-sm w-28"
+                placeholder="Inicio…"
+                value={horario.horaInicio}
+                disabled={deshabilitado}
+                onChange={(evento) =>
+                  setHorario((antes) => ({ ...antes, horaInicio: evento.target.value }))
+                }
+              />
+              <span aria-hidden="true" className="text-sm text-app-muted">
+                a
+              </span>
+              <input
+                type="text"
+                list={idHoras}
+                aria-label="Hora de fin del operativo"
+                className="input input-bordered input-sm w-28"
+                placeholder="Fin…"
+                value={horario.horaFin}
+                disabled={deshabilitado}
+                onChange={(evento) =>
+                  setHorario((antes) => ({ ...antes, horaFin: evento.target.value }))
+                }
+              />
+              <span className="text-xs text-app-muted">
+                Se copia a cada persona que agregue; puede cambiarlo en cada una.
+              </span>
+            </div>
+          ))}
+
+        {/* ¿Aplicar el nuevo horario a quienes tenían el anterior? */}
+        <MensajeModal
+          abierto={porAplicar !== null}
+          variante="advertencia"
+          titulo="¿Aplicar el nuevo horario?"
+          mensaje={
+            porAplicar
+              ? `¿Aplicar ${comoHoraInstitucional(porAplicar.nuevo.horaInicio)} a ${comoHoraInstitucional(porAplicar.nuevo.horaFin)} también a ${
+                  porAplicar.ids.length === 1
+                    ? "la persona que tenía"
+                    : `las ${porAplicar.ids.length} personas que tenían`
+                } ${comoHoraInstitucional(porAplicar.anterior.horaInicio)} a ${comoHoraInstitucional(porAplicar.anterior.horaFin)}?`
+              : ""
+          }
+          textoPrincipal="Aplicar"
+          textoSecundario="No"
+          onPrincipal={() => {
+            if (porAplicar) {
+              for (const id of porAplicar.ids) {
+                onCambiarHorario?.(id, porAplicar.nuevo.horaInicio, porAplicar.nuevo.horaFin);
+              }
+            }
+            setPorAplicar(null);
+          }}
+          onSecundario={() => setPorAplicar(null)}
+        />
 
         {/* TIPO DE PERSONAL (2026-10-28): obligatorio y sin «Todas»; al editar queda fijo. */}
         {tipoUnico && (
@@ -1268,6 +1590,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                             {detalleDePersona(persona)}
                           </span>
                         )}
+                        {accionDePersona && persona.editable !== false && accionDePersona(persona)}
                       </span>
 
                       <div className="flex min-w-0 items-center gap-2">
@@ -1363,8 +1686,21 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                       )}
                     </div>
 
+                    {porAreaActivo && areaDeElegida(persona) && (
+                      <p className="text-xs text-app-muted">
+                        {lineaDeArea(persona, areaDeElegida(persona) as AreaPersonal)}
+                      </p>
+                    )}
                     {motivoHorario && (
                       <p className="text-xs text-error">{motivoHorario}</p>
+                    )}
+                    {/* Se cruza con otro operativo de ese día, con SU horario (2026-10-31). */}
+                    {crucesElegidas.has(persona.funcionarioId) && (
+                      <p className="text-xs text-error">
+                        {avisoCruceSeleccionado(
+                          crucesElegidas.get(persona.funcionarioId) as Ocupacion,
+                        )}
+                      </p>
                     )}
                     {nocturno && (
                       <p className="text-xs text-app-muted">
@@ -1398,7 +1734,9 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
             placeholder={
               tipo && tipoUnico
                 ? `Buscar ${partesDeArea(tipo)[0].toLocaleLowerCase("es")} por apellido o cargo…`
-                : "Buscar por apellido, unidad o cargo…"
+                : porAreaActivo && areaPestana
+                  ? `Buscar en ${NOMBRE_AREA[areaPestana]}…`
+                  : "Buscar por apellido, unidad o cargo…"
             }
             value={busqueda}
             disabled={deshabilitado}
@@ -1421,8 +1759,50 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
         </div>
         )}
 
+        {/*
+          PESTAÑAS POR ÁREA, SIN «TODAS» (2026-11-04): General y Técnico juntos en el catálogo. Cada una
+          con cuántos quedan; la que le falta a la patrulla, con un punto ámbar y la palabra «Falta»
+          (regla 6: el color nunca va solo).
+        */}
+        {porAreaActivo && !cargando && (
+          <div
+            role="tablist"
+            aria-label="Personal por área"
+            className="flex flex-wrap items-center gap-2"
+          >
+            {porAreaActivo.areas.map((codigo) => {
+              const activa = areaPestana === codigo;
+              const cuantos = areas.find(([conteo]) => conteo === codigo)?.[1] ?? 0;
+              const falta = porAreaActivo.faltan.includes(codigo);
+              return (
+                <button
+                  key={codigo}
+                  type="button"
+                  role="tab"
+                  aria-selected={activa}
+                  disabled={deshabilitado}
+                  onClick={() => filtrarPorArea(codigo)}
+                  // eslint-disable-next-line no-restricted-syntax -- control de selección, no acción
+                  className={`btn btn-sm gap-1.5 ${activa ? "btn-primary" : "btn-ghost"}`}
+                >
+                  {NOMBRE_AREA[codigo]} ({cuantos})
+                  {falta && (
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-2 w-2 rounded-full bg-warning"
+                      />
+                      Falta
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* PESTAÑAS DE UNIDAD solo si hay MÁS de una unidad; con una sola, filtrarían por nada. */}
-        {!tipoUnico && !cargando && areas.length > 1 && (
+        {!tipoUnico && !porAreaActivo && !cargando && areas.length > 1 && (
           <div
             role="tablist"
             aria-label="Filtrar disponibles por unidad"
@@ -1472,7 +1852,27 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
               <span className="font-semibold text-app-label">
                 Disponibles ({asignables.length})
               </span>{" "}
-              · sugeridos primero, luego de menor a mayor carga
+              {horarioValido
+                ? "· libres primero · luego ocupados sin cruce · al final los que se cruzan"
+                : "· sugeridos primero, luego de menor a mayor carga"}
+            </p>
+          )}
+          {/* Qué dice cada etiqueta, con las insignias reales (2026-10-31). */}
+          {horarioValido && asignables.length > 0 && (
+            <p
+              aria-label="Leyenda de ocupación"
+              className="flex flex-wrap items-center gap-1 text-xs text-app-muted"
+            >
+              <Insignia variante="avisoSuave">Ocupado</Insignia>
+              <span>= tiene otro operativo ese día ·</span>
+              <Insignia variante="error">Se cruza</Insignia>
+              <span>= choca con este horario</span>
+            </p>
+          )}
+          {/* Sin horario no se juzga el cruce: las tarjetas se ven igual (2026-10-31). */}
+          {!cargando && onCambiarHorario && !horarioValido && asignables.length > 0 && (
+            <p role="status" className="text-xs text-app-muted">
+              Ingrese el horario del operativo para ver quién está libre
             </p>
           )}
           {cargando && (
@@ -1480,9 +1880,11 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
           )}
           {!cargando && asignables.length === 0 && (
             <p className="text-sm text-app-muted">
-              {busqueda.trim() !== "" || area !== null
-                ? "No hay personal disponible que coincida con la búsqueda."
-                : "No queda personal disponible."}
+              {busqueda.trim() === "" && porAreaActivo && areaPestana
+                ? `No queda personal disponible de ${nombreCortoDeArea(areaPestana)}.`
+                : busqueda.trim() !== "" || area !== null
+                  ? "No hay personal disponible que coincida con la búsqueda."
+                  : "No queda personal disponible."}
             </p>
           )}
           {!cargando && asignables.length > 0 && (

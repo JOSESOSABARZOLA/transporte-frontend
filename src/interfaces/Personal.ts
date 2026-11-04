@@ -82,6 +82,22 @@ export type DenominacionInstruccion =
   | "AUXILIAR_FLAGRANCIA";
 
 /**
+ * Un operativo del día de la persona (2026-10-31). RN-48: de un formulario que quien consulta no
+ * puede ver solo llega el horario, con `ajeno: true`.
+ */
+export type OperativoDelDia =
+  | {
+      ajeno: false;
+      identificador: string;
+      formulario: { numero: number; codigo: string };
+      horaInicio: string;
+      horaFin: string;
+      zonal: string | null;
+      punto: string | null;
+    }
+  | { ajeno: true; horaInicio: string; horaFin: string };
+
+/**
  * Persona ofrecida en el desplegable de asignación. Respuesta de `GET /personal/elegible`.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -137,12 +153,25 @@ export interface PersonaElegible {
    */
   indiceCarga?: number;
   nivelFatiga?: NivelFatiga;
+  /**
+   * NIVEL DE CARGA DEL PERSONAL (2026-10-30): por OPERATIVOS del período de equidad
+   * (`CARGA_OP_MEDIA` / `CARGA_OP_ALTA`; 0–1 Baja, 2 Media, 3 o más Alta). Es lo que pinta la
+   * etiqueta, ordena la lista y abre el aviso de carga alta; coincide con «N op. esta semana». El
+   * índice de horas (`nivelFatiga`) sigue viajando y solo desempata.
+   */
+  nivelCarga?: NivelFatiga;
   /** Cuántos operativos tiene asignados la persona en el período de equidad (semana). */
   operativosAsignados?: number;
   cuotaJusta?: number;
   desviacionCarga?: number;
   nivelEquidad?: NivelEquidad;
   sugerido?: boolean;
+  /**
+   * DÓNDE MÁS ESTÁ ESE DÍA (2026-10-31): sus operativos de la fecha, sin el registro que se edita.
+   * Con el horario del operativo, la tarjeta dice «Ocupado» o «Se cruza» (`ocupacionDe`). El
+   * servidor sigue decidiendo el cruce (RN-28) al guardar. Vacío o ausente = libre.
+   */
+  operativosDelDia?: OperativoDelDia[];
 }
 
 /** Nivel del semáforo de fatiga. El texto legible lo pone `NIVEL_FATIGA` (regla 6). */

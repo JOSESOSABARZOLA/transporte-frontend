@@ -39,6 +39,7 @@ const crear = (n: number, desde = 1): PersonaElegible[] =>
       motivo: null,
       indiceCarga: id,
       nivelFatiga: "VERDE",
+      nivelCarga: "VERDE",
       operativosAsignados: id,
     };
   });
@@ -120,9 +121,9 @@ describe("Personal y horario · disponibles", () => {
     expect(screen.queryByText(/Mostrando/)).toBeNull();
   });
 
-  it("ordena a los sugeridos primero y luego de menor a mayor carga", () => {
+  it("ordena por operativos de la semana: quien menos tiene (el sugerido) va primero (2026-10-30)", () => {
     const candidatos = crear(4).map((persona) =>
-      persona.id === 4 ? { ...persona, sugerido: true } : persona,
+      persona.id === 4 ? { ...persona, operativosAsignados: 0, sugerido: true } : persona,
     );
     pintar({ candidatos });
 
@@ -260,13 +261,14 @@ describe("Personal y horario · seleccionados y contador", () => {
     expect(contador).toHaveTextContent("agregue al menos una persona");
   });
 
-  it("el horario por defecto es el de la primera persona", () => {
+  it("el horario del operativo arranca con el de la primera persona", () => {
     pintar({
       agregadas: [
         { funcionarioId: 1, nombre: "PERSONA01 PRUEBA", telefono: null, horaInicio: "08:00", horaFin: "16:30" },
       ],
     });
-    expect(screen.getByText("Horario por defecto: 08H00 a 16H30")).toBeInTheDocument();
+    expect(screen.getByLabelText("Hora de inicio del operativo")).toHaveValue("08:00");
+    expect(screen.getByLabelText("Hora de fin del operativo")).toHaveValue("16:30");
   });
 
   it("un horario mal escrito se explica bajo esa persona; cruzar la medianoche es válido", () => {

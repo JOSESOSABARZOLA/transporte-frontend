@@ -56,12 +56,19 @@ type CeldaAlertaProps = {
    * y el dato queda centrado en el bloque, como una celda combinada de Excel (2026-09-14).
    */
   centrado?: boolean;
+  /** Centra solo en vertical (2026-10-30, el registro por zonas): el texto sigue a la izquierda. */
+  alMedio?: boolean;
   /**
    * Texto corto que se LEE en la celda vacía con alerta (2026-10-26: «Sin asignar» en Conductor y
    * Placa de la Jornada y la Matriz). El motivo completo queda en el `title`, como dice la nota al
    * pie. Sin él, la celda muestra el motivo entero, como siempre.
    */
   textoCorto?: string;
+  /**
+   * Una línea de contexto bajo el dato o bajo el texto de la alerta (2026-10-30: «Prioridad: <zona
+   * principal>» en el conductor del registro por zonas). Sin ella, el marcado no cambia.
+   */
+  pie?: ReactNode;
 };
 
 const CeldaAlerta: FC<CeldaAlertaProps> = ({
@@ -71,12 +78,18 @@ const CeldaAlerta: FC<CeldaAlertaProps> = ({
   rowSpan,
   className,
   centrado,
+  alMedio,
   textoCorto,
+  pie,
 }) => {
   const clase = claseDeAlerta(alertas, campo);
   const texto = textoDeAlerta(alertas, campo);
   const vacia = children === null || children === undefined || children === "";
-  const alineacion = centrado ? "align-middle text-center" : "align-top";
+  const alineacion = centrado
+    ? "align-middle text-center"
+    : alMedio
+      ? "align-middle"
+      : "align-top";
 
   return (
     <td
@@ -89,6 +102,7 @@ const CeldaAlerta: FC<CeldaAlertaProps> = ({
       ) : (
         children
       )}
+      {pie && <span className="block text-xs text-app-muted">{pie}</span>}
     </td>
   );
 };

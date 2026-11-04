@@ -7,7 +7,7 @@
  *                  (o al que se aporta personal), con buscador, grupos por dueño, «N hoy» y recientes.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-08-06 · los propios desde el 24-AGO · los compartidos vuelven el 25-AGO ·
- *        selector único desde el 2026-10-16
+ *        selector único desde el 2026-10-16 · la lista en un portal desde el 2026-11-04
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * UN SELECTOR, NO UNA REJILLA (2026-10-16, R10 del plan «registro-operativo-rediseno»). La rejilla
@@ -30,10 +30,17 @@
  * ACCESIBLE CON TECLADO. ↓/Enter/Espacio en la caja abren; el foco pasa al buscador, que es un
  * `combobox` sobre la lista (`aria-activedescendant`): ↓/↑ recorren, Enter elige, Escape cierra y
  * devuelve el foco a la caja. EL COLOR VIENE DEL SERVIDOR (regla 3) y nunca va solo (regla 6).
+ *
+ * LA LISTA SE PINTA EN UN PORTAL (2026-11-04). El panel del formulario lleva `backdrop-blur` y crea su
+ * propio contexto de apilamiento: con la lista `absolute` dentro, la cabecera de la tabla de abajo
+ * («Operativos de este formulario») se pintaba encima, sobre todo en modo aporte, donde el panel es
+ * bajo. Ahora la coloca `usePanelFlotante`: con el ancho de la caja, recolocada al desplazar, hacia
+ * arriba si abajo no cabe y cerrada al hacer clic fuera (el portal cuenta como dentro).
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -42,11 +49,13 @@ import {
   type FC,
   type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 
 import type { Formulario } from "../../interfaces/Formulario.ts";
 import Boton from "../common/Boton.tsx";
 import Iconos from "../common/Iconos.tsx";
 import Insignia from "../common/Insignia.tsx";
+import { usePanelFlotante } from "../../hooks/usePanelFlotante.ts";
 import {
   agruparPorDueno,
   filtrarFormularios,
@@ -100,7 +109,7 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
   const [activo, setActivo] = useState(0);
   const caja = useRef<HTMLButtonElement>(null);
   const buscador = useRef<HTMLInputElement>(null);
-  const contenedor = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
 
   const ofrecidos = useMemo(() => formulariosOfrecidos(formularios), [formularios]);
   const filtrados = useMemo(
@@ -113,15 +122,15 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
 
   const elegido = ofrecidos.find((formulario) => formulario.codigo === seleccionado);
 
-  // Clic fuera cierra, sin devolver el foco: quien hizo clic fuera ya eligió dónde está.
-  useEffect(() => {
-    if (!abierto) return;
-    const fuera = (evento: MouseEvent) => {
-      if (!contenedor.current?.contains(evento.target as Node)) setAbierto(false);
-    };
-    document.addEventListener("mousedown", fuera);
-    return () => document.removeEventListener("mousedown", fuera);
-  }, [abierto]);
+  // Clic fuera (de la caja y del portal) cierra, sin devolver el foco: quien hizo clic fuera ya
+  // eligió dónde está. `medida`: al filtrar, la lista cambia de alto y, abierta hacia arriba, debe
+  // seguir pegada a la caja.
+  const cerrarLista = useCallback(() => setAbierto(false), []);
+  const estiloPanel = usePanelFlotante(abierto, caja, panel, cerrarLista, {
+    anchoDelDisparador: true,
+    seguir: true,
+    medida: filtrados.length,
+  });
 
   useEffect(() => {
     if (abierto) buscador.current?.focus();
@@ -192,7 +201,7 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
 
   return (
     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
-        <div ref={contenedor} className="relative w-full md:w-[29.5rem]">
+        <div className="w-full md:w-[29.5rem]">
           <span id={idEtiqueta} className="sr-only">
             Formulario
           </span>
@@ -220,8 +229,17 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
             </span>
           </button>
 
-          {abierto && (
-            <div className="app-shell-surface absolute top-full left-0 z-30 mt-1 flex w-full flex-col gap-2 rounded-md border border-base-300 bg-base-100 p-2 text-sm shadow-[0_20px_45px_rgba(15,23,42,0.20)]">
+          {/*
+            Sin `app-shell-surface`: en el tema oscuro pone un degradado translúcido con `!important`
+            y la tabla se transparentaba. `bg-base-100` opaco y la sombra de los menús del sistema.
+          */}
+          {abierto &&
+            createPortal(
+            <div
+              ref={panel}
+              style={estiloPanel}
+              className="app-dropdown-surface flex flex-col gap-2 rounded-md border border-base-300 bg-base-100 p-2 text-sm text-base-content shadow-[0_20px_45px_rgba(15,23,42,0.20)]"
+            >
               <input
                 ref={buscador}
                 type="text"
@@ -301,7 +319,8 @@ const SelectorFormulario: FC<SelectorFormularioProps> = ({
                   );
                 })}
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
 

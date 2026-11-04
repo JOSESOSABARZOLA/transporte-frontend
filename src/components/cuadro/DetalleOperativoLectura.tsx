@@ -38,6 +38,11 @@
  * persona con el identificador del suyo, y el horario del resumen es la envolvente de los códigos.
  * Lugar, control, transporte y notas son los del código abierto: son los generales del registro,
  * comunes a todo el lote.
+ *
+ * EL REGISTRO POR ZONAS DEL 8 ES UN SOLO OPERATIVO (2026-10-31). Con `grupo` y `esZonaPrincipal`, el
+ * título es «Detalle del operativo» y el subtítulo el rango «IG-001 a IG-011» (nunca el UUID); la
+ * persona, el horario y el transporte van una vez, y «Lugar y control» se parte en una sección por
+ * zona —zonal, punto, tipo, instituciones y su rango de códigos—, la principal primero.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -63,6 +68,11 @@ import {
 import { notasDe } from "../../utils/notasDeTabla.util.ts";
 import { fechaDeNota } from "../../utils/notasOperativo.util.ts";
 import { horarioLegible } from "../../utils/texto.util.ts";
+import { compactarIdentificadores } from "../../utils/rangoIdentificadores.util.ts";
+import {
+  bloquesDeZona,
+  esRegistroPorZonas,
+} from "../../utils/zonasDelBloque.util.ts";
 import { DISTINTIVO_EXCLUSIVO, nombreTipoTransporte } from "../../utils/tipoTransporte.util.ts";
 
 /** Lo que se lee en un campo sin dato. */
@@ -172,9 +182,23 @@ const DetalleOperativoLectura: FC<DetalleOperativoLecturaProps> = ({
   onEditar,
 }) => {
   const codigos = grupo && grupo.length > 1 ? grupo : [operativo];
-  const esPatrulla = codigos.length > 1;
-  // Cada persona con el código al que va: en la patrulla se pinta su identificador.
-  const personas = codigos.flatMap((codigo) =>
+  // Registro por zonas (2026-10-31): un operativo con varios códigos, uno por zona y unidad.
+  const porZonas = esRegistroPorZonas(operativo) && codigos.length > 1;
+  const zonas = porZonas
+    ? bloquesDeZona(codigos, {
+        zonal: (codigo) => valorDeColumna(codigo, "zonal"),
+        punto: (codigo) => lista([codigo.puntoEncuentro?.nombre ?? codigo.puntoLibre]),
+        tipo: (codigo) => lista([...tiposDelOperativo(codigo), codigo.tipoLibre]),
+        instituciones: (codigo) =>
+          lista(codigo.instituciones.map((institucion) => institucion.sigla)),
+        identificador: (codigo) => codigo.identificador,
+        esPrincipal: (codigo) => codigo.esZonaPrincipal,
+      })
+    : [];
+  const esPatrulla = codigos.length > 1 && !porZonas;
+  // Cada persona con el código al que va: en la patrulla se pinta su identificador. En el registro
+  // por zonas es UNA persona: se lista una vez.
+  const personas = (porZonas ? [codigos[0]] : codigos).flatMap((codigo) =>
     codigo.personal.length > 0
       ? filasDePersonal(codigo).map((fila, indice) => ({
           ...fila,
@@ -228,10 +252,14 @@ const DetalleOperativoLectura: FC<DetalleOperativoLecturaProps> = ({
       abierto
       ancho="md"
       modo="lectura"
-      titulo={esPatrulla ? "Detalle de patrulla" : "Detalle del operativo"}
+      titulo="Detalle del operativo"
       subtitulo={
         <span className="flex min-w-0 flex-wrap items-center gap-2">
-          <span>{codigos.map((codigo) => codigo.identificador).join(" · ")}</span>
+          <span>
+            {porZonas
+              ? compactarIdentificadores(codigos.map((codigo) => codigo.identificador))
+              : codigos.map((codigo) => codigo.identificador).join(" · ")}
+          </span>
           <ChipFormulario operativo={operativo} />
         </span>
       }
@@ -262,12 +290,23 @@ const DetalleOperativoLectura: FC<DetalleOperativoLecturaProps> = ({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Resumen" role="group">
           <TarjetaResumen rotulo="Horario" icono="horario" valor={horario} />
-          <TarjetaResumen rotulo="Lugar" icono="lugar" valor={zonales} detalle={punto} />
+          <TarjetaResumen
+            rotulo="Lugar"
+            icono="lugar"
+            valor={porZonas ? (zonas[0]?.zonal ?? VACIO) : zonales}
+            detalle={porZonas ? `Principal · ${zonas.length} zonas` : punto}
+          />
           <TarjetaResumen
             rotulo="Personal"
             icono="personal"
             valor={`${personas.length} ${personas.length === 1 ? "persona" : "personas"}`}
-            detalle={esPatrulla ? `${codigos.length} códigos de patrulla` : "1 código"}
+            detalle={
+              porZonas
+                ? `${codigos.length} códigos · ${zonas.length} zonas`
+                : esPatrulla
+                  ? `${codigos.length} códigos`
+                  : "1 código"
+            }
           />
         </div>
 
@@ -345,6 +384,31 @@ const DetalleOperativoLectura: FC<DetalleOperativoLecturaProps> = ({
           )}
         </Seccion>
 
+        {porZonas ? (
+          zonas.map((zona, indice) => (
+            <Seccion
+              key={zona.clave}
+              titulo={`Zona ${indice + 1} · ${zona.zonal}`}
+              icono="lugarYControl"
+              accion={
+                zona.esPrincipal ? (
+                  <Insignia variante="suave" className="whitespace-nowrap">
+                    Zona principal
+                  </Insignia>
+                ) : undefined
+              }
+            >
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <Par rotulo="Punto de encuentro">{zona.punto}</Par>
+                <Par rotulo="Tipo de control">{zona.tipo}</Par>
+                <Par rotulo="Instituciones">{zona.instituciones}</Par>
+                <Par rotulo="Códigos">
+                  {`${compactarIdentificadores(zona.filas.map((codigo) => codigo.identificador))} · ${zona.filas.length} ${zona.filas.length === 1 ? "código" : "códigos"}`}
+                </Par>
+              </dl>
+            </Seccion>
+          ))
+        ) : (
         <Seccion titulo="Lugar y control" icono="lugarYControl">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
             <Par rotulo="Zonal">{zonales}</Par>
@@ -357,6 +421,7 @@ const DetalleOperativoLectura: FC<DetalleOperativoLecturaProps> = ({
             </Par>
           </dl>
         </Seccion>
+        )}
 
         <Seccion
           titulo="Transporte"

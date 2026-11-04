@@ -152,7 +152,7 @@ describe("Fase B · las zonales en el cajón son chips con desplegable flotante"
   });
 
   it("la lista flota: no ocupa el flujo hasta enfocar el buscador", async () => {
-    render(
+    const { container } = render(
       <SelectorZonalPunto
         {...propiedadesZonal}
         zonalesSeleccionadas={[]}
@@ -169,10 +169,13 @@ describe("Fase B · las zonales en el cajón son chips con desplegable flotante"
 
     await userEvent.click(zonales);
 
-    // Al enfocar aparece, y es flotante (`absolute`), no una caja empujando la rejilla.
+    // Al enfocar aparece, y es flotante, no una caja empujando la rejilla. Desde el 2026-11-04 va
+    // en un portal con posición fija: fuera del campo, para que ningún panel con `backdrop-blur` la
+    // deje debajo de lo que sigue.
     const lista = screen.getByRole("listbox", { name: "Zonales" });
     expect(lista).toBeInTheDocument();
-    expect(lista).toHaveClass("absolute");
+    expect(lista.style.position).toBe("fixed");
+    expect(container.contains(lista)).toBe(false);
   });
 });
 

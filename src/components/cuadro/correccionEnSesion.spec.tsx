@@ -749,6 +749,35 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     ).toBeInTheDocument();
   });
 
+  /*
+    EDITAR PATRULLA (2026-10-31): la patrulla 5/6 propia ya no se corrige en el formulario de alta
+    de arriba —que quedaba ocupado, con su personal oculto y «Falta: personal»—: abre su cajón, y el
+    formulario de arriba conserva su captura antes, durante y después.
+  */
+  it("«Editar» de una patrulla propia abre el cajón «Editar operativo» y el alta conserva su captura", async () => {
+    const base = operativo();
+    await registrarUno(
+      operativo({
+        esLote: true,
+        grupoRegistro: "8b2e4c1d-3f5a-4e6b-9c7d-1a2b3c4d5e6f",
+        formulario: { ...base.formulario, esPatrulla: true },
+      }),
+    );
+    TECLEADO.observaciones = ["media captura sin enviar"];
+
+    await userEvent.click(screen.getByRole("button", { name: /^Editar\b/ }));
+
+    const dialogo = screen.getByRole("dialog", { name: /Editar operativo/ });
+    expect(within(dialogo).getByText(/panel de edición para/)).toBeInTheDocument();
+    expect(screen.queryByText(/Está corrigiendo la patrulla/)).toBeNull();
+    expect(screen.getByText("cargado con: media captura sin enviar")).toBeInTheDocument();
+
+    await userEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("cargado con: media captura sin enviar")).toBeInTheDocument();
+  });
+
   it("al guardar la corrección, vuelve lo que se estaba capturando", async () => {
     vi.mocked(OperativoService.editar).mockResolvedValue(
       operativo({ version: 2, horaFin: "13:00" }),

@@ -5,7 +5,7 @@
  * Archivo: SelectorTokens.tsx
  * Responsabilidad: Elegir varias opciones de un catálogo, con tokens y teclado.
  * Desarrollador: Jose Sosa
- * Fecha: 2026-08-07
+ * Fecha: 2026-08-07 · la lista flotante en un portal desde el 2026-11-04
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * SUSTITUYE A UN `<select multiple>`, Y ESE ERA EL PROBLEMA.
@@ -30,6 +30,12 @@
  * SOLO CLASES SEMÁNTICAS DE daisyUI —`badge-primary`, `input-bordered`, `base-100`,
  * `base-300`—, que ya responden al tema. Ni un color fijo: con `bg-white` el desplegable
  * quedaría blanco sobre blanco en el tema oscuro.
+ *
+ * LA LISTA FLOTANTE SE PINTA EN UN PORTAL (2026-11-04). Era `absolute` con `z-10` dentro del panel
+ * del formulario, que lleva `backdrop-blur` y crea su propio contexto de apilamiento: si la lista
+ * pasaba del borde del panel, la cabecera de la tabla siguiente se pintaba encima. La coloca
+ * `usePanelFlotante` (ancho del campo, 240 px como mucho, recolocada al desplazar). Sigue
+ * cerrándose al perder el foco; Escape también la cierra, y escribir o ↓/↑ la vuelven a abrir.
  */
 
 import {
@@ -39,10 +45,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 // La comparación sin tildes es la misma que usan los filtros de P-02 y de P-07: quien
 // busca «instruccion» espera encontrar «Instrucción». Se importa en lugar de repetirla.
 import Boton from "../common/Boton.tsx";
+import { usePanelFlotante } from "../../hooks/usePanelFlotante.ts";
 import { normalizar } from "../../utils/texto.util.ts";
 
 /** Lo mínimo que necesita una opción para ser elegible. */
@@ -100,6 +108,9 @@ export type SelectorTokensProps<T extends OpcionToken> = {
 const TOPE_VISIBLE = 4;
 const RESUMIDOS = 2;
 
+/** El alto de la lista flotante: el `max-h-60` que tenía cuando era `absolute`. */
+const ALTO_LISTA_FLOTANTE = 240;
+
 const SelectorTokens = <T extends OpcionToken>({
   id,
   etiqueta,
@@ -127,6 +138,9 @@ const SelectorTokens = <T extends OpcionToken>({
 
   const contenedor = useRef<HTMLDivElement>(null);
   const entrada = useRef<HTMLInputElement>(null);
+  // La flotante se coloca bajo `ancla` (el buscador, o la caja única entera).
+  const ancla = useRef<HTMLDivElement>(null);
+  const listaRef = useRef<HTMLUListElement>(null);
   const listaId = `${useId()}-lista`;
 
   const elegidas = useMemo(
@@ -165,6 +179,15 @@ const SelectorTokens = <T extends OpcionToken>({
   const activa =
     disponibles.length === 0 ? 0 : Math.min(resaltada, disponibles.length - 1);
 
+  const flotanteAbierta = esFlotante && abiertaLista && !deshabilitado;
+  const cerrarLista = useCallback(() => setAbiertaLista(false), []);
+  const estiloLista = usePanelFlotante(flotanteAbierta, ancla, listaRef, cerrarLista, {
+    anchoDelDisparador: true,
+    altoMaximo: ALTO_LISTA_FLOTANTE,
+    seguir: true,
+    medida: disponibles.length,
+  });
+
   const agregar = useCallback(
     (opcion: T) => {
       if (deshabilitado) return;
@@ -193,6 +216,8 @@ const SelectorTokens = <T extends OpcionToken>({
       // lista se acortó, partir del guardado saltaría a una posición que no existe.
       case "ArrowDown":
         evento.preventDefault();
+        // Cerrada con Escape, la flotante vuelve con las flechas (el foco no se movió).
+        if (esFlotante) setAbiertaLista(true);
         setResaltada(
           disponibles.length === 0 ? 0 : (activa + 1) % disponibles.length,
         );
@@ -200,6 +225,7 @@ const SelectorTokens = <T extends OpcionToken>({
 
       case "ArrowUp":
         evento.preventDefault();
+        if (esFlotante) setAbiertaLista(true);
         setResaltada(
           disponibles.length === 0
             ? 0
@@ -371,6 +397,7 @@ const SelectorTokens = <T extends OpcionToken>({
       onChange={(evento) => {
         setBusqueda(evento.target.value);
         setResaltada(0);
+        if (esFlotante) setAbiertaLista(true);
       }}
       onKeyDown={alTeclear}
       // Flotante: abre al enfocar y cierra al salir. Las opciones usan `onMouseDown` +
@@ -383,11 +410,15 @@ const SelectorTokens = <T extends OpcionToken>({
   const lista = !deshabilitado && (!esFlotante || abiertaLista) && (
     <ul
       id={listaId}
+      ref={esFlotante ? listaRef : undefined}
       role="listbox"
       aria-label={etiqueta}
+      style={esFlotante ? estiloLista : undefined}
+      // Flotante: arrastrar su barra de desplazamiento no le quita el foco al buscador (cerraría).
+      onMouseDown={esFlotante ? (evento) => evento.preventDefault() : undefined}
       className={
         esFlotante
-          ? "menu absolute left-0 right-0 top-full z-10 mt-1 max-h-60 w-full flex-nowrap overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 text-sm shadow-[0_20px_45px_rgba(15,23,42,0.20)]"
+          ? "app-dropdown-surface menu flex-nowrap rounded-box border border-base-300 bg-base-100 p-2 text-sm text-base-content shadow-[0_20px_45px_rgba(15,23,42,0.20)]"
           : "menu max-h-32 w-full flex-nowrap overflow-y-auto rounded-box border border-base-300 p-2 text-sm"
       }
     >
@@ -444,6 +475,9 @@ const SelectorTokens = <T extends OpcionToken>({
     </ul>
   );
 
+  // La fija va en el flujo, bajo el buscador; la flotante, en el portal sobre `document.body`.
+  const listaEnSuSitio = esFlotante ? lista && createPortal(lista, document.body) : lista;
+
   return (
     <div
       className="form-control w-full"
@@ -461,21 +495,21 @@ const SelectorTokens = <T extends OpcionToken>({
 
       {cajaUnica ? (
         /* CAJA ÚNICA: chips y buscador dentro de la MISMA caja bordeada (un solo combobox). */
-        <div className="relative">
+        <div ref={ancla}>
           <div className="input input-bordered flex h-auto min-h-12 w-full flex-wrap items-center gap-2 py-2">
             {hayChips && chips}
             {entradaBusqueda}
           </div>
-          {lista}
+          {listaEnSuSitio}
         </div>
       ) : (
         <>
           {hayChips && (
             <div className="mb-2 flex flex-wrap items-center gap-2">{chips}</div>
           )}
-          <div className="relative">
+          <div ref={ancla}>
             {entradaBusqueda}
-            {lista}
+            {listaEnSuSitio}
           </div>
         </>
       )}

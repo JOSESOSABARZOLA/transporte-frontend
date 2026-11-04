@@ -154,7 +154,7 @@ export const filaDeCandidato = (candidato: Candidato): FilaReparto => ({
   elegible: candidato.asignable,
   motivo: candidato.asignable ? null : candidato.motivo,
   indiceCarga: candidato.indiceCarga,
-  nivelFatiga: candidato.nivelFatiga,
+  nivel: candidato.nivelFatiga,
   operativosAsignados: candidato.operativosAsignados,
   desviacionCarga: candidato.desviacionCarga,
   nivelEquidad: candidato.nivelEquidad,

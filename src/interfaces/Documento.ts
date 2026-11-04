@@ -64,6 +64,8 @@ export interface FilaMatriz {
     funcionarioId: number;
     nombre: string;
     telefono: string | null;
+    /** El cargo del Maestro (2026-10-30), como en Mis operativos. Opcional: lo trae el servidor nuevo. */
+    cargo?: string | null;
     esResponsable: boolean;
     /**
      * Ventana EFECTIVA de la persona (2026-09-08): su turno propio si lo tiene, o el del

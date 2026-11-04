@@ -68,10 +68,13 @@ import PanelEdicionOperativo, {
 import type { EstadoEnvio } from "./FormOperativo.tsx";
 import type { AvisoTexto } from "../../utils/errorApi.util.ts";
 import { cambiaronZonales } from "../../utils/edicionOperativo.util.ts";
+import { motivoCruces } from "../../utils/personal.util.ts";
 import { estadoPieDrawer, motivoSinCambios } from "../../utils/estadoPieDrawer.util.ts";
+import { conFaltaDeComposicion } from "../../utils/personalPorArea.util.ts";
 import {
   estadoPieDelBorrador,
   motivoGuardarBorrador,
+  textoDelBorrador,
   type ResumenBorrador,
 } from "../../utils/borradorPersonal.util.ts";
 
@@ -118,6 +121,14 @@ type PropsEditar = PropsComunes & {
   personalPendiente: boolean;
   /** Si el borrador cambió el turno de alguien que ya iba: puede descuadrar el transporte. */
   horarioCambiado: boolean;
+  /**
+   * EDITAR PATRULLA (2026-10-31): el personal va en el borrador de `useBorradorAporte` (variante
+   * patrulla) y el pie lo cuenta («N cambios sin guardar · +X · −Y · Z horarios»). Se guarda junto
+   * con los datos comunes desde el `onGuardar` del formulario.
+   */
+  borrador?: Omit<BorradorPersonalCajon, "onGuardarPersonal">;
+  /** Los códigos del registro para el subtítulo («IGECU-001 · ITECU-001»), nunca el grupo. */
+  identificadores?: readonly string[];
 } & PropsPanelEdicion;
 
 /** El borrador del aporte (2026-10-28): lo que cambió, si los horarios están bien y cómo guardar. */
@@ -191,6 +202,8 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
 
   // El borrador del aporte: en «personal», siempre (2026-10-29).
   const borrador = props.modo === "personal" ? props.borrador : undefined;
+  // El borrador de «Editar patrulla» (2026-10-31): el personal se guarda con los datos comunes.
+  const borradorEditar = props.modo === "editar" ? props.borrador : undefined;
 
   const hayCambios =
     props.modo === "personal"
@@ -198,7 +211,7 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
       : (estado?.hayCambios ?? false) ||
         (props.modo === "adicional"
           ? personalAdicionalModificado
-          : props.personalPendiente);
+          : props.personalPendiente || (borradorEditar?.resumen.total ?? 0) > 0);
 
   /*
     EDITAR · AVISO DE LA DAF. Conductor y placa se eligieron para un horario y una zona; si el
@@ -214,6 +227,8 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
         cambiaronZonales(estado.zonalesIds, zonalesOriginales)));
 
   const faltantes = estado?.faltantes ?? [];
+  // Ocupación del día (2026-10-31): alguien elegido se cruza con otro operativo. Manda sobre el resto.
+  const motivoCruce = motivoCruces(estado?.cruces ?? 0);
   const incompleto = faltantes.length > 0;
 
   // «N de M efectivos» compara con el original del adicional; al editar, el personal es el propio.
@@ -243,20 +258,45 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
     solo informa. (El rojo de «Falta: …» va tras intentar; el adicional completo, «Listo para
     registrar».)
   */
-  const estadoPie: EstadoPie = borrador
+  const estadoPieComun = estadoPieDrawer({
+    esEdicion: props.modo === "editar",
+    hayCambios,
+    intentado: estado?.intentado ?? false,
+    faltan: faltantes.map(rotuloDelPie),
+    textoListo,
+    contexto: textoEfectivos,
+  });
+  /*
+    EDITAR PATRULLA: horarios mal → «Revise los horarios»; lo que falta tras intentar, como siempre;
+    con personal cambiado, el resumen del borrador. «Falta: personal» solo si el borrador quedó vacío:
+    el formulario cuenta el personal del borrador, no un personal propio vacío.
+  */
+  const estadoPieBase: EstadoPie = motivoCruce
+    ? { tono: "error", texto: motivoCruce }
+    : borrador
     ? estadoPieDelBorrador(borrador.resumen, borrador.horariosInvalidos)
-    : estadoPieDrawer({
-          esEdicion: props.modo === "editar",
-          hayCambios,
-          intentado: estado?.intentado ?? false,
-          faltan: faltantes.map(rotuloDelPie),
-        textoListo,
-        contexto: textoEfectivos,
-      });
+    : borradorEditar?.horariosInvalidos
+      ? { tono: "error", texto: "Revise los horarios" }
+      : borradorEditar &&
+          borradorEditar.resumen.total > 0 &&
+          !(estado?.intentado && incompleto)
+        ? {
+            tono: "cambios",
+            texto: `${textoDelBorrador(borradorEditar.resumen)}${
+              estado?.hayCambios ? " · datos del operativo" : ""
+            }`,
+          }
+        : estadoPieComun;
+  // La patrulla con un área sin nadie (2026-11-04): «Falta: Inspector Técnico» en ámbar, sin apagar.
+  const estadoPie = conFaltaDeComposicion(
+    estadoPieBase,
+    estado?.faltaComposicion ?? [],
+    props.modo === "adicional" ? "registrar" : "guardar",
+  );
 
   // La patrulla se nombra por sus códigos, no por su `grupoRegistro` (2026-10-29).
   const identificadores =
-    props.modo === "personal" && props.identificadores?.length
+    props.modo !== "adicional" && props.identificadores?.length
       ? props.identificadores.join(" · ")
       : null;
 
@@ -290,7 +330,9 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
       */
       guardarPendiente={!borrador && incompleto}
       motivoGuardar={
-        borrador
+        motivoCruce && !props.bloqueado
+          ? motivoCruce
+          : borrador
           ? motivoGuardarBorrador(
               borrador.resumen,
               borrador.horariosInvalidos,
@@ -298,7 +340,9 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
             )
           : props.bloqueado
             ? "No se puede guardar: el cuadro o la ventana de carga están cerrados."
-            : motivoSinCambios(props.modo === "editar", hayCambios)
+            : borradorEditar?.horariosInvalidos
+              ? "Revise los horarios"
+              : motivoSinCambios(props.modo === "editar", hayCambios)
       }
       errorServidor={errorServidor?.texto}
       varianteErrorServidor={errorServidor?.variante}
@@ -331,6 +375,16 @@ const DrawerOperativo: FC<DrawerOperativoProps> = (props) => {
         ) : (
           <PanelEdicionOperativo
             {...panelDe(props)}
+            // «Editar patrulla»: quien guarda sabe si los datos comunes cambiaron (2026-10-31).
+            onGuardar={
+              borradorEditar
+                ? (valores, ayudas, extras) =>
+                    props.onGuardar(valores, ayudas, {
+                      notaPendienteAgregada: extras?.notaPendienteAgregada ?? false,
+                      generalesCambiaron: estado?.hayCambios ?? false,
+                    })
+                : props.onGuardar
+            }
             idForm={ID_FORM}
             onEstadoEnvio={setEstado}
           />
@@ -357,10 +411,14 @@ function panelDe(props: DrawerOperativoProps) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       modo, onCerrar, errorServidor, avisoContexto, titulo, mensajeDescarte,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      personalPendiente, horarioCambiado,
+      personalPendiente, horarioCambiado, identificadores,
+      borrador,
       ...panel
     } = props;
-    return panel;
+    // «Editar patrulla»: quien se agregó lleva «Nuevo código…» o, si cambió a otro, su código.
+    return borrador
+      ? { ...panel, idsNuevos: borrador.resumen.idsNuevos, rotulosNuevos: borrador.rotulosNuevos }
+      : panel;
   }
   const {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars

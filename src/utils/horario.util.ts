@@ -206,3 +206,36 @@ const aMinutos = (hora: string): number => {
   const [horas, minutos] = hora.split(":").map(Number);
   return horas * MINUTOS_POR_HORA + minutos;
 };
+
+/** Un horario en minutos del día, partido en la medianoche: «22:00–02:00» → [1320,1440] y [0,120]. */
+const intervalosDe = (horaInicio: string, horaFin: string): [number, number][] => {
+  const inicio = aMinutos(horaInicio);
+  const fin = aMinutos(horaFin);
+  if (fin > inicio) return [[inicio, fin]];
+  return [
+    [inicio, MINUTOS_POR_DIA],
+    ...(fin > 0 ? ([[0, fin]] as [number, number][]) : []),
+  ];
+};
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ¿SE CRUZAN DOS HORARIOS? (2026-10-31) Espejo de `RangoHorario.seSolapaCon` (RN-28) del servidor,
+ * para DECIR «Se cruza» antes de agregar a alguien. El servidor sigue siendo la autoridad al guardar.
+ *
+ *   · Intervalos SEMIABIERTOS: 08H00–12H00 y 12H00–16H00 NO se cruzan (encadenar no es coincidir).
+ *   · Con cruce de medianoche: 22H00–02H00 se parte en dos tramos, así choca con 01H00–05H00.
+ * Una hora mal escrita no se juzga: `false`.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+export const seCruzan = (
+  a: { horaInicio: string; horaFin: string },
+  b: { horaInicio: string; horaFin: string },
+): boolean => {
+  if (![a.horaInicio, a.horaFin, b.horaInicio, b.horaFin].every(esHoraValida)) return false;
+  return intervalosDe(a.horaInicio, a.horaFin).some(([desdeA, hastaA]) =>
+    intervalosDe(b.horaInicio, b.horaFin).some(
+      ([desdeB, hastaB]) => desdeA < hastaB && desdeB < hastaA,
+    ),
+  );
+};

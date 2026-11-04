@@ -32,6 +32,10 @@
  * `filaDeCandidato` (`planificarDia.util.ts`) y
  * usa el modo «consulta», sin «Agregar/Quitar», porque allí se asigna desde la fila del candidato
  * (con su placa). El personal las arma con `filaDePersona`; para él nada cambia.
+ *
+ * EL NIVEL ES `fila.nivel` (2026-10-30): en el personal, la carga por OPERATIVOS de la semana
+ * (`nivelCarga`), la misma de la etiqueta de la lista; en la DAF, la fatiga del conductor. El ANCHO
+ * de la barra sigue siendo el índice de horas.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -83,7 +87,7 @@ const FRANJA_MODO: Record<ModoReparto, string> = {
 const conSigno = (valor: number): string =>
   valor > 0 ? `+${valor}` : String(valor);
 
-/** La fatiga en una palabra, para el tooltip: «fatiga alta». */
+/** El nivel en una palabra, para el tooltip: «carga alta». */
 const PALABRA_FATIGA: Record<NivelFatiga, string> = {
   VERDE: "baja",
   AMBAR: "media",
@@ -114,15 +118,15 @@ const detalleDeCarga = (persona: FilaReparto, clase: ClaseReparto): string => {
     : `Índice ${persona.indiceCarga}`;
 };
 
-/** Tooltip completo: «<nombre> · fatiga <x> · índice <n> · cuota <c> · <desviación>». */
+/** Tooltip completo: «<nombre> · carga <x> · índice <n> · cuota <c> · <desviación>». */
 const tooltipDeCarga = (
   persona: FilaReparto,
   clase: ClaseReparto,
   cuota: number | undefined,
 ): string => {
   const partes = [persona.nombre];
-  if (persona.nivelFatiga)
-    partes.push(`fatiga ${PALABRA_FATIGA[persona.nivelFatiga]}`);
+  if (persona.nivel)
+    partes.push(`carga ${PALABRA_FATIGA[persona.nivel]}`);
   partes.push(`índice ${persona.indiceCarga}`);
   if (cuota !== undefined) partes.push(`cuota ${cuota}`);
   const equidad = textoEquidad(persona, clase);
@@ -240,9 +244,9 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
               : ""}
           </p>
           <div className="mt-0.5 flex flex-wrap gap-1">
-            {/* Badge de fatiga = el MISMO de la lista; da el color de la barra en palabras. */}
-            {persona.nivelFatiga && (
-              <EtiquetaCarga nivel={persona.nivelFatiga} />
+            {/* Badge de carga = el MISMO de la lista; da el color de la barra en palabras. */}
+            {persona.nivel && (
+              <EtiquetaCarga nivel={persona.nivel} />
             )}
             {persona.sugerido && (
               <span className="badge badge-primary badge-sm whitespace-nowrap">
@@ -265,8 +269,8 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
           >
             <div
               className={`absolute left-0 top-0 h-full rounded-full ${
-                persona.nivelFatiga
-                  ? TONO_CARGA[persona.nivelFatiga]
+                persona.nivel
+                  ? TONO_CARGA[persona.nivel]
                   : "bg-base-content/40"
               }`}
               style={{ width: `${anchoPct}%` }}
@@ -340,9 +344,9 @@ const RepartoCarga: FC<RepartoCargaProps> = ({
         </div>
       </div>
 
-      {/* LEYENDA: el COLOR es la fatiga (muestras en barra); la cuota, la marca vertical. Regla 6. */}
+      {/* LEYENDA: el COLOR es el nivel de carga (muestras en barra); la cuota, la marca vertical. Regla 6. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-app-muted">
-        <span className="font-medium text-base-content">Color = fatiga:</span>
+        <span className="font-medium text-base-content">Color = carga:</span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-5 rounded-full bg-success" />
           baja

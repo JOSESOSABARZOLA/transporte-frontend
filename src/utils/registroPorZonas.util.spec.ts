@@ -145,4 +145,23 @@ describe("registro por zonas · edición", () => {
       [CALDERON, 1],
     ]);
   });
+
+  it("SALAZAR SOTO (2026-10-31): 11 códigos en 2 zonas; cambiar el tipo de la Zona 2 viaja con sus 7", () => {
+    const zonas = zonasDeLosOperativos([
+      ...[5, 6, 7, 8, 9, 10, 11].map((n) => operativo(n, CALDERON)),
+      ...[1, 2, 3, 4].map((n) => operativo(n, DELICIA)),
+    ]);
+    expect(zonas.map((z) => [z.zonalId, z.cantidad])).toEqual([
+      [DELICIA, 4],
+      [CALDERON, 7],
+    ]);
+
+    // El cajón edita la Zona 2 y guarda el registro completo (`editarPorZonas`): el servidor aplica
+    // el tipo nuevo a los 7 códigos de esa zona.
+    const cuerpo = comoZonasDelRegistro(
+      zonas.map((zona, indice) => (indice === 1 ? { ...zona, tipoControlIds: [9] } : zona)),
+    );
+    expect(cuerpo[1]).toMatchObject({ zonalId: CALDERON, cantidad: 7, tipoControlIds: [9] });
+    expect(cuerpo[0]).toMatchObject({ zonalId: DELICIA, cantidad: 4, tipoControlIds: [2] });
+  });
 });

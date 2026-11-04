@@ -27,7 +27,7 @@
  * es el del cajón (`idForm`), y el estado del envío le llega por `onEstadoEnvio`.
  */
 
-import type { FC } from "react";
+import type { FC, ReactNode } from "react";
 import type { FormikHelpers } from "formik";
 
 import FormOperativo, {
@@ -47,7 +47,6 @@ import type {
 import type { Operativo, PersonaAsignada } from "../../interfaces/Operativo.ts";
 import type { PersonaElegible } from "../../interfaces/Personal.ts";
 import type { PersonaAgregada } from "./SelectorPersonal.tsx";
-import RosterPatrulla, { type MiembroPatrulla } from "./RosterPatrulla.tsx";
 import AvisoEnLinea from "../common/AvisoEnLinea.tsx";
 
 export type PanelEdicionOperativoProps = {
@@ -111,15 +110,11 @@ export type PanelEdicionOperativoProps = {
    */
   personalBloqueado?: boolean;
   /**
-   * ROSTER DE LA PATRULLA (2026-09-18). Al editar una patrulla (Form 5/6) como registrante, en
-   * lugar del bloque de personal se pinta el roster: cada código de área (IGNECU/ITNECU/INECU) con
-   * su «Cambiar» (misma área, conserva el código) y «Agregar persona». Vacío = no es patrulla o no
-   * corresponde editarla, y se pinta el personal normal.
+   * EDITAR PATRULLA (2026-10-31; reemplaza al roster que guardaba al instante): el código de cada
+   * persona junto a su nombre y su «Cambiar por…» (misma área, conserva el código), en borrador.
    */
-  miembrosPatrulla?: MiembroPatrulla[];
-  onCambiarPersonaPatrulla?: (operativoId: number, funcionarioId: number) => void;
-  onQuitarMiembroPatrulla?: (operativo: Operativo) => void;
-  onAgregarMiembroPatrulla?: (funcionarioId: number) => void;
+  detalleDePersona?: (persona: PersonaAgregada) => ReactNode;
+  accionDePersona?: (persona: PersonaAgregada) => ReactNode;
   guardando: boolean;
   onGuardar: (
     valores: ValoresOperativo,
@@ -161,10 +156,8 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   bloqueado,
   soloPersonal = false,
   personalBloqueado = false,
-  miembrosPatrulla,
-  onCambiarPersonaPatrulla,
-  onQuitarMiembroPatrulla,
-  onAgregarMiembroPatrulla,
+  detalleDePersona,
+  accionDePersona,
   guardando,
   onGuardar,
   idsNuevos,
@@ -172,17 +165,8 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
   idForm,
   onEstadoEnvio,
 }) => {
-  /**
-   * ROSTER DE LA PATRULLA: se pinta cuando la página lo entrega y hay miembros. Sustituye al
-   * bloque de personal del formulario, que se OCULTA (aquí solo se editan los generales).
-   */
-  const conRoster = Boolean(
-    miembrosPatrulla &&
-      miembrosPatrulla.length > 0 &&
-      onCambiarPersonaPatrulla &&
-      onQuitarMiembroPatrulla &&
-      onAgregarMiembroPatrulla,
-  );
+  // La patrulla (5/6): `editarPatrulla` no admite compartir unidad, así que no se sugiere.
+  const esPatrulla = operativo.esLote && operativo.formulario.esPatrulla;
 
   /**
    * El personal ya asignado se toma **del operativo**, no de un estado propio: así lo que
@@ -247,22 +231,6 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
               </AvisoEnLinea>
           )}
 
-        {/*
-          ROSTER DE LA PATRULLA: cambiar/agregar/quitar cada código de área. Reemplaza al bloque de
-          personal del formulario (que abajo va OCULTO); los generales se siguen editando abajo.
-        */}
-        {conRoster && (
-          <RosterPatrulla
-            miembros={miembrosPatrulla ?? []}
-            candidatos={candidatos}
-            onCambiar={onCambiarPersonaPatrulla!}
-            onQuitar={onQuitarMiembroPatrulla!}
-            onAgregar={onAgregarMiembroPatrulla!}
-            aviso={avisoPersonal}
-            bloqueado={bloqueado}
-          />
-        )}
-
         <FormOperativo
           modo="edicion"
           formularioCodigo={operativo.formulario.codigo}
@@ -297,17 +265,23 @@ const PanelEdicionOperativo: FC<PanelEdicionOperativoProps> = ({
               : comoValoresDeFormulario(operativo)
           }
           // Compartir unidad (2026-10-19): coincidencias de su jornada, sin contarse a sí mismo.
-          fechaJornada={soloPersonal || conRoster ? null : operativo.cuadroFecha}
+          fechaJornada={soloPersonal || esPatrulla ? null : operativo.cuadroFecha}
           operativoId={operativo.id}
           bloqueado={bloqueado}
           soloPersonal={soloPersonal}
+          // El aporte toma el horario del operativo y no lo edita (2026-10-31).
+          horarioFijo={
+            soloPersonal && operativo.horaInicio && operativo.horaFin
+              ? { horaInicio: operativo.horaInicio, horaFin: operativo.horaFin }
+              : null
+          }
           personalBloqueado={personalBloqueado}
-          // Con roster, el personal se gestiona arriba: aquí se oculta y solo quedan los generales.
-          personalOculto={conRoster}
           guardando={guardando}
           onGuardar={onGuardar}
           idsNuevos={idsNuevos}
           rotulosNuevos={rotulosNuevos}
+          detalleDePersona={detalleDePersona}
+          accionDePersona={accionDePersona}
           // En el aporte, quien no es de este departamento llega en lectura y se dice.
           rotuloLectura={soloPersonal ? "Del dueño del formulario · lectura" : undefined}
           idForm={idForm}

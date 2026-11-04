@@ -46,10 +46,12 @@ import {
   ordenarPorPersonaYZona,
 } from "../../utils/agrupacionForm8.util.ts";
 import {
+  esBloquePorZonas,
   esRegistroPorZonas,
   lineasDeZona,
   type LineaDeZona,
 } from "../../utils/zonasDelBloque.util.ts";
+import GrupoPorZonas from "../cuadro/GrupoPorZonas.tsx";
 import { horarioLegible } from "../../utils/texto.util.ts";
 
 /**
@@ -243,6 +245,12 @@ const Seccion: FC<{ seccion: SeccionMatriz }> = ({ seccion }) => (
         <Fila
           key={grupo[0].id}
           fila={grupo[0]}
+          bandaGris={indiceGrupo % 2 === 0}
+        />
+      ) : esBloquePorZonas(grupo) ? (
+        <GrupoPorZonas
+          key={grupo[0].id}
+          filas={grupo}
           bandaGris={indiceGrupo % 2 === 0}
         />
       ) : grupo[0].esLote ? (

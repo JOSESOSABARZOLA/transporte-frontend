@@ -27,11 +27,14 @@ import {
   type MotivoBaja,
   type NivelEquidad,
   type NivelFatiga,
+  type OperativoDelDia,
   type PersonaElegible,
 } from "../interfaces/Personal";
 import type { AreaPersonal } from "../interfaces/Formulario";
 import type { RolDepartamental } from "../config/env";
-import { normalizar } from "./texto.util";
+import { horarioLegible, normalizar } from "./texto.util";
+import { comoHorario, comoHoraInstitucional, esHoraValida, seCruzan } from "./horario.util.ts";
+import { identificadorCorto } from "./rangoIdentificadores.util.ts";
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -178,20 +181,22 @@ export const clasificarReparto = (
  *
  * LOS ELEGIBLES VAN PRIMERO: a quien no se puede convocar tampoco se le puede elegir, así que
  * no encabeza la lista aunque su carga sea baja —quedaría por encima de gente que sí es
- * asignable—. A igualdad de nivel, el índice afina (menor arriba); quien no trae carga
- * calculada va al final. Es ESTABLE: los empates conservan el orden que ya traían (el
- * alfabético del servidor).
+ * asignable—. Quien no trae carga calculada va al final.
+ *
+ * POR OPERATIVOS DESDE EL 2026-10-30: nivel de carga (`nivelCarga`, por operativos de la semana),
+ * luego cuántos operativos, luego el índice de horas (desempate) y, por último, el apellido. Así el
+ * orden coincide con la etiqueta y con «N op. esta semana».
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 const ORDEN_FATIGA: Record<NivelFatiga, number> = { VERDE: 0, AMBAR: 1, ROJO: 2 };
 
 /** Peso de carga para ordenar; sin nivel calculado va al final (tras VERDE/AMBAR/ROJO). */
 const pesoDeCarga = (persona: PersonaElegible): number =>
-  persona.nivelFatiga ? ORDEN_FATIGA[persona.nivelFatiga] : 3;
+  persona.nivelCarga ? ORDEN_FATIGA[persona.nivelCarga] : 3;
 
 /**
  * Compara dos candidatos por carga para ordenar el selector: elegibles primero y, dentro de
- * cada grupo, de menor a mayor carga (nivel del semáforo y, a igualdad, el índice).
+ * cada grupo, nivel de carga → operativos de la semana → índice de horas → apellido.
  */
 export const compararPorCarga = (
   a: PersonaElegible,
@@ -202,7 +207,14 @@ export const compararPorCarga = (
   const porNivel = pesoDeCarga(a) - pesoDeCarga(b);
   if (porNivel !== 0) return porNivel;
 
-  return (a.indiceCarga ?? 0) - (b.indiceCarga ?? 0);
+  const porOperativos =
+    (a.operativosAsignados ?? 0) - (b.operativosAsignados ?? 0);
+  if (porOperativos !== 0) return porOperativos;
+
+  const porIndice = (a.indiceCarga ?? 0) - (b.indiceCarga ?? 0);
+  if (porIndice !== 0) return porIndice;
+
+  return nombreDePersona(a).localeCompare(nombreDePersona(b));
 };
 
 /**
@@ -230,7 +242,6 @@ export type FilaReparto = Pick<
   | "elegible"
   | "motivo"
   | "indiceCarga"
-  | "nivelFatiga"
   | "operativosAsignados"
   | "desviacionCarga"
   | "nivelEquidad"
@@ -238,12 +249,18 @@ export type FilaReparto = Pick<
 > & {
   nombre: string;
   area?: AreaPersonal;
+  /**
+   * El nivel que pinta la etiqueta y el color de la barra (2026-10-30): el del PERSONAL es por
+   * operativos (`nivelCarga`); el del conductor de la DAF, su fatiga (`nivelFatiga`).
+   */
+  nivel?: NivelFatiga;
 };
 
-/** La persona del registro como fila del reparto. */
+/** La persona del registro como fila del reparto: su nivel es el de carga por operativos. */
 export const filaDePersona = (persona: PersonaElegible): FilaReparto => ({
   ...persona,
   nombre: nombreDePersona(persona),
+  nivel: persona.nivelCarga,
 });
 
 /**
@@ -281,75 +298,96 @@ export const avisoCargaAlta = (
 
 /**
  * CARGA ALTA ANTES DE AGREGAR (2026-10-30). Al pulsar «+ Agregar» o «Reemplazar» sobre alguien con
- * «Carga Alta» (fatiga `ROJO`) no se agrega todavía: se pregunta con un `MensajeModal` advertencia.
- * Es solo un aviso: «Agregar igual» siempre está, y no cambia ninguna regla de elegibilidad.
+ * «Carga Alta» —por OPERATIVOS de la semana, `nivelCarga` `ROJO`— no se agrega todavía: se pregunta
+ * con un `MensajeModal` advertencia. Es solo un aviso: «Agregar igual» siempre está, y no cambia
+ * ninguna regla de elegibilidad.
  */
-export const pideConfirmarCarga = (persona: ConCarga): boolean =>
-  persona.nivelFatiga === "ROJO";
+export const pideConfirmarCarga = (persona: PersonaElegible): boolean =>
+  persona.nivelCarga === "ROJO";
+
+/** Tope de personas que propone el modal de carga alta. */
+export const MAXIMO_SUGERENCIAS_CARGA = 3;
 
 /**
- * A QUIÉN PROPONER EN SU LUGAR: la persona DISPONIBLE (elegible y aún no agregada) del MISMO tipo de
- * personal con MENOS carga que la elegida, con el mismo orden del selector (`compararPorCarga`: nivel
- * y, a igualdad, índice). Si nadie tiene menos carga, `null`: el modal no ofrece «Elegir a …».
+ * A QUIÉN PROPONER EN SU LUGAR (hasta tres): personas DISPONIBLES (elegibles y aún no agregadas) del
+ * MISMO tipo de personal, con MENOS operativos que la elegida y que NO estén en Carga Alta, en el
+ * orden del selector (`compararPorCarga`). Sin nadie así, la lista va vacía y el modal no propone.
+ *
+ * Con el horario del operativo (2026-10-31) tampoco propone a quien se cruza con él: la misma regla de
+ * las etiquetas (`ocupacionDe`, espejo de RN-28). Sin horario no se juzga el cruce.
  */
-export const sugerenciaDeMenorCarga = (
+export const sugerenciasDeMenorCarga = (
   elegida: PersonaElegible,
   candidatos: readonly PersonaElegible[],
   idsAgregados: readonly number[],
-): PersonaElegible | null => {
+  horario: HorarioDelOperativo | null = null,
+  maximo: number = MAXIMO_SUGERENCIAS_CARGA,
+): PersonaElegible[] => {
   const agregados = new Set(idsAgregados);
-  const mejor = candidatos
+  const suyos = elegida.operativosAsignados ?? 0;
+  return candidatos
     .filter(
       (c) =>
         c.id !== elegida.id &&
         c.elegible &&
         !agregados.has(c.id) &&
         c.area === elegida.area &&
-        compararPorCarga(c, elegida) < 0,
+        c.nivelCarga !== "ROJO" &&
+        c.operativosAsignados !== undefined &&
+        c.operativosAsignados < suyos &&
+        ocupacionDe(c, horario).estado !== "CRUCE",
     )
-    .sort(compararPorCarga)[0];
-  return mejor ?? null;
+    .sort(compararPorCarga)
+    .slice(0, maximo);
 };
 
-/** «N op. esta semana» / «1 operativo», o nada si el servidor no lo trae. */
-const operativosDeLaSemana = (cantidad: number | undefined, corto: boolean): string | null => {
+/** «N op. esta semana» (corto) o «N operativos esta semana», o nada si el servidor no lo trae. */
+export const operativosDeLaSemana = (
+  cantidad: number | undefined,
+  corto: boolean,
+): string | null => {
   if (cantidad === undefined) return null;
   if (corto) return `${cantidad} op. esta semana`;
   return `${cantidad} ${cantidad === 1 ? "operativo" : "operativos"} esta semana`;
 };
 
-/** Los textos del modal de carga alta: título, mensaje y, si hay, la línea de la sugerencia. */
+/** Los textos del modal de carga alta: título y mensaje (la lista de sugeridas va aparte). */
 export const textoModalCargaAlta = (
   elegida: PersonaElegible,
-  sugerida: PersonaElegible | null,
-): { titulo: string; mensaje: string; sugerencia: string | null } => {
+): { titulo: string; mensaje: string } => {
   const semana = operativosDeLaSemana(elegida.operativosAsignados, false);
-  const deSugerida = sugerida
-    ? operativosDeLaSemana(sugerida.operativosAsignados, true)
-    : null;
   return {
     titulo: `${nombreDePersona(elegida)} tiene carga alta`,
     mensaje: `${
       semana ? `Ya tiene ${semana}.` : "Ya tiene una carga alta esta semana."
     } Considere repartir con quien tenga menos carga.`,
-    sugerencia: sugerida
-      ? `Con menos carga: ${nombreDePersona(sugerida)}${deSugerida ? ` (${deSugerida})` : ""}`
-      : null,
   };
 };
 
-export const conteoSemaforo = (
-  candidatos: readonly ConCarga[],
+/**
+ * Cuántos hay en cada nivel del semáforo: lo que resume el botón «Ver reparto de carga». El
+ * PERSONAL cuenta por `nivelCarga` (operativos, 2026-10-30, con `nivelDeCargaPersonal`); la DAF,
+ * por omisión, por la fatiga del conductor (`nivelFatiga`).
+ */
+export const conteoSemaforo = <T extends ConCarga>(
+  candidatos: readonly T[],
+  nivelDe: (item: T) => NivelFatiga | undefined = (item) => item.nivelFatiga,
 ): { baja: number; media: number; alta: number } =>
   candidatos.reduce(
     (cuenta, persona) => {
-      if (persona.nivelFatiga === "VERDE") cuenta.baja += 1;
-      else if (persona.nivelFatiga === "AMBAR") cuenta.media += 1;
-      else if (persona.nivelFatiga === "ROJO") cuenta.alta += 1;
+      const nivel = nivelDe(persona);
+      if (nivel === "VERDE") cuenta.baja += 1;
+      else if (nivel === "AMBAR") cuenta.media += 1;
+      else if (nivel === "ROJO") cuenta.alta += 1;
       return cuenta;
     },
     { baja: 0, media: 0, alta: 0 },
   );
+
+/** El nivel de carga del personal (por operativos), para `conteoSemaforo`. */
+export const nivelDeCargaPersonal = (
+  persona: PersonaElegible,
+): NivelFatiga | undefined => persona.nivelCarga;
 
 /** Tope de «Completar con N de menor carga»: completa de a pocos, no vacía la lista (R4). */
 export const MAXIMO_COMPLETAR = 4;
@@ -596,4 +634,133 @@ export const turnoDePrimera = <
   const primera = agregadas[0];
 
   return { horaInicio: primera?.horaInicio, horaFin: primera?.horaFin };
+};
+
+/*
+  ═══════════════════════════════════════════════════════════════════════════════
+  OCUPACIÓN DEL DÍA (2026-10-31). Al asignar personal se ve, antes de guardar, si la persona ya está
+  en otro operativo ese día y si se cruza con el horario del operativo. El cruce lo decide
+  `seCruzan` (espejo de RN-28); el servidor sigue siendo la autoridad al guardar.
+  ═══════════════════════════════════════════════════════════════════════════════
+*/
+
+/** El horario del operativo que se arma: inicio y fin, o nada si falta alguno. */
+export type HorarioDelOperativo = { horaInicio: string; horaFin: string };
+
+/** ¿Tiene las dos horas bien escritas? Sin eso no se juzga el cruce. */
+export const horarioCompleto = (
+  horario: { horaInicio?: string | null; horaFin?: string | null } | null | undefined,
+): horario is HorarioDelOperativo =>
+  Boolean(horario?.horaInicio && horario?.horaFin) &&
+  esHoraValida(horario?.horaInicio ?? "") &&
+  esHoraValida(horario?.horaFin ?? "");
+
+/** LIBRE ese día; OCUPADO en otro operativo que no choca; CRUCE si alguno choca con el horario. */
+export type EstadoOcupacion = "LIBRE" | "OCUPADO" | "CRUCE";
+
+export type Ocupacion = {
+  estado: EstadoOcupacion;
+  operativos: OperativoDelDia[];
+  /** Los que chocan con el horario (vacío sin horario: no se juzga). */
+  cruces: OperativoDelDia[];
+};
+
+export const ocupacionDe = (
+  persona: { operativosDelDia?: OperativoDelDia[] },
+  horario: HorarioDelOperativo | null,
+): Ocupacion => {
+  const operativos = persona.operativosDelDia ?? [];
+  const cruces = horarioCompleto(horario)
+    ? operativos.filter((operativo) => seCruzan(operativo, horario))
+    : [];
+  const estado: EstadoOcupacion =
+    operativos.length === 0 ? "LIBRE" : cruces.length > 0 ? "CRUCE" : "OCUPADO";
+  return { estado, operativos, cruces };
+};
+
+/** Libres, luego ocupados sin cruce, luego con cruce. */
+export const ORDEN_OCUPACION: Record<EstadoOcupacion, number> = { LIBRE: 0, OCUPADO: 1, CRUCE: 2 };
+
+/** «08H00–16H30», corto, para la etiqueta. */
+const horarioCorto = (operativo: { horaInicio: string; horaFin: string }): string =>
+  `${comoHoraInstitucional(operativo.horaInicio)}–${comoHoraInstitucional(operativo.horaFin)}`;
+
+/** «08H00 a 16H30», el de las tablas. */
+const horarioLargo = (operativo: { horaInicio: string; horaFin: string }): string =>
+  horarioLegible(comoHorario(operativo.horaInicio, operativo.horaFin));
+
+/** «Ocupado 08H00–16H30», «Se cruza 18H00–22H00 +1», o `null` si está libre. */
+export const etiquetaOcupacion = (ocupacion: Ocupacion): string | null => {
+  if (ocupacion.estado === "LIBRE") return null;
+  const lista = ocupacion.estado === "CRUCE" ? ocupacion.cruces : ocupacion.operativos;
+  const mas = lista.length > 1 ? ` +${lista.length - 1}` : "";
+  return `${ocupacion.estado === "CRUCE" ? "Se cruza" : "Ocupado"} ${horarioCorto(lista[0])}${mas}`;
+};
+
+/**
+ * Una línea del globito: «OCF-001-31-OCT-2026 · 1. OCF · 08H00 a 16H30 · Zonal Calderón · Estación
+ * Río Coca». RN-48: de un operativo ajeno, «08H00 a 16H30 · otro departamento».
+ */
+export const lineaOperativoDelDia = (operativo: OperativoDelDia): string =>
+  operativo.ajeno
+    ? `${horarioLargo(operativo)} · otro departamento`
+    : [
+        operativo.identificador,
+        `${operativo.formulario.numero}. ${operativo.formulario.codigo}`,
+        horarioLargo(operativo),
+        operativo.zonal,
+        operativo.punto,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+/** La última línea del globito: si choca o no con el horario del operativo. Sin horario, `null`. */
+export const cierreOcupacion = (
+  ocupacion: Ocupacion,
+  horario: HorarioDelOperativo | null,
+): string | null => {
+  if (!horarioCompleto(horario) || ocupacion.estado === "LIBRE") return null;
+  return ocupacion.estado === "CRUCE"
+    ? `Choca con ${horarioLargo(horario)}: si lo agrega, cambie el horario`
+    : `No choca con ${horarioLargo(horario)}: se puede agregar`;
+};
+
+/**
+ * Bajo una persona elegida que se cruza: «⚠ Se cruza con OCF-001 (08H00 a 16H30). Cambie el horario
+ * o quítelo.». De un operativo ajeno: «con un operativo de otro departamento».
+ */
+export const avisoCruceSeleccionado = (ocupacion: Ocupacion): string | null => {
+  const choque = ocupacion.cruces[0];
+  if (!choque) return null;
+  const con = choque.ajeno
+    ? "un operativo de otro departamento"
+    : identificadorCorto(choque.identificador);
+  return `⚠ Se cruza con ${con} (${horarioLargo(choque)}). Cambie el horario o quítelo.`;
+};
+
+/** «Revise los horarios · 2 personas se cruzan con otro operativo», o `null` sin cruces. */
+export const motivoCruces = (cuantas: number): string | null =>
+  cuantas === 0
+    ? null
+    : `Revise los horarios · ${cuantas} ${cuantas === 1 ? "persona se cruza" : "personas se cruzan"} con otro operativo`;
+
+/** El horario más común del personal (al editar): el que llevan más personas; `null` sin horarios. */
+export const horarioMasComun = (
+  personal: ReadonlyArray<{ horaInicio?: string | null; horaFin?: string | null }>,
+): HorarioDelOperativo | null => {
+  const cuenta = new Map<string, { horario: HorarioDelOperativo; veces: number }>();
+  for (const persona of personal) {
+    if (!horarioCompleto(persona)) continue;
+    const clave = `${persona.horaInicio}|${persona.horaFin}`;
+    const actual = cuenta.get(clave);
+    cuenta.set(clave, {
+      horario: { horaInicio: persona.horaInicio, horaFin: persona.horaFin },
+      veces: (actual?.veces ?? 0) + 1,
+    });
+  }
+  let mejor: { horario: HorarioDelOperativo; veces: number } | null = null;
+  for (const candidato of cuenta.values()) {
+    if (!mejor || candidato.veces > mejor.veces) mejor = candidato;
+  }
+  return mejor?.horario ?? null;
 };

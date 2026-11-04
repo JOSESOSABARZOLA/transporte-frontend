@@ -225,8 +225,8 @@ describe("«Reemplazar» con carga alta pregunta antes (2026-10-30)", () => {
   /** ALVAREZ con «Carga Alta» y ZAMBRANO, del mismo tipo, con carga baja. */
   const CON_CARGA: PersonaElegible[] = [
     CANDIDATOS[0],
-    { ...CANDIDATOS[1], nivelFatiga: "ROJO", indiceCarga: 12, operativosAsignados: 5 },
-    { ...inspector(4, "ZAMBRANO", "TECNICO"), nivelFatiga: "VERDE", indiceCarga: 1, operativosAsignados: 0 },
+    { ...CANDIDATOS[1], nivelCarga: "ROJO", indiceCarga: 12, operativosAsignados: 5 },
+    { ...inspector(4, "ZAMBRANO", "TECNICO"), nivelCarga: "VERDE", indiceCarga: 1, operativosAsignados: 0 },
     CANDIDATOS[2],
   ];
   const reemplazarDe = (nombre: string) => {
@@ -244,7 +244,10 @@ describe("«Reemplazar» con carga alta pregunta antes (2026-10-30)", () => {
     // Todavía no se reemplazó: AGUAS sigue elegido.
     expect(screen.getByLabelText(/Cantidad de operativos de AGUAS PRUEBA/)).toBeInTheDocument();
     // La sugerida es del mismo tipo (BENAVIDES es General y no se propone).
-    expect(screen.getByText("Con menos carga: ZAMBRANO PRUEBA (0 op. esta semana)")).toBeInTheDocument();
+    const lista = screen.getByRole("list", { name: "Con menos carga" });
+    expect(within(lista).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(lista).getByText("ZAMBRANO PRUEBA")).toBeInTheDocument();
+    expect(within(lista).getByText("0 op. esta semana")).toBeInTheDocument();
 
     await usuario.click(screen.getByRole("button", { name: "Elegir a ZAMBRANO PRUEBA" }));
 

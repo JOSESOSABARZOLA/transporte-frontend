@@ -448,37 +448,42 @@ describe("partirAviso · título corto y texto debajo", () => {
   });
 });
 
-describe("MensajeModal · tercera salida (`accionExtra`, 2026-10-30)", () => {
-  it("apila acción, extra y el botón seguro en ese orden; Escape es el seguro, nunca la extra", async () => {
+describe("MensajeModal · pie propio (`pie`, 2026-10-30)", () => {
+  it("reemplaza la fila de botones; Escape y el velo llaman a onSecundario; el foco va al primer botón del pie", async () => {
     const usuario = userEvent.setup();
-    const onPrincipal = vi.fn();
     const onSecundario = vi.fn();
-    const extra = vi.fn();
+    const agregar = vi.fn();
     render(
       <MensajeModal
         variante="advertencia"
         titulo="PEREZ JUAN tiene carga alta"
-        textoPrincipal="Elegir a LOPEZ ANA"
-        textoSecundario="Cancelar"
-        onPrincipal={onPrincipal}
         onSecundario={onSecundario}
-        accionExtra={{ texto: "Agregar igual", onClick: extra }}
+        pie={
+          <>
+            <button type="button" onClick={agregar}>
+              Agregar igual
+            </button>
+            <button type="button" onClick={onSecundario}>
+              Cancelar
+            </button>
+          </>
+        }
       />,
     );
 
     const modal = screen.getByRole("alertdialog", { name: "PEREZ JUAN tiene carga alta" });
     expect(within(modal).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "Elegir a LOPEZ ANA",
       "Agregar igual",
       "Cancelar",
     ]);
+    expect(within(modal).getByRole("button", { name: "Agregar igual" })).toHaveFocus();
 
     await usuario.click(within(modal).getByRole("button", { name: "Agregar igual" }));
-    expect(extra).toHaveBeenCalledTimes(1);
+    expect(agregar).toHaveBeenCalledTimes(1);
 
     await usuario.keyboard("{Escape}");
-    expect(onSecundario).toHaveBeenCalledTimes(1);
-    expect(extra).toHaveBeenCalledTimes(1);
-    expect(onPrincipal).not.toHaveBeenCalled();
+    fireEvent.click(document.querySelector("[data-velo-mensaje]") as Element);
+    expect(onSecundario).toHaveBeenCalledTimes(2);
+    expect(agregar).toHaveBeenCalledTimes(1);
   });
 });

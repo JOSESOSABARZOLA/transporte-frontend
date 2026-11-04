@@ -29,11 +29,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { Operativo } from "../interfaces/Operativo.ts";
 import { useDestelloDeFila } from "./useDestelloDeFila.ts";
+// SE PAGINA POR OPERATIVO, NO POR FILA (2026-10-30): un bloque —la patrulla 5/6, las copias del 8,
+// el registro por zonas— cuenta como UN operativo y nunca se parte entre páginas.
+import {
+  paginaDelOperativo,
+  paginarPorGrupos,
+  totalPorRegistro,
+} from "../utils/grupoOperativos.util.ts";
 import {
   MS_RESALTADO,
   filtrarOperativos,
   hayFiltrosActivos,
-  paginar,
   type ColumnaOperativo,
   type FiltrosListado,
 } from "../utils/listadoOperativos.util.ts";
@@ -60,8 +66,11 @@ export const useTablaOperativos = (
     [operativos, filtros],
   );
 
+  // Cuántos códigos tiene cada registro en TODO el listado: el «(n)» nunca cuenta solo la página.
+  const totalesPorRegistro = useMemo(() => totalPorRegistro(operativos), [operativos]);
+
   const paginaActual = useMemo(
-    () => paginar(coincidentes, pagina, tamanio),
+    () => paginarPorGrupos(coincidentes, pagina, tamanio),
     [coincidentes, pagina, tamanio],
   );
 
@@ -72,10 +81,10 @@ export const useTablaOperativos = (
   // Llevar a su página la fila pedida, en cuanto está en la lista. Se ajusta DURANTE el render —el
   // patrón de React para estado derivado—, no en un efecto que pintaría primero la página vieja.
   if (irA !== null) {
-    const indice = coincidentes.findIndex((operativo) => operativo.id === irA);
-    if (indice >= 0) {
+    const suPagina = paginaDelOperativo(coincidentes, irA, tamanio);
+    if (suPagina !== null) {
       setIrA(null);
-      setPagina(Math.floor(indice / tamanio));
+      setPagina(suPagina);
     }
   }
 
@@ -134,6 +143,7 @@ export const useTablaOperativos = (
     filtrando: hayFiltrosActivos(filtros),
     coincidentes,
     paginaActual,
+    totalesPorRegistro,
     setPagina,
     tamanio,
     cambiarTamanio,

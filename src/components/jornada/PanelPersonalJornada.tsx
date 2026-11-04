@@ -56,6 +56,12 @@ import { OperativoService } from "../../services/operativo.service.ts";
 import { PersonalService } from "../../services/personal.service.ts";
 import { presentarError } from "../../utils/errorApi.util.ts";
 import { toast } from "../../utils/mensaje.ts";
+import { motivoCruces } from "../../utils/personal.util.ts";
+import {
+  conFaltaDeComposicion,
+  personalPorArea,
+} from "../../utils/personalPorArea.util.ts";
+import type { AreaPersonal } from "../../interfaces/Formulario.ts";
 import { useBorradorAporte } from "../../hooks/useBorradorAporte.ts";
 import { useCatalogosFormulario } from "../../hooks/useCatalogosFormulario.ts";
 import { useConfirmarLiberacion } from "../../hooks/useConfirmarLiberacion.tsx";
@@ -90,6 +96,7 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
   const [cargando, setCargando] = useState(true);
   const [cargandoPersonal, setCargandoPersonal] = useState(true);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [cruces, setCruces] = useState(0);
   const catalogos = useCatalogosFormulario(seccion.codigo);
   const { ejecutar: conLiberacion, modal: modalLiberacion } = useConfirmarLiberacion();
 
@@ -158,6 +165,8 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
       inicio: fecha,
       horaInicio: operativo.horaInicio,
       horaFin: operativo.horaFin,
+      // Sus propios códigos no cuentan en la ocupación del día (2026-10-31).
+      excluirRegistro: operativo.grupoRegistro,
     })
       .then((personas) => {
         if (vigente) setCandidatos(personas);
@@ -182,15 +191,38 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
     onCerrar();
   };
 
+  // Ocupación del día (2026-10-31): alguien elegido se cruza con otro operativo y no se guarda.
+  const motivoCruce = motivoCruces(cruces);
+
   // Quien aporta solo pone Personal de Instrucción; el dueño del formulario, todas las áreas.
   const esDueno = operativo !== null && roles.includes(operativo.formulario.rolDueno);
+  const candidatosDelRol = esDueno
+    ? candidatos
+    : candidatos.filter((persona) => persona.area === "INSTRUCCION");
+  const elegidas = borrador.personal.map((persona) => ({
+    funcionarioId: persona.funcionarioId,
+    nombre: persona.nombre,
+    telefono: persona.telefono,
+    horaInicio: persona.horaInicio,
+    horaFin: persona.horaFin,
+    area: persona.area as AreaPersonal,
+    editable: borrador.editable(persona),
+  }));
+  /*
+    PERSONAL POR ÁREA (2026-11-04), con la misma regla que el registro: General y Técnico en el
+    catálogo, pestañas sin «Todas» y, en la patrulla, el área que falta, en ámbar y sin apagar.
+  */
+  const porArea = personalPorArea(catalogos.catalogos, candidatosDelRol, elegidas);
+  const estadoPie = motivoCruce
+    ? { tono: "error" as const, texto: motivoCruce }
+    : conFaltaDeComposicion(borrador.estadoPie, porArea?.faltan ?? [], "guardar");
 
   return (
     <DrawerLateral
       abierto
       ancho="lg"
       modo="form"
-      titulo={borrador.esPatrulla ? "Personal de patrulla" : `Personal de ${fila.identificador}`}
+      titulo={borrador.esPatrulla ? "Personal del operativo" : `Personal de ${fila.identificador}`}
       // La patrulla se nombra por sus códigos, no por su `grupoRegistro`.
       subtitulo={`${
         borrador.identificadores.length > 0 ? `${borrador.identificadores.join(" · ")} · ` : ""
@@ -205,8 +237,12 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
       guardando={borrador.guardando}
       onGuardar={() => void guardar()}
       textoGuardar="Guardar cambios"
-      estadoPie={borrador.estadoPie}
-      motivoGuardar={operativo ? (motivoBloqueo ?? borrador.motivoGuardar) : "Cargando el operativo…"}
+      estadoPie={estadoPie}
+      motivoGuardar={
+        operativo
+          ? (motivoBloqueo ?? motivoCruce ?? borrador.motivoGuardar)
+          : "Cargando el operativo…"
+      }
       mensajeDescarte="Se perderán las personas agregadas, las quitadas y los horarios cambiados. Nada se ha guardado todavía."
     >
       <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -219,20 +255,10 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
         ) : (
           operativo && (
             <SelectorPersonal
-              candidatos={
-                esDueno
-                  ? candidatos
-                  : candidatos.filter((persona) => persona.area === "INSTRUCCION")
-              }
+              candidatos={candidatosDelRol}
               cargando={cargandoPersonal}
-              agregadas={borrador.personal.map((persona) => ({
-                funcionarioId: persona.funcionarioId,
-                nombre: persona.nombre,
-                telefono: persona.telefono,
-                horaInicio: persona.horaInicio,
-                horaFin: persona.horaFin,
-                editable: borrador.editable(persona),
-              }))}
+              agregadas={elegidas}
+              porArea={porArea}
               onAgregar={borrador.agregar}
               onRetirar={borrador.quitar}
               onCambiarHorario={borrador.cambiarHorario}
@@ -242,6 +268,10 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
               idPersonaRechazada={borrador.rechazo?.funcionarioId ?? null}
               listaCompacta
               horarioInline
+              // El horario del operativo, fijo: contra él se ve quién está ocupado ese día.
+              horarioInicial={{ horaInicio: operativo.horaInicio, horaFin: operativo.horaFin }}
+              horarioFijo
+              onCrucesCambian={setCruces}
               /* El reparto, como vista de este mismo cajón. */
               repartoEnCajon
               conGuardarCambios

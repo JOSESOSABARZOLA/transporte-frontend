@@ -16,10 +16,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   avisoCargaAlta,
-  sugerenciaDeMenorCarga,
-  textoModalCargaAlta,
   compararPorCarga,
   conPersonaReemplazada,
+  conteoSemaforo,
+  nivelDeCargaPersonal,
+  pideConfirmarCarga,
+  sugerenciasDeMenorCarga,
+  textoModalCargaAlta,
 } from "./personal.util";
 import type { PersonaElegible } from "../interfaces/Personal";
 
@@ -42,54 +45,74 @@ const persona = (
 const ordenar = (lista: PersonaElegible[]): number[] =>
   [...lista].sort(compararPorCarga).map((p) => p.id);
 
-describe("compararPorCarga · orden del selector por carga", () => {
-  it("ordena de menor a mayor carga: baja (VERDE) → media (AMBAR) → alta (ROJO)", () => {
+describe("compararPorCarga · orden del selector por carga (por operativos, 2026-10-30)", () => {
+  it("ordena por nivel de carga: baja (VERDE) → media (AMBAR) → alta (ROJO)", () => {
     const lista = [
-      persona(1, { nivelFatiga: "ROJO" }),
-      persona(2, { nivelFatiga: "VERDE" }),
-      persona(3, { nivelFatiga: "AMBAR" }),
+      persona(1, { nivelCarga: "ROJO" }),
+      persona(2, { nivelCarga: "VERDE" }),
+      persona(3, { nivelCarga: "AMBAR" }),
     ];
 
     expect(ordenar(lista)).toEqual([2, 3, 1]);
   });
 
+  it("el nivel es el de OPERATIVOS, no la fatiga por horas", () => {
+    const lista = [
+      persona(1, { nivelCarga: "AMBAR", nivelFatiga: "VERDE" }),
+      persona(2, { nivelCarga: "VERDE", nivelFatiga: "ROJO" }),
+    ];
+
+    expect(ordenar(lista)).toEqual([2, 1]);
+  });
+
   it("pone a los elegibles primero, aunque el no elegible tenga menos carga", () => {
     const lista = [
-      persona(1, { elegible: false, motivo: "ausente", nivelFatiga: "VERDE" }),
-      persona(2, { elegible: true, nivelFatiga: "ROJO" }),
+      persona(1, { elegible: false, motivo: "ausente", nivelCarga: "VERDE" }),
+      persona(2, { elegible: true, nivelCarga: "ROJO" }),
     ];
 
     // El de carga alta pero asignable encabeza; el de carga baja no convocable queda detrás.
     expect(ordenar(lista)).toEqual([2, 1]);
   });
 
-  it("a igualdad de nivel, el índice afina: menor carga arriba", () => {
+  it("a igual nivel: menos operativos arriba; a igual operativos, menor índice; al final, el apellido", () => {
     const lista = [
-      persona(1, { nivelFatiga: "AMBAR", indiceCarga: 8 }),
-      persona(2, { nivelFatiga: "AMBAR", indiceCarga: 6 }),
+      persona(1, { nivelCarga: "ROJO", operativosAsignados: 4, indiceCarga: 33 }),
+      persona(2, { nivelCarga: "ROJO", operativosAsignados: 3, indiceCarga: 25.5 }),
+      persona(3, { nivelCarga: "ROJO", operativosAsignados: 3, indiceCarga: 25 }),
+      persona(4, { nivelCarga: "AMBAR", operativosAsignados: 2, indiceCarga: 17 }),
+      persona(5, { nivelCarga: "AMBAR", operativosAsignados: 2, indiceCarga: 16.5 }),
+      persona(6, { nivelCarga: "AMBAR", operativosAsignados: 2, indiceCarga: 16.5 }),
     ];
 
-    expect(ordenar(lista)).toEqual([2, 1]);
+    // 5 y 6 empatan en todo menos el apellido: APELLIDO5 antes que APELLIDO6.
+    expect(ordenar(lista)).toEqual([5, 6, 4, 3, 2, 1]);
   });
 
   it("quien no trae carga calculada va al final", () => {
     const lista = [
       persona(1, {}),
-      persona(2, { nivelFatiga: "ROJO" }),
-      persona(3, { nivelFatiga: "VERDE" }),
+      persona(2, { nivelCarga: "ROJO" }),
+      persona(3, { nivelCarga: "VERDE" }),
     ];
 
     expect(ordenar(lista)).toEqual([3, 2, 1]);
   });
+});
 
-  it("es estable: a igualdad de carga conserva el orden que ya traía", () => {
-    const lista = [
-      persona(10, { nivelFatiga: "VERDE" }),
-      persona(20, { nivelFatiga: "VERDE" }),
-      persona(30, { nivelFatiga: "VERDE" }),
-    ];
+describe("conteoSemaforo (2026-10-30)", () => {
+  const lista = [
+    persona(1, { nivelCarga: "AMBAR", nivelFatiga: "ROJO" }),
+    persona(2, { nivelCarga: "AMBAR", nivelFatiga: "ROJO" }),
+    persona(3, { nivelCarga: "ROJO", nivelFatiga: "ROJO" }),
+  ];
 
-    expect(ordenar(lista)).toEqual([10, 20, 30]);
+  it("el personal cuenta por operativos (nivelCarga)", () => {
+    expect(conteoSemaforo(lista, nivelDeCargaPersonal)).toEqual({ baja: 0, media: 2, alta: 1 });
+  });
+
+  it("sin indicar, cuenta la fatiga (lo que usa la DAF)", () => {
+    expect(conteoSemaforo(lista)).toEqual({ baja: 0, media: 0, alta: 3 });
   });
 });
 
@@ -165,45 +188,78 @@ describe("avisoCargaAlta (2026-10-30)", () => {
   });
 });
 
-describe("sugerenciaDeMenorCarga (2026-10-30)", () => {
-  const alta = persona(1, { nivelFatiga: "ROJO", indiceCarga: 14 });
+describe("pideConfirmarCarga (2026-10-30)", () => {
+  it("solo con Carga Alta por operativos, no por la fatiga de horas", () => {
+    expect(pideConfirmarCarga(persona(1, { nivelCarga: "ROJO" }))).toBe(true);
+    expect(pideConfirmarCarga(persona(1, { nivelCarga: "AMBAR", nivelFatiga: "ROJO" }))).toBe(false);
+  });
+});
 
-  it("propone a la disponible del mismo tipo con MENOS carga, la menor primero", () => {
-    const media = persona(2, { nivelFatiga: "AMBAR", indiceCarga: 7 });
-    const baja = persona(3, { nivelFatiga: "VERDE", indiceCarga: 2 });
-    expect(sugerenciaDeMenorCarga(alta, [alta, media, baja], [])).toBe(baja);
+describe("sugerenciasDeMenorCarga (2026-10-30)", () => {
+  const velasquez = persona(1, { nivelCarga: "ROJO", operativosAsignados: 3 });
+
+  it("hasta tres, del mismo tipo, con menos operativos y que no estén en Alta, en el orden del selector", () => {
+    const lista = [
+      velasquez,
+      persona(2, { nivelCarga: "AMBAR", operativosAsignados: 2, indiceCarga: 17 }),
+      persona(3, { nivelCarga: "AMBAR", operativosAsignados: 2, indiceCarga: 16.5 }),
+      persona(4, { nivelCarga: "VERDE", operativosAsignados: 1, indiceCarga: 8.5 }),
+      persona(5, { nivelCarga: "VERDE", operativosAsignados: 0 }),
+    ];
+
+    expect(sugerenciasDeMenorCarga(velasquez, lista, []).map((p) => p.id)).toEqual([5, 4, 3]);
   });
 
-  it("no propone a quien ya está agregada, no es elegible, es de otro tipo o no tiene menos carga", () => {
-    const agregada = persona(2, { nivelFatiga: "VERDE", indiceCarga: 1 });
-    const noElegible = persona(3, { nivelFatiga: "VERDE", indiceCarga: 1, elegible: false });
-    const otroTipo = persona(4, { area: "TECNICO", nivelFatiga: "VERDE", indiceCarga: 1 });
-    const masCarga = persona(5, { nivelFatiga: "ROJO", indiceCarga: 20 });
+  it("no propone a quien ya está agregada, no es elegible, es de otro tipo, está en Alta o no tiene menos operativos", () => {
+    const lista = [
+      velasquez,
+      persona(2, { nivelCarga: "VERDE", operativosAsignados: 0 }),
+      persona(3, { nivelCarga: "VERDE", operativosAsignados: 0, elegible: false }),
+      persona(4, { nivelCarga: "VERDE", operativosAsignados: 0, area: "TECNICO" }),
+      persona(5, { nivelCarga: "ROJO", operativosAsignados: 2 }),
+      persona(6, { nivelCarga: "ROJO", operativosAsignados: 3 }),
+    ];
+
+    expect(sugerenciasDeMenorCarga(velasquez, lista, [2])).toEqual([]);
+  });
+
+  it("con el horario del operativo no propone a quien se cruza (2026-10-31)", () => {
+    const enOcf = {
+      ajeno: false as const,
+      identificador: "OCF-001-31-OCT-2026",
+      formulario: { numero: 1, codigo: "OCF" },
+      horaInicio: "08:00",
+      horaFin: "16:30",
+      zonal: null,
+      punto: null,
+    };
+    const aguirre = persona(2, { nivelCarga: "AMBAR", operativosAsignados: 2, operativosDelDia: [enOcf] });
+    const bolanos = persona(3, { nivelCarga: "VERDE", operativosAsignados: 1, operativosDelDia: [enOcf] });
+    const yunda = persona(4, { nivelCarga: "VERDE", operativosAsignados: 0 });
+    const horario = { horaInicio: "08:00", horaFin: "16:30" };
+
+    expect(sugerenciasDeMenorCarga(velasquez, [velasquez, aguirre, bolanos], [], horario)).toEqual([]);
     expect(
-      sugerenciaDeMenorCarga(alta, [alta, agregada, noElegible, otroTipo, masCarga], [2]),
-    ).toBeNull();
+      sugerenciasDeMenorCarga(velasquez, [velasquez, aguirre, bolanos, yunda], [], horario).map((p) => p.id),
+    ).toEqual([4]);
+    // Sin horario no se juzga el cruce: se proponen como antes.
+    expect(
+      sugerenciasDeMenorCarga(velasquez, [velasquez, aguirre, bolanos], []).map((p) => p.id),
+    ).toEqual([3, 2]);
   });
 });
 
 describe("textoModalCargaAlta (2026-10-30)", () => {
-  it("título, mensaje con los operativos de la semana y la línea de la sugerida", () => {
-    expect(
-      textoModalCargaAlta(
-        persona(1, { operativosAsignados: 7 }),
-        persona(2, { operativosAsignados: 1 }),
-      ),
-    ).toEqual({
+  it("título y mensaje con los operativos de la semana", () => {
+    expect(textoModalCargaAlta(persona(1, { operativosAsignados: 3 }))).toEqual({
       titulo: "APELLIDO1 Nombre1 tiene carga alta",
-      mensaje: "Ya tiene 7 operativos esta semana. Considere repartir con quien tenga menos carga.",
-      sugerencia: "Con menos carga: APELLIDO2 Nombre2 (1 op. esta semana)",
+      mensaje: "Ya tiene 3 operativos esta semana. Considere repartir con quien tenga menos carga.",
     });
   });
 
-  it("sin el conteo del servidor ni sugerida, no inventa números", () => {
-    expect(textoModalCargaAlta(persona(1), null)).toEqual({
-      titulo: "APELLIDO1 Nombre1 tiene carga alta",
-      mensaje: "Ya tiene una carga alta esta semana. Considere repartir con quien tenga menos carga.",
-      sugerencia: null,
-    });
+  it("sin el conteo del servidor no inventa números", () => {
+    expect(textoModalCargaAlta(persona(1)).mensaje).toBe(
+      "Ya tiene una carga alta esta semana. Considere repartir con quien tenga menos carga.",
+    );
   });
 });

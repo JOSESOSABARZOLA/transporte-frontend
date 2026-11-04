@@ -5,7 +5,7 @@
  * Archivo: MensajeModal.tsx
  * Responsabilidad: El modal ÚNICO de mensajes —advertencia, peligro, error, éxito e información—:
  *                  icono en círculo, título, texto, detalle técnico colapsable y uno o dos botones
- *                  (tres, apilados, con `accionExtra`),
+ *                  (o un `pie` propio),
  *                  con la acción asíncrona y su fallo resueltos dentro del mismo modal.
  * Desarrollador: Jose Sosa
  * Fecha: 2026-10-16
@@ -106,11 +106,12 @@ export type MensajeModalProps = {
   /** Un contenido corto bajo el texto (el motivo de una baja). No es un formulario. */
   children?: ReactNode;
   /**
-   * Una TERCERA salida, secundaria (2026-10-30, aviso de carga alta: «Agregar igual» entre «Elegir a
-   * X» y «Cancelar»). Con ella los botones van apilados: la acción arriba, esta en medio y el botón
-   * seguro abajo. Escape y el velo siguen siendo el botón seguro, nunca esta.
+   * UN PIE PROPIO en lugar de la fila de botones (2026-10-30, aviso de carga alta: [Agregar igual]
+   * secundario y [Cancelar] como enlace). Quien lo pasa pone sus botones y sus acciones; Escape y el
+   * velo siguen llamando a `onSecundario`, y el foco inicial va al primer botón del pie. Sobre un
+   * error (`onPrincipal` falló) manda el error y el pie no se pinta.
    */
-  accionExtra?: { texto: string; onClick: () => void };
+  pie?: ReactNode;
 };
 
 const MensajeModal: FC<MensajeModalProps> = ({
@@ -130,9 +131,10 @@ const MensajeModal: FC<MensajeModalProps> = ({
   validar,
   tituloError,
   children,
-  accionExtra,
+  pie,
 }) => {
   const tarjeta = useRef<HTMLDivElement>(null);
+  const contenedorPie = useRef<HTMLDivElement>(null);
   const botonPrincipal = useRef<HTMLButtonElement>(null);
   const botonSecundario = useRef<HTMLButtonElement>(null);
   const idTitulo = useId();
@@ -236,8 +238,10 @@ const MensajeModal: FC<MensajeModalProps> = ({
   // capas, que enfoca la tarjeta, para ganarle. Tras un fallo, vuelve al principal del error.
   useEffect(() => {
     if (!abierto) return;
+    const primeroDelPie = contenedorPie.current?.querySelector<HTMLElement>("button");
     const destino =
-      esPeligroso && botonSecundario.current ? botonSecundario.current : botonPrincipal.current;
+      primeroDelPie ??
+      (esPeligroso && botonSecundario.current ? botonSecundario.current : botonPrincipal.current);
     destino?.focus();
   }, [abierto, esPeligroso, fallo]);
 
@@ -251,8 +255,8 @@ const MensajeModal: FC<MensajeModalProps> = ({
   };
 
   const clases = CLASES_FAMILIA[familia];
-  /** La tercera salida no tiene sentido sobre un error: ahí manda el error. */
-  const extraVisible = accionExtra !== undefined && !fallo;
+  /** El pie propio no tiene sentido sobre un error: ahí manda el error. */
+  const conPiePropio = pie !== undefined && !fallo;
 
   const secundario = rotuloSecundario && (
     <Boton
@@ -343,20 +347,13 @@ const MensajeModal: FC<MensajeModalProps> = ({
           </div>
         )}
 
-        {/* Con una tercera salida, apilados y en ese orden también para el tabulador: acción, extra
-            y el seguro al final. Sin ella, en fila con el seguro a la izquierda. */}
-        {accionExtra && extraVisible ? (
-          <div className="mt-3 flex w-full flex-col gap-3">
-            {principal}
-            <Boton
-              tamano="lg"
-              className="flex-1"
-              deshabilitado={procesando}
-              onClick={accionExtra.onClick}
-            >
-              {accionExtra.texto}
-            </Boton>
-            {secundario}
+        {/* Un pie propio reemplaza la fila de botones; si no, en fila con el seguro a la izquierda. */}
+        {conPiePropio ? (
+          <div
+            ref={contenedorPie}
+            className="mt-3 flex w-full flex-col items-center gap-2"
+          >
+            {pie}
           </div>
         ) : (
           <div className="mt-3 flex w-full gap-3">

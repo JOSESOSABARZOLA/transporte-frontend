@@ -40,9 +40,8 @@ import CajonAportePersonal from "../components/cuadro/CajonAportePersonal.tsx";
 import DrawerOperativo from "../components/cuadro/DrawerOperativo.tsx";
 import Boton from "../components/common/Boton.tsx";
 import BotonEnlace from "../components/common/BotonEnlace.tsx";
-import RosterPatrulla, {
-  type MiembroPatrulla,
-} from "../components/cuadro/RosterPatrulla.tsx";
+import CajonEditarPatrulla from "../components/cuadro/CajonEditarPatrulla.tsx";
+import { textoPatrullaActualizada } from "../utils/borradorPersonal.util.ts";
 import SelectorFormulario from "../components/cuadro/SelectorFormulario.tsx";
 import {
   camposCompartirParaEnvio,
@@ -65,6 +64,9 @@ import { useConfirmarLiberacion } from "../hooks/useConfirmarLiberacion.tsx";
 import type { GuardadoDelBorrador } from "../hooks/useBorradorAporte.ts";
 import { useAdicionalOperativo } from "../hooks/useAdicionalOperativo.ts";
 import { useTablaOperativos } from "../hooks/useTablaOperativos.ts";
+import { useRetiroDeRegistro } from "../hooks/useRetiroDeRegistro.tsx";
+import { compactarIdentificadores } from "../utils/rangoIdentificadores.util.ts";
+import { esRegistroPorZonas } from "../utils/zonasDelBloque.util.ts";
 import { useCatalogosFormulario } from "../hooks/useCatalogosFormulario.ts";
 import { useCuadroDiario } from "../hooks/useCuadroDiario.ts";
 import { useFormulariosPermitidos } from "../hooks/useFormulariosPermitidos.ts";
@@ -344,7 +346,7 @@ const CuadroRegistroPage = () => {
   const [agregandoAPatrulla, setAgregandoAPatrulla] = useState(false);
   /**
    * «Ver detalle» y «Ver» (2026-10-13): el operativo abierto se CONSULTA, en el cajón y en solo
-   * lectura, sea propio o no. No entra al roster de la patrulla ni al cajón de aporte.
+   * lectura, sea propio o no. No entra al cajón «Editar patrulla» ni al cajón de aporte.
    */
   const [consultaId, setConsultaId] = useState<number | null>(null);
   const enConsulta = enEdicion !== null && consultaId === enEdicion.id;
@@ -863,6 +865,8 @@ const CuadroRegistroPage = () => {
   const edicionFecha = enEdicion?.cuadroFecha ?? null;
   const edicionInicio = enEdicion?.horaInicio ?? "";
   const edicionFin = enEdicion?.horaFin ?? "";
+  // Sus propios códigos no cuentan en la ocupación del día (2026-10-31).
+  const edicionRegistro = enEdicion?.grupoRegistro;
 
   useEffect(() => {
     if (edicionId === null || !edicionFormulario || !edicionFecha) {
@@ -886,6 +890,7 @@ const CuadroRegistroPage = () => {
       ...(edicionInicio && edicionFin
         ? { horaInicio: edicionInicio, horaFin: edicionFin }
         : {}),
+      excluirRegistro: edicionRegistro,
     })
       .then((personas) => {
         if (vigente) setCandidatosEdicion(personas);
@@ -900,7 +905,7 @@ const CuadroRegistroPage = () => {
     return () => {
       vigente = false;
     };
-  }, [edicionId, edicionFormulario, edicionFecha, edicionInicio, edicionFin, recargaPersonal]);
+  }, [edicionId, edicionFormulario, edicionFecha, edicionInicio, edicionFin, edicionRegistro, recargaPersonal]);
 
   const bloqueado =
     cargandoCuadro ||
@@ -1043,8 +1048,8 @@ const CuadroRegistroPage = () => {
 
   /**
    * ¿Esta edición usa el CAJÓN con guardado DIFERIDO? (2026-10-01). Solo el operativo PROPIO que se
-   * corrige en el cajón: NO el aporte (operativo ajeno, personal al instante), NI la patrulla (su
-   * personal se gestiona con el roster, al instante). El personal se acumula en `enEdicion` y se
+   * corrige en el cajón: NO el aporte (su propio borrador), NI la patrulla (su borrador va en
+   * `CajonEditarPatrulla`, 2026-10-31). El personal se acumula en `enEdicion` y se
    * aplica al «Guardar cambios».
    */
   const esEdicionDiferida = useCallback(
@@ -1052,7 +1057,8 @@ const CuadroRegistroPage = () => {
       operativo !== null &&
       !esAporte &&
       !agregandoAPatrulla &&
-      // Todo cambio espera a «Guardar cambios» (2026-10-24): solo la patrulla CON grupo (roster) no.
+      // Todo cambio espera a «Guardar cambios» (2026-10-24). La patrulla CON grupo lleva su propio
+      // borrador (`CajonEditarPatrulla`, 2026-10-31), no este.
       !(operativo.formulario.esPatrulla && operativo.esLote) &&
       accesoAlOperativo(operativo, user?.rolCodes ?? []) === "PROPIO",
     [esAporte, agregandoAPatrulla, user],
@@ -1137,82 +1143,17 @@ const CuadroRegistroPage = () => {
     );
   }, []);
 
-  /**
-   * ═══════════════════════════════════════════════════════════════════════════════
-   * EDITAR EL PERSONAL DE UNA PATRULLA (Form 5/6). 2026-09-18.
-   *
-   * Al pulsar «Editar» sobre una patrulla propia, el roster deja CAMBIAR cada inspector
-   * conservando su código (misma área) → `reemplazarPersonal`, y AGREGAR una persona nueva
-   * → `asignarPersonal` la crea como un código más de su área en el mismo `grupoRegistro`.
-   * QUITAR un código usa el mismo modal de retiro por operativo (`setPorRetirar`).
-   * ═══════════════════════════════════════════════════════════════════════════════
-   */
-  const reemplazarPersonaPatrulla = useCallback(
-    async (operativoId: number, funcionarioId: number) => {
-      setAvisoPersonal(null);
-      try {
-        const actualizado = await OperativoService.reemplazarPersonal(
-          operativoId,
-          funcionarioId,
-        );
-        empalmarEnLaLista(actualizado);
-        if (enEdicion?.id === operativoId) setEnEdicion(actualizado);
-        await cargarOperativosDelFormulario();
-      } catch (fallo: unknown) {
-        avisarRechazoPersonal(fallo);
-      }
-    },
-    [enEdicion, empalmarEnLaLista, cargarOperativosDelFormulario],
-  );
-
-  const agregarMiembroPatrulla = useCallback(
-    async (funcionarioId: number) => {
-      if (!enEdicion) return;
-
-      setAvisoPersonal(null);
-      try {
-        // El servidor adopta el `grupoRegistro` y numera el nuevo código por el área de la
-        // persona (p. ej. un 2.º General → IGNECU-002).
-        const creado = await OperativoService.asignarPersonal(enEdicion.id, {
-          funcionarioId,
-        });
-        empalmarEnLaLista(creado);
-        await cargarOperativosDelFormulario();
-      } catch (fallo: unknown) {
-        avisarRechazoPersonal(fallo);
-      }
-    },
-    [enEdicion, empalmarEnLaLista, cargarOperativosDelFormulario],
-  );
-
-  /** ¿Estoy editando (no aportando) una patrulla que registré yo? Entonces se pinta el roster. */
+  /** ¿Estoy editando (no aportando) una patrulla que registré yo? Va al cajón «Editar patrulla». */
   const editandoPatrulla =
     enEdicion != null &&
     enEdicion.esLote &&
-    // El roster (cambiar inspector/aportar) es SOLO de la patrulla. El Form 8 comparte lote pero
-    // no es patrulla: se edita con los generales normales, sin roster.
+    // Solo la patrulla (5/6): el Form 8 comparte lote pero no es patrulla.
     enEdicion.formulario.esPatrulla &&
     !agregandoAPatrulla &&
     accesoAlOperativo(enEdicion, user?.rolCodes ?? []) === "PROPIO" &&
-    // Una CONSULTA de la patrulla (2026-10-13) se abre en el cajón, en solo lectura, no en el roster.
+    // Una CONSULTA de la patrulla (2026-10-13) se abre en el detalle, en solo lectura.
     !enConsulta;
 
-  /** Los códigos de la patrulla en edición, cada uno con su persona y si lo puedo tocar. */
-  const miembrosPatrulla = useMemo<MiembroPatrulla[]>(() => {
-    if (!enEdicion?.esLote) return [];
-    return operativosDelFormulario
-      .filter((operativo) => operativo.grupoRegistro === enEdicion.grupoRegistro)
-      .slice()
-      .sort((una, otra) => una.identificador.localeCompare(otra.identificador))
-      .map((operativo) => ({
-        operativo,
-        persona: operativo.personal[0],
-        // Puedo cambiar/quitar los códigos que registré yo (General/Técnico); el INECU del DMIT
-        // llega en lectura.
-        editable: accesoAlOperativo(operativo, user?.rolCodes ?? []) === "PROPIO",
-      }))
-      .filter((miembro) => miembro.persona != null);
-  }, [operativosDelFormulario, enEdicion, user]);
 
   /**
    * Pregunta antes de liberar el transporte (2026-10-07; horario y zonal desde el 2026-10-14). Va
@@ -1653,6 +1594,19 @@ const CuadroRegistroPage = () => {
     }
   }, [borrador]);
 
+  /** «Editar patrulla» que solo cambió el personal (2026-10-31): aviso con sus códigos y relectura. */
+  const alGuardarPatrulla = useCallback(
+    async ({ operativo }: GuardadoDelBorrador) => {
+      toast.exito(
+        textoPatrullaActualizada(operativo.identificadoresDelRegistro ?? [operativo.identificador]),
+      );
+      cerrarEdicion();
+      await cargarOperativosDelFormulario();
+      resaltar(operativo.id);
+    },
+    [cerrarEdicion, cargarOperativosDelFormulario, resaltar],
+  );
+
   /**
    * EL APORTE SE GUARDÓ (2026-10-29): aviso breve, cierre del cajón y relectura de la tabla. El
    * borrador y su lote los lleva `CajonAportePersonal`.
@@ -1791,9 +1745,9 @@ const CuadroRegistroPage = () => {
   };
 
   /**
-   * Una fila de PATRULLA (Form 5/6). La patrulla es UN operativo: su acción principal va una sola
-   * vez, en la cabeza —«Editar» (los generales, en el roster) para quien la registró, «Agregar
-   * Personal» para quien aporta—, y en cada fila el menú con el «Eliminar» de esa persona.
+   * Una fila de un LOTE que no es patrulla ni registro por zonas (el 8 con varias personas): la
+   * acción principal una vez, en la cabeza, y en cada fila el «Eliminar» de su código. La PATRULLA
+   * (5/6) y el registro por zonas van por `accionesDeRegistro`, una vez sobre todo (2026-10-31).
    * 2026-09-18, con el grupo único desde el 2026-10-13.
    */
   const accionesDeFilaPatrulla = (
@@ -1843,6 +1797,70 @@ const CuadroRegistroPage = () => {
     );
   };
 
+  /*
+    REGISTRO POR ZONAS DEL 8 (2026-10-31), igual que en Mis operativos: el operativo es UNO aunque
+    tenga varios códigos. Sus acciones van una vez, en la celda combinada, y actúan sobre TODO el
+    registro: «Editar» abre el cajón con todas sus zonas, «Ver detalle» el registro completo y
+    «Eliminar» retira todos sus códigos (`useRetiroDeRegistro`).
+  */
+  const retiroRegistro = useRetiroDeRegistro(() => {
+    void cargarOperativosDelFormulario();
+  });
+  const delRegistro = (cabeza: Operativo) =>
+    operativosDelFormulario.filter(
+      (operativo) => operativo.grupoRegistro === cabeza.grupoRegistro,
+    );
+  /*
+    Y LA PATRULLA 5/6 (2026-10-31), con la misma regla: sus acciones van una vez, en la celda
+    combinada «Todo el operativo», sobre toda la patrulla. Quien la registró: Editar, + Adicional,
+    Ver detalle y Eliminar (y «Agregar personal» en el menú si además aporta). Quien solo APORTA
+    (el DMIT): «Agregar personal» y Ver detalle, sin Eliminar.
+  */
+  const accionesDeRegistro = (cabeza: Operativo) => {
+    const esPropio = accesoDe(cabeza) === "PROPIO";
+    const aporta =
+      cabeza.formulario.esPatrulla && puedeAportarA(cabeza, user?.rolCodes ?? []);
+    const ajeno = esPropio
+      ? null
+      : (motivoDeSoloLectura(accesoDe(cabeza), cabeza.creadoPorRol) ??
+        "Este operativo lo administra el departamento que lo registró.");
+    const principal: AccionPrincipal = bloqueado
+      ? {
+          tipo: "ver",
+          onClick: () => abrirConsulta(cabeza),
+          motivo: `${MOTIVO_BLOQUEO.slice(0, -1)}: se abre en solo lectura.`,
+        }
+      : esPropio
+        ? { tipo: "editar", onClick: () => abrirEdicion(cabeza) }
+        : aporta
+          ? { tipo: "personal", onClick: () => abrirAgregarPatrulla(cabeza) }
+          : { tipo: "ver", onClick: () => abrirConsulta(cabeza), motivo: ajeno ?? undefined };
+    return (
+      <AccionesOperativo
+        identificador={compactarIdentificadores(delRegistro(cabeza).map((op) => op.identificador))}
+        rotulo="Todo el operativo"
+        principal={principal}
+        consulta={bloqueado}
+        adicional={!esPropio && aporta ? null : casilleroAdicional(cabeza)}
+        onVerDetalle={() => abrirConsulta(cabeza)}
+        masAcciones={
+          !bloqueado && esPropio && aporta
+            ? [{ etiqueta: "Agregar personal", onClick: () => abrirAgregarPatrulla(cabeza) }]
+            : []
+        }
+        eliminar={
+          !esPropio && aporta
+            ? null
+            : {
+                onClick: () => retiroRegistro.pedir(delRegistro(cabeza)),
+                motivo: bloqueado ? MOTIVO_BLOQUEO : ajeno,
+              }
+        }
+        procesando={procesando}
+      />
+    );
+  };
+
   /**
    * ═══════════════════════════════════════════════════════════════════════════════
    * CORREGIR SIN CAMBIAR DE PANTALLA. 2026-09-01.
@@ -1873,8 +1891,10 @@ const CuadroRegistroPage = () => {
       setProcesando(true);
       setAvisoGeneral(null);
       setErrorCajon(null);
-      // ¿Se guarda desde el cajón? Es la edición propia diferida; la patrulla se corrige en línea.
-      const desdeCajon = esEdicionDiferida(enEdicion);
+      // ¿Se guarda desde el cajón? La edición propia diferida y, desde el 2026-10-31, la patrulla
+      // (5/6) en su cajón (`CajonEditarPatrulla`).
+      const desdeCajon =
+        esEdicionDiferida(enEdicion) || (enEdicion.esLote && enEdicion.formulario.esPatrulla);
 
       // Los campos generales, comunes a `editar` (un operativo) y `editarPatrulla` (todo el lote).
       const generales = {
@@ -1943,11 +1963,11 @@ const CuadroRegistroPage = () => {
           );
           if (actualizados === null) return;
           actualizados.forEach(empalmarEnLaLista);
-          toast.exito(
-            `Patrulla actualizada: ${actualizados.length} códigos al día.`,
-          );
+          toast.exito(textoPatrullaActualizada(actualizados.map((codigo) => codigo.identificador)));
           if (actualizados[0]) resaltar(actualizados[0].id);
           cerrarEdicion();
+          // El personal pudo cambiar antes, en el mismo «Guardar cambios»: se relee el registro.
+          await cargarOperativosDelFormulario();
           return;
         }
 
@@ -2190,15 +2210,15 @@ const CuadroRegistroPage = () => {
   /*
     EL FORMULARIO DE ARRIBA ES SIEMPRE EL DEL ALTA (2026-10-01). La corrección de un operativo propio
     se hace ahora en el CAJÓN lateral, no aquí, así que el personal de este formulario sale siempre de
-    `personalAgregado` (la captura en memoria). En la patrulla, el bloque de personal va oculto
-    (`personalOculto`) y se gestiona con el roster.
+    `personalAgregado` (la captura en memoria). La patrulla también va a su cajón
+    (`CajonEditarPatrulla`, 2026-10-31): este formulario nunca deja de ser el del alta.
   */
   const personalDelFormulario = personalAgregado;
 
   /**
    * ¿La edición PROPIA se muestra en el CAJÓN lateral? (2026-10-01). Es el operativo propio
-   * no-patrulla que se corrige: aporte y patrulla tienen su propio camino (el cajón de aporte y el
-   * roster, respectivamente).
+   * no-patrulla que se corrige: aporte y patrulla tienen su propio cajón (`CajonAportePersonal` y
+   * `CajonEditarPatrulla`, respectivamente).
    */
   const edicionEnCajon =
     enEdicion != null &&
@@ -2430,15 +2450,6 @@ const CuadroRegistroPage = () => {
                     lector de pantalla lo anuncie al entrar en el modo.
                     ═══════════════════════════════════════════════════════════════════
                   */}
-                  {editandoPatrulla && (
-                    <AvisoEnLinea variante="info">
-                      Está corrigiendo la patrulla{" "}
-                      <strong>{enEdicion?.identificador}</strong>. Lo que estaba
-                      capturando quedó guardado y vuelve al cancelar o al
-                      guardar los cambios.
-                    </AvisoEnLinea>
-                  )}
-
                   {/*
                     ═══════════════════════════════════════════════════════════════════
                     UN SOLO FORMULARIO PARA REGISTRAR Y PARA CORREGIR. 2026-09-01, tarde.
@@ -2458,34 +2469,12 @@ const CuadroRegistroPage = () => {
                     a P-02 entera, donde es la pantalla y no un añadido.
                     ═══════════════════════════════════════════════════════════════════
                   */}
-                  {/*
-                    ROSTER DE LA PATRULLA (2026-09-18): al editar una patrulla propia, el personal
-                    se gestiona aquí —cambiar inspector conservando el código + agregar persona—, y
-                    el bloque de personal del formulario de abajo va OCULTO (solo generales).
-                  */}
-                  {editandoPatrulla && (
-                    <RosterPatrulla
-                      miembros={miembrosPatrulla}
-                      candidatos={candidatos}
-                      onCambiar={(operativoId, funcionarioId) =>
-                        void reemplazarPersonaPatrulla(operativoId, funcionarioId)
-                      }
-                      onQuitar={(operativo) => setPorRetirar(operativo)}
-                      onAgregar={(funcionarioId) =>
-                        void agregarMiembroPatrulla(funcionarioId)
-                      }
-                      aviso={avisoPersonal}
-                      bloqueado={bloqueado}
-                    />
-                  )}
-
                   <FormOperativo
                     modo="alta"
                     refFormik={formularioRef}
                     vistaPrevia={vistaPrevia}
                     // Compartir unidad (2026-10-19): la jornada para buscar coincidencias.
-                    // No en la corrección de una patrulla: `editarPatrulla` no lo admite.
-                    fechaJornada={editandoPatrulla ? null : fecha || null}
+                    fechaJornada={fecha || null}
                     /*
                       Subtítulo del drawer «Reparto de carga» del alta: formulario + semana del cuadro.
                     */
@@ -2495,15 +2484,11 @@ const CuadroRegistroPage = () => {
                         : formularioElegido.nombre
                     }
                     /*
-                      ESTE FORMULARIO ES SIEMPRE EL DEL ALTA (2026-10-01), salvo la corrección de una
-                      PATRULLA propia (que sigue inline por su roster). La edición de un operativo
-                      normal se hace en el CAJÓN lateral, no aquí. Por eso las propiedades «de modo» se
-                      derivan de `editandoPatrulla`, no de `enEdicion`: en alta persiste la captura y en
-                      patrulla no (su borrador está apartado).
+                      ESTE FORMULARIO ES SIEMPRE EL DEL ALTA (2026-10-01; sin excepción desde el
+                      2026-10-31, cuando la patrulla pasó a su cajón `CajonEditarPatrulla`). Toda
+                      edición va en el CAJÓN lateral: aquí persiste la captura y nada la aparta.
                     */
-                    onValoresCambian={
-                      editandoPatrulla ? undefined : alCambiarValores
-                    }
+                    onValoresCambian={alCambiarValores}
                     formularioCodigo={formularioElegido.codigo}
                     // El «Transporte» que propone el formulario (PMO: «Dejar y retirar»), editable.
                     tipoTransportePorDefecto={formularioElegido.tipoTransportePorDefecto}
@@ -2515,61 +2500,38 @@ const CuadroRegistroPage = () => {
                     }}
                     /*
                       AGREGAR UN PUNTO AL CATÁLOGO desde el registro (Unidad de Operativos, 2026-09-24).
-                      Solo en el ALTA, y solo si el formulario lo permite (`puntoManual`, hoy el 1-4);
-                      `FormOperativo` combina esto con esa bandera. Al teclearlo queda pendiente y
-                      el servidor lo crea al registrar, en la misma transacción del operativo.
+                      Solo si el formulario lo permite (`puntoManual`, hoy el 1-4); `FormOperativo`
+                      combina esto con esa bandera. Al teclearlo queda pendiente y el servidor lo crea
+                      al registrar, en la misma transacción del operativo.
                     */
-                    permiteAgregarPunto={!editandoPatrulla}
+                    permiteAgregarPunto
                     candidatos={candidatos}
                     cargandoPersonal={cargandoPersonal}
                     personalAgregado={personalDelFormulario}
-                    // En alta se acumula en memoria; en la patrulla el personal va por el roster (y el
-                    // bloque de abajo se oculta), así que aquí van siempre los manejadores del alta.
+                    // En alta el personal se acumula en memoria hasta registrar.
                     onAgregarPersona={agregarPersona}
                     onRetirarPersona={retirarPersona}
                     onReemplazarPersona={reemplazarPersona}
                     onCambiarHorarioPersona={cambiarHorarioPersona}
-                    // TRÁMITE DE INSPECCIÓN (2026-10-07): solo en el ALTA (la patrulla va por roster).
-                    fechaTramites={editandoPatrulla ? null : fecha}
-                    onCambiarTramitePersona={
-                      editandoPatrulla ? undefined : cambiarTramitePersona
-                    }
+                    // TRÁMITE DE INSPECCIÓN (2026-10-07).
+                    fechaTramites={fecha}
+                    onCambiarTramitePersona={cambiarTramitePersona}
                     avisoPersonal={avisoPersonal}
                     idPersonaRechazada={idPersonaRechazada}
-                    // En la corrección de patrulla se muestran las notas ya escritas; en alta no hay.
-                    observacionesExistentes={
-                      editandoPatrulla ? (enEdicion?.observaciones ?? []) : []
-                    }
-                    valoresIniciales={
-                      editandoPatrulla && enEdicion
-                        ? comoValoresDeFormulario(enEdicion)
-                        : borrador?.valores
-                    }
-                    textoAccion={editandoPatrulla ? "Guardar cambios" : undefined}
-                    onCancelar={editandoPatrulla ? cerrarEdicion : undefined}
-                    // «Limpiar» del pie: solo en el alta (la patrulla lleva «Cancelar»).
-                    onLimpiar={editandoPatrulla ? undefined : limpiarCaptura}
-                    // Solo en el ALTA se propone la zonal de la persona al asignarla; en la patrulla el
-                    // operativo ya tiene la suya.
-                    proponerZonalDePersona={!editandoPatrulla}
+                    observacionesExistentes={[]}
+                    valoresIniciales={borrador?.valores}
+                    onLimpiar={limpiarCaptura}
+                    // Al asignar a una persona se propone su zonal.
+                    proponerZonalDePersona
                     bloqueado={bloqueado}
-                    guardando={editandoPatrulla ? procesando : guardando}
-                    onGuardar={editandoPatrulla ? guardarEdicion : registrar}
+                    guardando={guardando}
+                    onGuardar={registrar}
                     /*
-                      «CANTIDAD DE OPERATIVOS» POR PERSONA, SOLO EN EL ALTA DEL FORMULARIO QUE LA
-                      OFRECE (`cantidadPorPersona`, hoy solo el 8). En la patrulla no aplica.
+                      «CANTIDAD DE OPERATIVOS» POR PERSONA, SOLO EN EL FORMULARIO QUE LA OFRECE
+                      (`cantidadPorPersona`, hoy solo el 8).
                     */
-                    permiteCantidadPorPersona={
-                      !editandoPatrulla &&
-                      (catalogos.catalogos?.cantidadPorPersona ?? false)
-                    }
+                    permiteCantidadPorPersona={catalogos.catalogos?.cantidadPorPersona ?? false}
                     onCambiarCantidadPersona={cambiarCantidadPersona}
-                    // En la patrulla el personal se gestiona con las acciones fusionadas (roster), no
-                    // dentro del editor de generales: el bloque va oculto y bloqueado.
-                    personalBloqueado={editandoPatrulla}
-                    // Al editar una patrulla propia, el personal vive en el roster de arriba: aquí
-                    // se OCULTA el bloque de personal y el formulario solo edita los generales.
-                    personalOculto={editandoPatrulla}
                   />
                 </>
               )}
@@ -2624,6 +2586,7 @@ const CuadroRegistroPage = () => {
         }
         acciones={accionesDeFila}
         accionesFilaPatrulla={accionesDeFilaPatrulla}
+        accionesRegistro={accionesDeRegistro}
         porRetirar={porRetirar}
         onConfirmarRetiro={confirmarRetiro}
         onCancelarRetiro={() => setPorRetirar(null)}
@@ -2706,9 +2669,9 @@ const CuadroRegistroPage = () => {
         <DetalleOperativoLectura
           key={`${enEdicion.id}-detalle`}
           operativo={enEdicion}
-          // PATRULLA (2026-10-27): todos sus códigos —mismo `grupoRegistro`— de la lista cargada.
+          // PATRULLA (2026-10-27) y REGISTRO POR ZONAS (2026-10-31): todos sus códigos —mismo `grupoRegistro`— de la lista cargada.
           grupo={
-            enEdicion.esLote && enEdicion.formulario.esPatrulla
+            enEdicion.esLote && (enEdicion.formulario.esPatrulla || esRegistroPorZonas(enEdicion))
               ? operativosDelFormulario
                   .filter((codigo) => codigo.grupoRegistro === enEdicion.grupoRegistro)
                   .sort((una, otra) => una.identificador.localeCompare(otra.identificador))
@@ -2729,6 +2692,45 @@ const CuadroRegistroPage = () => {
               ? () => abrirEdicion(enEdicion)
               : undefined
           }
+        />
+      )}
+      {/*
+        EDITAR PATRULLA (2026-10-31): el cajón estándar con el personal en borrador, guardado junto con
+        los datos comunes. Antes la patrulla se corregía en el formulario de alta de arriba con su
+        roster, que guardaba cada persona al instante y dejaba el alta ocupada.
+      */}
+      {editandoPatrulla && enEdicion && (
+        <CajonEditarPatrulla
+          key={`${enEdicion.id}-patrulla`}
+          operativo={enEdicion}
+          grupo={operativosDelFormulario.filter(
+            (o) => o.grupoRegistro === enEdicion.grupoRegistro,
+          )}
+          roles={user?.rolCodes ?? []}
+          catalogos={catalogos.catalogos}
+          puntos={catalogos.puntos}
+          cargandoPuntos={catalogos.cargandoPuntos}
+          onZonalesElegidas={(zonalesIds) => {
+            void catalogos.cargarPuntosDeZonales(zonalesIds);
+          }}
+          candidatos={candidatosEdicion}
+          cargandoPersonal={cargandoPersonalEdicion}
+          bloqueado={bloqueado}
+          avisoContexto={
+            bloqueado ? (
+              <AvisoVentanaCerrada>
+                {cuadro && !cuadro.admiteEscritura
+                  ? `El cuadro del ${cuadro.fecha} fue cerrado por la Dirección: puede consultarlo, pero no guardar cambios.`
+                  : `${ventana.mensaje} Puede consultar el operativo; los cambios no pueden guardarse hasta que su ventana vuelva a abrirse.`}
+              </AvisoVentanaCerrada>
+            ) : undefined
+          }
+          errorServidor={errorCajon}
+          conLiberacion={conLiberacion}
+          onGuardarGenerales={guardarEdicion}
+          onPersonalGuardado={(guardado) => void alGuardarPatrulla(guardado)}
+          onCerrar={cerrarEdicion}
+          guardando={procesando}
         />
       )}
       {edicionEnCajon && enEdicion && (
@@ -2816,6 +2818,8 @@ const CuadroRegistroPage = () => {
 
       {/* Transporte requerido (2026-10-07): liberar el transporte al cambiar el tipo. */}
       {modalLiberacion}
+      {/* «¿Eliminar el operativo completo?» del registro por zonas (2026-10-31). */}
+      {retiroRegistro.modal}
     </section>
   );
 };

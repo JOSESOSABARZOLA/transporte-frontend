@@ -280,6 +280,13 @@ export interface CatalogosFormulario {
   cantidadPorZona?: boolean;
   /** El prefijo ordinario de cada área (IG/IT en el 8): «identificador IG-» en el selector de tipo. */
   prefijosPorArea?: { area: AreaPersonal; prefijo: string }[];
+  /**
+   * Las áreas que admite el formulario y si es patrulla (2026-11-04). Con General y Técnico juntos
+   * el personal se elige por área, sin «Todas» (`utils/personalPorArea.util.ts`). Opcionales: un
+   * servidor anterior no los manda y el selector queda como siempre.
+   */
+  areasAdmitidas?: AreaPersonal[];
+  esPatrulla?: boolean;
 }
 
 // ─────────────────── Administración de catálogos (P-08) ───────────────────

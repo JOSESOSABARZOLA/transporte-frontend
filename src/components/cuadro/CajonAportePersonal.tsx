@@ -96,7 +96,7 @@ const CajonAportePersonal: FC<CajonAportePersonalProps> = ({
       modo="personal"
       titulo={
         borrador.esPatrulla
-          ? "Personal de patrulla"
+          ? "Personal del operativo"
           : `Personal de operativo ${operativo.identificador}`
       }
       identificadores={borrador.identificadores}
