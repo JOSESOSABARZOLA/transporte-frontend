@@ -176,7 +176,7 @@ const abrirEdicion = async () => {
   ]);
   render(<MisOperativosPage />);
   await userEvent.click(
-    await screen.findByRole("button", { name: "Editar IGECU-001, ITECU-001" }),
+    await screen.findByRole("button", { name: "Editar IGECU-001 · ITECU-001" }),
   );
   return screen.findByRole("dialog", { name: /Editar operativo/ });
 };

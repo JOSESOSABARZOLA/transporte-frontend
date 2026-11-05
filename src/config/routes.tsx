@@ -89,6 +89,11 @@ const AdminFormulariosPage = lazy(
   () => import("../pages/AdminFormulariosPage.tsx"),
 );
 
+// Zonas de la ciudad (2026-11-05). La tabla maestra de las zonales (t_zonal).
+const AdminZonasCiudadPage = lazy(
+  () => import("../pages/AdminZonasCiudadPage.tsx"),
+);
+
 // P-09 · ventanas y parámetros (M-29). Última de las nueve.
 const AdminVentanasPage = lazy(() => import("../pages/AdminVentanasPage.tsx"));
 const AdminRolesAuthPage = lazy(
@@ -176,6 +181,12 @@ export const pantallas = [
     permisos: ["catalogos:administrar"],
   },
   {
+    path: "administracion/zonas-ciudad",
+    titulo: "Zonas de la ciudad",
+    modulo: "M-28",
+    permisos: ["catalogos:administrar"],
+  },
+  {
     path: "administracion/ventanas",
     titulo: "Ventanas y parámetros",
     modulo: "M-29",
@@ -259,6 +270,7 @@ const CONSTRUIDAS: Record<Ruta, ReactNode> = {
   "administracion/personal": <AdminPersonalPage />,
   "administracion/catalogos-cuadro": <AdminCatalogosCuadroPage />,
   "administracion/formularios-cuadro": <AdminFormulariosPage />,
+  "administracion/zonas-ciudad": <AdminZonasCiudadPage />,
   "administracion/ventanas": <AdminVentanasPage />,
   "administracion/roles-auth": <AdminRolesAuthPage />,
   "administracion/usuarios": <AdminUsuariosPage />,

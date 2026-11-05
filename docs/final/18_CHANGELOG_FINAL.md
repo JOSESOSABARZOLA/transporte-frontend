@@ -1,7 +1,7 @@
 # 18 · Registro de cambios final
 
 **Módulo Transportes / Cuadro de Colores Operativo — Agencia Metropolitana de Control**
-Versión 0.6.6 · 26 de agosto de 2026
+Versión 1.1.7 · 5 de noviembre de 2026
 
 > **Este documento sustituye a un `CHANGELOG.md` que nunca existió.** No hay ninguno en los dos
 > repositorios; la historia del proyecto vive en los treinta informes de módulo `M01`…`M30`, en
@@ -11,17 +11,50 @@ Versión 0.6.6 · 26 de agosto de 2026
 
 ## Resumen
 
-| Dato | Valor |
+| Dato | Valor al 5 de noviembre de 2026 |
 |---|---|
-| Módulos planificados | **30** |
-| Módulos implementados | **30**, **E12 incluida**: ya no queda ninguna etapa pendiente de desarrollo |
+| Código | Rama `base/cuadro-colores`: `transporte-backend` **24520af** · `transporte-frontend` **d13a5db** |
+| Versión desplegada | **1.1.0** (etiqueta de las dos imágenes). Primera instalación de producción y QA detrás del Gateway el **21-OCT-2026** |
+| Commits desde el 2 de septiembre | **104** en el backend · **134** en el frontend |
+| Modelos Prisma | **55** · **20** enumerados |
+| Migraciones | **105** |
+| Manejadores de ruta | **215** en 39 controladores, más `GET /estado` (216 endpoints). `grep` da 221 porque cinco coincidencias están en comentarios |
+| Pruebas del backend | **153** suites · **2453** unitarias |
+| Pruebas del frontend | **141** archivos · **2088** pruebas |
+| Integración | **22** suites en `test/`. La nueva, `registro-agrupado-patrulla`, pasa **7/7**. En la corrida completa **8 suites fallan** por fixtures desactualizados, sin regresión verificada (ver `17_KNOWN_ISSUES.md`, D-10) |
+
+*Recuentos del 5 de noviembre de 2026. Modelos, enumerados, migraciones y manejadores los
+contamos sobre el código; las cifras de pruebas son las de la última corrida de cada suite.*
+
+### Cómo numeramos desde septiembre
+
+La **1.1.0** de este registro es lo que se instaló el 21-OCT-2026 (`main`: backend `735cc2b`,
+frontend `b89c056`), con la misma etiqueta que llevan las imágenes. Lo anterior se agrupa por
+hitos en **0.8.x–1.0.x**; lo posterior, en **1.1.x**, porque todos los paquetes de QA del 22-OCT
+al 4-NOV conservaron la etiqueta `1.1.0` y reemplazaron la imagen del servidor.
+
+| Dónde dice qué versión | Valor |
+|---|---|
+| `docker-compose.prod.yml` (desde el 23-SEP, commit `0e1f23d`) | `1.1.0` |
+| `transporte-frontend/package.json` (desde el 1-OCT, commit `3a1e822`) | `1.1.0` |
+| `transporte-backend/package.json` | `0.1.0`, sin cambios |
+| Este registro | `1.1.6` |
+
+La etiqueta `1.1.0` se fijó antes de que el contenido estuviera cerrado, así que no identifica
+por sí sola un estado del código. Lo que identifica un paquete es el par de commits que su guía
+`PASOS-*.md` declara. Lo registramos como inconsistencia en `DOCUMENTACION_INCONSISTENCIAS.md`
+(I-21).
+
+### Recuentos anteriores
+
+| Dato | Al 19 de agosto de 2026 |
+|---|---|
+| Módulos | **30** planificados · **30** implementados, E12 incluida |
 | Pruebas | **738** unitarias · **283** de integración · **258** de interfaz |
 | Tablas | 27 · 11 enumerados · 24 `CHECK` · **8** índices parciales |
 | Migraciones | **11** |
 | Endpoints | **67** (64 + los tres de sesión) |
 | Pantallas | 9 |
-
-*Recuentos del 19 de agosto de 2026, ejecutados.*
 
 > **Al 20 de agosto de 2026** esos números se movieron: **29 tablas**, **25 `CHECK`**, **11 índices
 > parciales** y **16 migraciones** —comprobado con `npm run prisma:verificar`—, **68 endpoints** y
@@ -36,6 +69,517 @@ Versión 0.6.6 · 26 de agosto de 2026
 >
 > **El salto de endpoints no lo produce solo este cambio.** Recoge también el operativo adicional
 > y el ajuste de la ventana por rol, que **todavía no tienen entrada propia en este registro**.
+
+---
+
+## 1.1.7 · 5 de noviembre de 2026 · **las zonas de la ciudad se administran desde la aplicación**
+
+Sin paquete de QA todavía. Una migración: `20261105090000_zona_ciudad_nombre_unico`.
+
+`t_zonal` es la tabla maestra de las zonales: de ella cuelgan las zonales de cada formulario, la
+ficha de personal, la flota, los tramos y la matriz de traslados. Del 4-SEP al 13-OCT se creaba
+desde Catálogos; con la zonal por formulario quedó cerrada, y una zona nueva («Matriz») exigía una
+migración. Ahora tiene su pantalla, **Zonas de la ciudad**, con el permiso `catalogos:administrar`.
+
+| Pieza | Qué hace |
+|---|---|
+| `/administracion/zonas` (6 rutas) | Listar con su uso, crear, editar nombre, sector y orden, desactivar, reactivar y eliminar |
+| `politicas/zona-ciudad.ts` | Código derivado del nombre y fijo; desactivar solo si ningún formulario la tiene activa; eliminar solo sin uso; el DMQ no se toca |
+| `uq_zonal_nombre` | Índice único sobre el nombre en minúsculas. Las tildes las compara el servicio |
+| `AdminZonasCiudadPage` + `DrawerZonaCiudad` | La pantalla. Los botones llegan apagados con el motivo del servidor; cambiar el sector avisa cuántos traslados toman otro tiempo por defecto |
+| Catálogos | El alta de una zonal enlaza a «Zonas de la ciudad» si la zona no está |
+
+Una zona nueva aparece sola en personal, flota y traslados; en cada formulario se agrega en
+Catálogos. Contrato: `transporte-backend/docs/CONTRATO-zonas-ciudad.md`.
+
+---
+
+## 1.1.6 · 4 de noviembre de 2026 · **el registro agrupado es una sola solicitud para la DAF**
+
+Paquete de QA del 4-NOV (`qa_preproduccion_20261104`, backend `24520af`, frontend `d13a5db`).
+Una migración pendiente para QA, `20261030120000_carga_por_operativos`, que viene de la 1.1.5.
+
+### 1 · Una solicitud, un conductor, un vehículo
+
+Hasta hoy la patrulla 5/6 llegaba a «Planificar el día» como un código por persona —`IGECU-001`,
+`ITECU-001` y el `INECU-001` que aporta el DMIT—, y la DAF podía darle a cada uno un conductor
+distinto. Es un solo grupo que sale junto; el registro por zonas del 8 ya se trataba así desde el
+28-OCT. Ahora los dos siguen la misma regla:
+
+| Pieza | Qué hace |
+|---|---|
+| `agruparRegistros` (`transporte/application/politicas/registro-agrupado.ts`) | Agrupa por `grupoRegistro`; la DAF recibe solo al representante, anotado con `registro` |
+| `representanteDeLote` (`operativos/domain/registro-operativo.ts`) | Elige entre los códigos del rol dueño. El código que aporta el DMIT nunca representa |
+| `comoRegistro` | El representante lleva el personal de todos los códigos y el horario envolvente: asientos, tramos, optimizador y compartir miden el registro entero |
+| `sincronizarOperativos` | Copia conductor y placa a todos los códigos, el `INECU` incluido |
+
+Qué es un registro agrupado lo decide `esLoteDeRegistro`, la misma regla del cuadro. No hay ninguna
+rama por número de formulario. `ActualizarTransporteDto` no cambió (RN-40).
+
+### 2 · Lo que llega después hereda, y lo que no cuadra se avisa
+
+Si el DMIT aporta después de que la DAF asignó, `crearAporteEn` copia conductor y placa de un código
+ya asignado. Los avisos del registro (`avisosDelRegistro`) se calculan al leer y no liberan nada:
+«No caben: el registro tiene N personas y la PLACA tiene M asientos.» y «El horario del registro ya
+no coincide con el transporte asignado.».
+
+### 3 · La hoja de ruta, una fila por registro
+
+Una fila por registro, tipo y hora, con los identificadores compactados (`compactarIdentificadores`:
+«IGECU-001 · ITECU-001») y una columna **«Personal»** entre Tipo y Operativo. Desde el 30-OCT
+(`d0c682b`) tampoco lleva los tramos de operativos retirados.
+
+### 4 · En el registro: personal por área, sin «Todas»
+
+`GET /formularios/:codigo/catalogos` suma `areasAdmitidas` y `esPatrulla`. Con Inspector General y
+Técnico admitidos, el selector muestra una pestaña por área (`utils/personalPorArea.util.ts`). En la
+patrulla, el área sin nadie dice «Falta: Inspector Técnico · puede registrar igual»: **no bloquea**,
+igual que el servidor (PV-29).
+
+El «Horario del operativo» pasó a ser parte de la captura (`ValoresOperativo.horarioOperativo`): vivía
+en un estado de `SelectorPersonal` y aparecía en el formulario equivocado al cambiar de pestaña. La
+clave del borrador sigue en `v6` para no borrar capturas en curso. Las listas desplegables se abren
+en un portal (`d911381`) y ya no quedan tapadas por el panel de abajo.
+
+### 5 · Datos heredados
+
+Las patrullas que ya tenían un conductor por código conservan esos tramos en los códigos que dejaron
+de representar. `node dist/scripts/tramos-registro-agrupado.js` los reporta sin escribir; con
+`--aplicar --usuario=<id>` borra solo los que no tienen conductor. Los asignados quedan en el
+reporte para que la DAF los reasigne. Ver `17_KNOWN_ISSUES.md`, D-12.
+
+### 6 · Pruebas
+
+`test/registro-agrupado-patrulla.integracion-spec.ts` pasa **7/7**: una solicitud, una asignación
+para los códigos, hoja de ruta con «Personal 2» y «3», el aporte hereda, quitar libera los tres y
+409 con dos asientos. La corrida completa de integración deja **8 suites en rojo** por fixtures
+desactualizados; no encontramos una regresión detrás (D-10).
+
+---
+
+## 1.1.5 · 30 y 31 de octubre de 2026 · **carga por operativos, retiro del registro completo y reemplazo que conserva el código**
+
+### 1 · La carga se mide por operativos de la semana
+
+La etiqueta Carga Baja/Media/Alta del personal salía del índice de horas, cuyos umbrales
+`FATIGA_UMBRAL_*` son de escala diaria. Ahora cuenta operativos del período de equidad (la semana)
+con dos parámetros, `CARGA_OP_MEDIA` (2) y `CARGA_OP_ALTA` (3). El índice de horas sigue para los
+conductores y para desempatar, y el reparto de carga llega también a la DAF.
+
+`t_historial_jornada` se escribe al cerrar un cuadro; desde esta versión **se borra al reabrirlo** y
+se reescribe al volver a cerrarlo. La migración `20261030120000_carga_por_operativos` limpia el
+historial que ya había de cuadros no cerrados —contaba, por ejemplo, una salida de sábado que aún no
+ocurrió—, con traza en `t_auditoria` (usuario 0, correlación `migracion-20261030120000`). Es
+idempotente; volver atrás exige restaurar el respaldo.
+
+### 2 · El operativo se elimina entero
+
+Un registro del 8 por zonas o una patrulla 5/6 es **un** operativo aunque tenga varios códigos.
+`DELETE /operativos/registro/:grupoRegistro` (`retirarRegistro`) retira todos en una transacción,
+con PV-10 por código: sin órdenes ni adicionales se borra; si no, baja lógica. Un código con
+adicional vigente detiene el retiro entero (409 `OPERATIVO_CON_ADICIONALES`). Solo lo retira el rol
+dueño; el DMIT que aportó recibe 403.
+
+En pantalla las acciones van una sola vez, en la celda «Todo el operativo», y «Eliminar» pide
+«¿Eliminar el operativo completo?» con la lista de códigos y personas. Ya no hay «Eliminar» por
+persona: para quitar a una sola, «Editar operativo». La interfaz dice **«operativo»**, no
+«patrulla».
+
+### 3 · Cambiar a una persona conserva su código
+
+En el lote de la patrulla, una persona con `reemplazaA` toma el código de quien sale (misma área,
+composición y elegibilidad). Lo usa «Cambiar por…» en `CajonEditarPatrulla`, que reemplaza a
+`RosterPatrulla`: la patrulla propia se edita con borrador y «Guardar cambios», como el resto.
+
+### 4 · El registro por zonas en dos niveles
+
+La Matriz, la Jornada (`cuadro/GrupoPorZonas.tsx`), Mis operativos, Registro y el PDF de la Matriz
+(`documentos/application/bloques-de-zona.ts`) pintan lo del operativo una vez y la zonal, el punto,
+el tipo y las instituciones por zona, con su rango y «Zona principal». La paginación nunca parte un
+bloque (`paginarPorGrupos`).
+
+### 5 · La ocupación del día al asignar personal
+
+`GET /personal/elegible` suma `operativosDelDia` de cada persona, en una sola consulta, con
+`excluirRegistro` para que nadie salga cruzado con su propio operativo. De un formulario que el rol
+no ve solo viajan las horas (`ajeno: true`, RN-48). El selector pide el «Horario del operativo *» y
+marca «Ocupado» o «Se cruza»; los cruces apagan Registrar y Guardar cambios. Es un anticipo: la
+decisión sigue siendo de RN-28 en el servidor.
+
+---
+
+## 1.1.4 · del 27 al 29 de octubre de 2026 · **registro por zonas, personal por lote y órdenes solo de la Dirección**
+
+Paquete de QA del 29-OCT (`qa_preproduccion_20261029`, backend `34dd5c6`, frontend `8d25d13`), con
+siete migraciones pendientes para QA: la de la 1.1.1, las dos de la 1.1.2 y las cuatro de esta
+entrega. Esa guía dice que actualiza la instalación del 21-OCT y espera como última
+migración aplicada una anterior a `20261023090000`; no comprobamos si los paquetes del 22 al 26-OCT
+llegaron a aplicarse en QA.
+
+### 1 · Todo operativo tiene id de registro
+
+`oper_grupo_registro` deja de ser nulo (`20261027090000_id_de_registro_obligatorio`): cada registro
+genera el suyo y el adicional tiene uno propio. «Nulo = suelto» ya no existe; qué se agrupa lo dice
+`esLoteDeRegistro`. Con eso el cierre del cuadro mide el aporte del DMIT **por registro**
+(`faltantesDeAporte`): antes `IGNECU` e `ITNECU` bloqueaban el cierre con la patrulla completa.
+
+### 2 · Las órdenes las emite la Dirección, con el formato del departamento
+
+| Pieza | Qué fija |
+|---|---|
+| `ROLES_QUE_EMITEN_ORDENES` (`documentos/domain/formato-orden.ts`) | Solo `DIRECTOR`; los demás reciben 403 `ROL_NO_AUTORIZADO` |
+| `formatoDelArea` | El formato sale del área de la persona, no del formulario. Sin formato, la persona va en `sinFormato` y las demás se emiten |
+| `t_plantilla_orden.plor_departamento` | Tres formatos: DMIT · Instrucción, DMIP · Unidad de Operativos, DMIP · Inspecciones. Migración `20261027120000_plantilla_por_departamento` |
+| Endpoints | `GET /plantillas-orden`, `GET`/`PUT /plantilla-orden/:departamento`, `POST …/previsualizar`. Se retiraron `GET`/`PUT /plantilla-orden` sin departamento |
+
+La plantilla por Director del 7-OCT queda sin uso.
+
+### 3 · El formulario 8: una persona, un tipo y varias zonas
+
+Dos columnas de `t_formulario`, no un `if` con el número (`20261028120000`): `form_max_personas` y
+`form_elegir_una_area`. Y una tercera, `form_cantidad_por_zona` (`20261028150000_registro_por_zonas`),
+que convierte el registro del 8 en **un operativo lógico** con una o más zonas, cada una con su
+zonal, punto, instituciones, tipo de control y cantidad de identificadores.
+
+| Endpoint | Para qué |
+|---|---|
+| `POST /operativos/por-zonas` | El alta |
+| `PUT /operativos/registro/:grupoRegistro/zonas` | La edición con el estado final |
+| `GET /operativos/proximo-identificador` | La vista previa del rango, sin reservar |
+
+La numeración es correlativa zona por zona y `bloquearSerie` (`pg_advisory_xact_lock`) impide que dos
+registros simultáneos dupliquen números. La zona principal es la zonal del Maestro si está entre las
+elegidas.
+
+### 4 · El personal se guarda por lote
+
+`PUT /operativos/:id/personal/lote` recibe el conjunto final y aplica altas, bajas y horarios **todo
+o nada**. El aporte (28-OCT) y la patrulla (29-OCT) pasaron a borrador con «Guardar cambios»
+(`hooks/useBorradorAporte.ts`); «Se guarda al instante» desapareció de la interfaz. Contrato en
+`transporte-backend/docs/CONTRATO-personal-por-lote.md`.
+
+### 5 · «Ver detalle» es una ficha de lectura
+
+`DetalleOperativoLectura` muestra el operativo sin ningún campo editable, con un resumen de horario,
+lugar y personal, y el aviso de transporte pendiente solo cuando hace falta.
+
+---
+
+## 1.1.3 · del 24 al 26 de octubre de 2026 · **cobertura simplificada, Personal en dos pestañas y la zonal desactivada**
+
+Paquetes de QA `qa_actualizacion_20261023b` (rearmado el 26-OCT) y `qa_actualizacion_20261026`. Sin
+migraciones.
+
+| Cambio | Qué resuelve |
+|---|---|
+| **Cobertura por turnos** (Instrucción y conductores): un clic cambia el turno, Mayús+clic marca un rango, un solo cajón `DrawerAsignarTurnos` | Reemplaza a `ModalAplicarPatron` y `ModalContinuarRotacion`, que hacían lo mismo por dos caminos |
+| **Personal y disponibilidad** en dos pestañas (`?tab=maestro\|cobertura`) | Maestro y cobertura en la misma pantalla, con enlaces entre ellas («Ver turnos», «Ausente …») |
+| **Cajón de ausencias** con «Registrar ausencia» en el pie y «Historial» en las pasadas | Personal y Flota usan el mismo (`PanelAusenciasBase`) |
+| **Elegibles del cajón con el horario del operativo** (`6589220`) | Quien tenía un turno que no cubría el horario salía como disponible |
+| **Form 4: Editar solo guarda al pulsar** | Algunos cambios se guardaban al instante y otros no |
+| **Catálogos**: acciones con texto, «Eliminar» visible y apagado con su motivo | Sin menú «⋮»: «Desactivar/Reactivar» y «Eliminar» se ven siempre |
+| **Zonal desactivada en la ficha** (`a3a3dfe`, `c28b7a1`) | Una ficha con zonal desactivada no se podía guardar aunque no se tocara: ahora se valida solo si cambia, y se muestra «(desactivada)» |
+
+---
+
+## 1.1.2 · 23 de octubre de 2026 · **la jornada laboral reemplaza al tipo de contrato**
+
+### 1 · Por qué
+
+Nombramiento y Ocasional eran dos valores de un enumerado de PostgreSQL, y el 22-SEP el nombramiento
+pasó a ser estricto (lunes a viernes, 08:00–16:00) con su horario en parámetros. Cada horario nuevo
+exigía una migración. La jornada laboral es un catálogo: se agrega o se desactiva sin desplegar, y
+decide por igual sobre personal y conductores (RN-26, RN-33).
+
+### 2 · Qué cambió
+
+| Pieza | Qué fija |
+|---|---|
+| `t_jornada_laboral` | Días y ventana opcional. Se administra en «Ventanas y parámetros › Jornadas laborales» (`jornadas:administrar`) |
+| Migración `20261023100000_jornada_laboral` | Siembra «Lunes a Viernes 8 horas» y «Lunes a Domingo 24/7». **Irreversible**: retira `e_tipo_contrato`, `func_tipo_contrato`, `cond_tipo_contrato` y `HORA_NOMBRAMIENTO_*` |
+| `admiteJornada` (`talento-operativo/domain/jornada-laboral.ts`) | Una sola regla para personal y conductores |
+| Sin jornada | No se convoca: `JORNADA_NO_ADMITE_TURNO` (personal) y `SIN_JORNADA` (conductor). La pantalla dice «⚠ Sin jornada» |
+
+**Tras la migración nadie tiene jornada.** Hasta que el administrador la asigne a cada persona y a
+cada conductor, no se puede convocar a nadie (`17_KNOWN_ISSUES.md`, F-11). La 24/7 sigue sujeta a
+ausencias, cruces y descanso.
+
+### 3 · Ventanas y parámetros, con guardado único
+
+`PUT /parametros` recibe todos los cambios y valida todos antes de escribir: uno rechazado detiene el
+lote y vuelve en `detalles.errores`. La migración `20261024090000` agrega `para_valor_siembra`, que
+alimenta «Modificado» y «↺ Restaurar», y pasa los mensajes de ventana a `{apertura}` / `{cierre}`.
+
+### 4 · Una plantilla visual
+
+Las once pantallas de Cuadro de Colores y Administración, y las de la DAF, usan `EncabezadoPagina`,
+`PanelTabla` y `EtiquetaEstado`. Solo cambia el aspecto.
+
+---
+
+## 1.1.1 · 22 de octubre de 2026 · **vehículo de otra institución y la composición medida por registro**
+
+Paquete de QA del 22-OCT (`qa_actualizacion_20261022`, backend `ab1cf9f`, frontend `72cdbef`).
+
+### 1 · «Vehículo de otra institución»
+
+Sexta opción de «Transporte requerido» (`OTRA_INSTITUCION`, migración `20261023090000`): el personal
+va en un vehículo prestado y la DAF no asigna nada. Una sola regla, `pideVehiculoDaf`, decide en
+tramos, alertas, Jornada DAF y compartir. Matriz, Jornada y PDF dicen «Otra institución» y «No se
+activa».
+
+### 2 · La composición se mide por registro
+
+Los formularios de un operativo por persona (5, 6 y 8) se medían código por código, y cada código
+reclamaba las áreas de sus compañeros: la Jornada avisaba «N operativos esperan personal» sobre
+patrullas completas. Ahora se mide por `grupoRegistro` (`personalPorRegistro`); a quien registra le
+llega una nota informativa en Observaciones y decide él.
+
+### 3 · El ingreso detrás del Gateway
+
+`b29e409` hace confiar al backend en la intermedia de DigiCert del Auth (`NODE_EXTRA_CA_CERTS` en
+`docker-compose.gateway.yml`). Sin ella el canje fallaba y el ingreso daba 401.
+
+---
+
+## 1.1.0 · 21 de octubre de 2026 · **primera instalación de producción, y QA pasa detrás del Gateway**
+
+### 1 · Dos instalaciones el mismo día
+
+| Paquete | Qué fue |
+|---|---|
+| `produccion_20261021` | Instalación **limpia** de producción, base vacía, detrás del Gateway con HTTPS |
+| `qa_preproduccion_20261021` | QA preproducción en un servidor nuevo, detrás del Gateway, **con la base restaurada** de la preproducción anterior, que se da de baja |
+
+Las dos salieron de `main` (backend `735cc2b`, frontend `b89c056`), con las imágenes
+`transporte-backend:1.1.0` y `transporte-frontend:1.1.0`. Las guías `PASOS-*.md` de cada carpeta
+llevan el orden exacto y las sumas SHA-256; no copiamos aquí sus direcciones.
+
+### 2 · Lo que lo hizo posible
+
+Lo preparamos el 16-OCT (ver 1.0.2): `TRUST_PROXY` para leer la IP real detrás de dos proxies,
+reenvío de `X-Forwarded-Proto` en el nginx del frontend, `VITE_AUTH_PORTAL_URL` obligatoria al
+construir y ninguna IP en los repositorios. El 21-OCT se versionó `package-lock.json` (`8981c34`)
+para que `npm ci` construya la imagen desde un clon.
+
+### 3 · Lo que entró en la versión ese día
+
+| Cambio | Detalle |
+|---|---|
+| **Asientos por momento** | Decisión definitiva del negocio: cuentan quienes van a bordo en cada traslado. Con la PMA-3370 en 3 asientos caben los cuatro operativos del 21-OCT |
+| **El «completo» es la raíz** | `encajarEnUnidad` decide igual a mano y en «Asignar automáticamente» |
+| **Matriz de traslados del DMQ** | `20261021090000_matriz_traslados_dmq`: 90 pares entregados por la DAF; lo editado a mano no se toca |
+| **Baja de flota con fecha y autor** | `20261020150000_baja_flota_con_fecha`; la baja ya no se bloquea antes de preguntar y ofrece «Deshacer» |
+| **Mantenimiento dentro de Vehículos** | Se retiró la página de mantenimiento; la parada se programa desde la fila del vehículo |
+| **Aviso de impacto en traslados** | `POST /administracion/traslados/verificar-impacto` antes de guardar la matriz; no escribe |
+
+---
+
+## 1.0.3 · 19 y 20 de octubre de 2026 · **compartir unidad, ausencias de conductores y notas en las tablas**
+
+### 1 · Compartir unidad
+
+Quien registra deja la **intención** y la DAF la ejecuta (RN-40). En el registro,
+`GET /operativos/coincidencias-transporte` sugiere operativos del propio ámbito con el mismo punto y
+horario, y un solo check envía `compartirConOperativoId`. En la DAF, `GET
+/transporte/tramos/:operativoId/compartibles` lista con quién puede viajar y `POST
+/transporte/tramos/compartir` lo lleva en la unidad del anfitrión. Migraciones
+`20261019090000_operativo_compartir_unidad` y `20261019150000_compartir_solicitado`.
+
+Basta un traslado en común para compartir la unidad. El 20-OCT se sumó el «completo»: la unidad que
+acompaña un operativo todo el día puede dejar y retirar a otros del mismo sitio. Contrato en
+`CONTRATO-compartir-unidad.md` (ver I-17 sobre dónde está hoy).
+
+### 2 · Lo demás
+
+| Cambio | Detalle |
+|---|---|
+| **Ausencias de conductores** | Permiso `flota:ausencias` (`20261016120000`), el mismo cajón que Personal. La ausencia no retira tramos: los avisa |
+| **Notas en las cuatro tablas** | `notas` = bitácora (`NOTA`) + la solicitud de compartir (`COMPARTIDA`); la misma pieza, `NotasObservacion`, en Registro, Mis operativos, Jornada y Matriz |
+| **Acciones con icono** | `AccionesOperativo` con cuatro casilleros fijos y `Tooltip` único |
+| **Macrooperativo solo en «Completo»** | `macroSegunTipo` lo deja en `false` con cualquier otro tipo |
+| **Traslados entre zonales** | Una sola regla, `minutosTraslado`; con hueco igual al traslado sí llega |
+
+---
+
+## 1.0.2 · del 14 al 16 de octubre de 2026 · **ocupación por tramos, Flota y garajes, y un solo estándar de interfaz**
+
+### 1 · La ocupación sale solo de los tramos
+
+Un «dejar y retirar» ocupa al conductor en sus dos tramos y lo deja libre entre medio. La ocupación
+sale ahora solo de `t_tramo_transporte`; `t_operativo.cond_id/vehi_id` queda como reflejo de lectura.
+`PATCH /transporte/operativos/:id` delega en la asignación por tramos, y el adicional hereda conductor
+y vehículo por tramos. Horas libres en `GET /transporte/huecos/:fecha` (`20261014090000`).
+
+La DAF ya puede elegir cualquier placa activa del día: `POST /transporte/evaluar/vehiculos` evalúa
+cada una para un conductor, y las placas se normalizan al guardar (`20261015090000_placas_normalizadas`).
+
+### 2 · Flota y garajes, rediseñada
+
+Indicadores clicables, tres pestañas con el filtro en la URL, cajones de alta y edición y baja con
+aviso de impacto (`GET …/impacto-baja`).
+
+### 3 · Un estándar para botones, cajones y mensajes
+
+`Boton` (nueve variantes, tres tamaños), `DrawerLateral` (dos anchos, cabecera y pie azules, estado
+del pie con `estadoPieDrawer`) y `MensajeModal` con `toast` y `AvisoEnLinea`. `traductorErrores`
+conserva el texto del servidor y lleva lo técnico al detalle. Se retiraron `MarcoModal`, `ModalExito`
+y la tabla genérica `components/tabla/`.
+
+### 4 · El registro, con un solo formulario
+
+`FormOperativo` con `modo` alta, edición o adicional, en lugar de siete banderas. `SelectorFormulario`
+muestra «N hoy» con `GET /operativos/conteo?fecha=`.
+
+### 5 · Preparación del despliegue
+
+| Commit | Qué |
+|---|---|
+| `f6b4302` | La imagen del backend pasa de 331 a 194 MB |
+| `170a416` | `TRUST_PROXY`; `validar-entorno.ts` solo admite un entero |
+| `9725ef0`, `648a8ee` | Fuera las IP de código, pruebas y documentación; `VITE_AUTH_PORTAL_URL` obligatoria |
+| `4073f44` | Tres ambientes y `scripts/empaquetar.sh` |
+
+---
+
+## 1.0.1 · 12 y 13 de octubre de 2026 · **cada formulario con su configuración propia**
+
+Áreas, puntos, tipos e instituciones ya eran de cada formulario; las zonales no. Desde la migración
+`20261013120000_zonal_por_formulario` también lo son (`t_zonal_formulario`), y `t_zonal` queda como
+zona de la ciudad para personal, flota y traslados. Las rutas cuelgan del formulario,
+`/administracion/catalogos/:codigo/…`, y un valor de otro formulario responde 404. Las copias entre
+formularios se retiraron.
+
+`src/scripts/limpieza-catalogos.ts` corrige los datos heredados: sin `--aplicar` solo reporta.
+
+| Pantalla | Cambio |
+|---|---|
+| Catálogos del cuadro | Acordeón de zonales, cajón de alta y edición, «Eliminar» solo sin uso |
+| Formularios del cuadro | Número, código y áreas fijos al editar; prefijo único entre formularios; paleta de 24 colores |
+| Mis operativos | Rango `desde`/`hasta`, con tope `MIS_OPERATIVOS_RANGO_MAX_DIAS` (`20261013150000`) |
+
+---
+
+## 1.0.0 · 7 y 8 de octubre de 2026 · **la DAF planifica por tramos, en cuatro pasos**
+
+### 1 · Por qué
+
+El levantamiento con Planificación de Transporte del 28-AGO mostró que el **38 %** de las
+asignaciones reales encadenan más de un conductor, y el sistema modelaba «un operativo, un
+conductor». La asignación pasa a ser por **tramos**: dejar, retirar o acompañar todo el día.
+
+### 2 · El servidor
+
+`0bb5a60` trae tramos, turnos de conductores, optimizador y mantenimiento (migraciones del
+`20261006090000` al `20261007090000`). `a73048b` arma «Planificar el día»:
+
+| Endpoint | Para qué |
+|---|---|
+| `GET /transporte/jornada-daf/:fecha` | El resumen de la jornada en una llamada, con el paso derivado |
+| `GET /transporte/candidatos/:operativoId` | Conductores por categoría, con su motivo |
+| `POST /transporte/optimizar` con `simular` | Sugerencia de libres en memoria, sin escribir |
+| `GET`/`PUT /transporte/vehiculos-jornada/:fecha` | Vehículos que salen |
+| `POST /transporte/hojas-ruta/:fecha/emitir` | Emisión de hojas con su estado |
+
+Migración `20261008150000_planificar_dia_flujo_guiado`: `t_vehiculo_jornada`, `t_hoja_ruta_emision`
+y `dest_acta_numero`.
+
+### 3 · La pantalla
+
+Preparar → Asignar → Fin del día → Emitir, con un `Stepper` navegable. El paso no se guarda: se
+deriva del resumen con `derivarPaso`. Se retiraron la vista de tabla heredada, los indicadores, «Por
+cubrir» con arrastrar y soltar y el modal de propuesta.
+
+### 4 · Lo que viajó con ella
+
+| Cambio | Detalle |
+|---|---|
+| **Órdenes** | Plantilla por Director (`20261005180000`), numeración y firmante, tabla de control desde la plantilla sin NUT; el cargo sale de la ficha |
+| **Cobertura de Instrucción** | Avisos y exportación a Excel con `exceljs`, autorizado el 5-OCT solo para esto (`20261005200000`) |
+| **Trámites de Inspección** | El registro ofrece los trámites de cada inspector: el backend reenvía el token a `GET {INSPECCION_API_URL}/operativos` (B-01, ampliado) |
+| **Transporte requerido por formulario** | Con macrooperativo (`20261007150000`) |
+| **Ventanas** | Tipos diario, laborable y sin restricción, con marcadores; cada ventana se parametriza sola, sin RN-56/RN-57 |
+| **Personal y disponibilidad** | Rediseño: 409 por cédula, correo institucional desde Auth, teléfono `09…`, situaciones de ausencia nuevas (`20261008170000`) |
+| **Matriz** | «Reabrir cuadro» con confirmación, permiso `cuadro:cerrar-reabrir` |
+
+---
+
+## 0.9.2 · del 22 de septiembre al 1 de octubre de 2026 · **fatiga y equidad a la vista, formularios administrables y el memorando con firma**
+
+| Fecha | Cambio | Detalle |
+|---|---|---|
+| 22-SEP | **Nombramiento estricto** (RN-26) | Lunes a viernes 08:00–16:00 (`20260922100000`). Lo reemplazó la jornada laboral el 23-OCT |
+| 22-SEP | **Memorando** | Filete institucional, firma `.p12` configurable por entorno (inerte sin configurar, 502 si falla) y vista previa de la plantilla |
+| 22–23-SEP | **Visor de PDF** | Con `react-pdf`, que dejó de ser una dependencia sin uso; «Emitir todas» y reenvío de las que fallan |
+| 24–29-SEP | **Fatiga y equidad** | Índice de fatiga (FRMS) y equidad de reparto, con semáforo relativo por tercios del grupo. **Informan, no bloquean** (`20260924140000`, `20260925120000`, `20260929160000`) |
+| 24-SEP | **Catálogos** | Eliminar solo lo que nunca se usó (409 si está en uso); «Otro tipo» en todos los formularios; registrar un punto nuevo desde el alta (formularios 1 a 4) |
+| 28-SEP | **Cédula** | Solo por formato, diez dígitos, en un solo sitio |
+| 29-SEP | **Formularios administrables** | Rango de número 1–99 (`20260929120000`), pantalla de alta y edición, puntos e instituciones por formulario |
+| 30-SEP | **Baja con motivo** | Obligatorio (`20260930120000`) |
+| 30-SEP–1-OCT | **Cajones laterales** | Personal, Cuentas y Mis operativos; P-01 edita en cajón con el personal diferido hasta «Guardar cambios» |
+| 1-OCT | **Correo personal** | `func_correo_personal`, junto al institucional (`20261001120000`) |
+| 23-SEP · 1-OCT | **Etiqueta 1.1.0** | En `docker-compose.prod.yml` y en `package.json` del frontend. Empaquetado por versión con `PASOS-PRODUCCION.md` (`0e06d41`) |
+
+---
+
+## 0.9.1 · del 17 al 21 de septiembre de 2026 · **permisos en lugar de roles, la patrulla con un código por persona y un arranque más duro**
+
+### 1 · RBAC por permisos atómicos
+
+Cada endpoint declara `@RequierePermiso('modulo:accion')` y `PermisosGuard` lo valida contra
+`t_rol_permiso` (migración `20260916180000_rbac_permisos`: `t_rol`, `t_permiso`, `t_rol_permiso`).
+La sesión devuelve `permisos` y el frontend monta rutas y menú por permiso. Cambiar quién entra es
+marcar una casilla en «Permisos por rol», no desplegar.
+
+### 2 · La patrulla 6, con un código por persona
+
+Cada inspector lleva su código (`IGNECU`, `ITNECU`) y el aporte del DMIT crea su propio operativo
+`INECU`, enlazado por `oper_grupo_registro` (`20260917120000`). La numeración es por prefijo
+(`20260917140000`).
+
+### 3 · Endurecimiento tras la auditoría E2E
+
+`helmet`, CORS sin reflejo abierto, validación de entorno al arrancar y el IDOR de las ausencias
+cerrado (H-01: otra dirección recibe 403).
+
+### 4 · El formulario 8 se lee como un solo operativo
+
+Las copias de una persona comparten lote y se agrupan en pantalla y en el PDF de la Matriz, que raya
+gris y blanco por bloque. La ficha de personal suma la zonal, opcional.
+
+---
+
+## 0.9.0 · 15 y 16 de septiembre de 2026 · **cobertura por turnos de Instrucción y la orden como memorando**
+
+| Cambio | Detalle |
+|---|---|
+| **Cobertura por turnos** | Matriz de turnos del personal de Instrucción (`20260916120000`); la asignación se bloquea por descanso y por ventana de turno. Los parámetros de turno son del Administrador DMIT (`20260916160000`) |
+| **Orden de servicio como memorando** | Con plantilla editable (`20260915160000_plantilla_orden_servicio`) |
+| **Jornada del Día acotada** | Cada rol ve solo sus formularios. Revierte la apertura de la 0.6.9: pesa más el aislamiento (RN-48) que ver el volumen ajeno |
+| **Sistema visual** | Alineado con `instruccion-frontend`: `rounded-3xl`, contenedor de 80rem, `table-zebra` |
+
+---
+
+## 0.8.0 · del 2 al 14 de septiembre de 2026 · **el horario pasa a cada persona, y las observaciones a notas**
+
+### 1 · Horario por persona (RN-66)
+
+El operativo deja de tener horario propio: cada persona lleva el suyo en `t_asignacion_personal`
+(`20260908130000_horario_por_persona`) y el operativo deriva su ventana con
+`RangoHorario.envolvente()`. El descanso y el cruce se miden sobre la ventana de cada persona.
+
+### 2 · Lo que viajó en el ciclo
+
+| Cambio | Detalle |
+|---|---|
+| **Matriz de puntos de encuentro** | `20260902160000` y `20260902170000`: solo lo que el insumo dice |
+| **Tipos de control por formulario** | `20260907120000`; múltiple en todos desde el 14-SEP |
+| **Prefijo por área** | Formularios 8, 5 y 6; `ICNECU` pasa a `INECU` |
+| **Observaciones como notas** | Bitácora de solo agregar en `t_operativo_observacion` (`20260909130000`) |
+| **Administrador general** | `ADMINISTRADOR` recupera su rol de Auth (`20260910100000`) |
+| **`FUNCIONARIO` retirado** | El personal de campo deja de iniciar sesión: P-06 «Mis órdenes» desaparece y el rol queda vacío en el enumerado |
+| **Cantidad por persona en el 8** | N operativos por persona con la misma hora (`20260910110000`, `20260914140000`); separada del *split* por persona |
+| **Lectura total no amplía el listado** | Dirección o DAF con un rol departamental ven solo lo de ese rol en P-01 y P-02 |
 
 ---
 
@@ -2098,3 +2642,9 @@ que solo se ven al consumirlo.
 | **Puesta en producción** | ❌ **No es posible todavía** |
 
 > **Ninguna de las dos cosas que faltan es código.**
+
+> **Al 5 de noviembre de 2026 la tabla anterior es historia.** La identidad real funciona desde el
+> 19-AGO y la producción se instaló el **21-OCT-2026** con la versión 1.1.0, detrás del Gateway con
+> HTTPS. Lo que sigue abierto está en `17_KNOWN_ISSUES.md`: entre otros, las 8 suites de
+> integración con fixtures desactualizados, la jornada laboral que nadie tiene hasta que el
+> administrador la asigne y los paquetes de QA armados desde `base/cuadro-colores` y no desde `main`.

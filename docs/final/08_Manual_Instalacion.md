@@ -1,17 +1,18 @@
 # 08 · Manual de Instalación
 
 **Módulo Transportes / Cuadro de Colores Operativo — Agencia Metropolitana de Control**
-7 de agosto de 2026 · **actualizado el 28 de agosto de 2026**
+7 de agosto de 2026 · **actualizado el 5 de noviembre de 2026**
 
-> **EL PROCEDIMIENTO VIVE EN `transporte-backend/DESPLIEGUE.md`, NO AQUÍ.**
+> **Este manual cubre la instalación en la máquina de desarrollo**: local y en contenedores. Los
+> servidores no construyen nada; se instalan con un paquete `.tar` y su guía:
 >
-> Este manual y el `09` describían los mismos pasos con distinto detalle, y ya divergían:
-> tres documentos para un procedimiento son tres oportunidades de que uno mienta. Desde el
-> 2026-08-28 los pasos se mantienen en un solo sitio y aquí queda lo que es propio de este
-> manual —requisitos, instalación local, base de pruebas y resolución de problemas—.
+> | Servidor | Guía |
+> |---|---|
+> | QA y producción, detrás del Gateway | `transporte-backend/INSTALACION-PRODUCCION.md` |
+> | Preproducción sin Gateway | `transporte-backend/DESPLIEGUE.md` §7 y `COMANDOS-PREPRODUCCION.md` |
 >
-> **Para el servidor de producción (`<IP_SERVIDOR_PRODUCCION>`), la sección 7 de `DESPLIEGUE.md`**: las imágenes se
-> llevan construidas en un `.tar`, no se construyen allí.
+> El resumen del despliegue por ambiente está en `09_Manual_Despliegue.md`. Las variables, en
+> `07_Manual_Configuracion.md`.
 
 ---
 
@@ -19,29 +20,34 @@
 
 | Componente | Versión | Para qué |
 |---|---|---|
-| Docker + Docker Compose | 24+ / v2+ | Instalación en contenedores |
-| Node.js | **≥ 20.11** | Desarrollo, migraciones y semilla |
-| PostgreSQL | 18 | Lo aporta el contenedor |
+| Docker Engine + Docker Compose | Compose v2; **≥ 2.24** en servidores con Gateway | Contenedores. El overlay del Gateway usa `!reset` |
+| Node.js | **≥ 20.11** (`engines` del backend) | Desarrollo, pruebas y migraciones fuera de Docker |
+| PostgreSQL | 18 | Lo aporta la imagen `postgres:18` |
 | Git | — | Obtener el código |
+| Bash | Git Bash en Windows | `scripts/empaquetar.sh` |
 
-La instalación en contenedores es la recomendada. La local sirve para desarrollo.
+Los dos repositorios versionan `package-lock.json` desde el 2026-10-21, así que `npm ci`
+reproduce las dependencias y la imagen se construye desde un clon limpio.
+
+Trabajamos en la rama `base/cuadro-colores` de los dos repositorios.
 
 ---
 
 ## 2. Estructura esperada
 
-Los dos repositorios deben ser **carpetas hermanas**: el `docker-compose.yml` vive en el backend y
-construye el frontend con `context: ../transporte-frontend`.
+Los dos repositorios son **carpetas hermanas**: el `docker-compose.yml` vive en el backend y
+construye el frontend con `context: ../transporte-frontend`. `scripts/empaquetar.sh` también lo
+exige.
 
 ```
 sigoc-cco/
-├── transporte-backend/     ← docker-compose.yml, Dockerfile, prisma/
-└── transporte-frontend/    ← Dockerfile, nginx.conf
+├── transporte-backend/     ← docker-compose*.yml, Dockerfile, prisma/, scripts/empaquetar.sh
+└── transporte-frontend/    ← Dockerfile, nginx.conf, vite.config.ts
 ```
 
 ---
 
-## 3. Instalación en contenedores
+## 3. Instalación en contenedores (desarrollo)
 
 ### 3.1. Configurar
 
@@ -50,20 +56,27 @@ cd transporte-backend
 cp .env.example .env        # PowerShell: Copy-Item .env.example .env
 ```
 
-Complete en `.env` como mínimo:
+Completamos en `.env` como mínimo:
 
 ```bash
-DB_PASSWORD=<una contraseña>
-DATABASE_URL=postgresql://postgres:<esa contraseña>@localhost:5434/transportedb?schema=public&connection_limit=10&pool_timeout=20
+DB_PASSWORD=<clave de postgres>
+APP_DB_PASSWORD=<clave de transporte_app, distinta>
 TZ=America/Guayaquil
 CORS_ORIGINS=http://localhost:5180
 
-# Sesión con Auth central. Sin estas cuatro el contenedor arranca, pero NADIE puede entrar.
+# Sesión con Auth central. Sin ellas el contenedor arranca pero nadie entra.
 AUTH_EXCHANGE_URL=http://<IP_SERVIDOR_AUTH>:10004/auth/exchange
-AUTH_JWT_SECRET=<la entrega el equipo de Auth central>
+AUTH_API_URL=http://<IP_SERVIDOR_AUTH>:10004
+AUTH_JWT_SECRET=<la entrega el equipo de Auth>
 AUTH_SUBSYSTEM_ID=11
-SESSION_JWT_SECRET=<una clave propia de este módulo, DISTINTA de la anterior>
+SESSION_JWT_SECRET=<32 caracteres o más, distinta de la anterior>
+
+# Portal de Auth que se hornea en la imagen del frontend. Obligatoria para construir.
+VITE_AUTH_PORTAL_URL=http://<IP_SERVIDOR_AUTH>:10006/login
 ```
+
+`DATABASE_URL` y `DIRECT_DATABASE_URL` solo hacen falta para el backend fuera de Docker (§4); el
+compose las compone con la red interna.
 
 ### 3.2. Construir
 
@@ -71,8 +84,9 @@ SESSION_JWT_SECRET=<una clave propia de este módulo, DISTINTA de la anterior>
 docker compose build
 ```
 
-Construye **las dos** imágenes. El cliente de Prisma se genera **dentro** de la imagen del backend;
-nunca se copia de la máquina de desarrollo, porque incluye binarios específicos de la plataforma.
+Construye `transporte-backend:latest` (unos 194 MB) y `transporte-frontend:latest`. El cliente de
+Prisma se genera **dentro** de la imagen; nunca se copia de la máquina. Sin
+`VITE_AUTH_PORTAL_URL` el compose se detiene antes de construir.
 
 ### 3.3. Levantar la base
 
@@ -80,39 +94,35 @@ nunca se copia de la máquina de desarrollo, porque incluye binarios específico
 docker compose up -d transportedb
 ```
 
-Con el volumen vacío, `prisma/init-db/01-extensiones.sql` crea `pg_stat_statements` sola.
-
-**Sobre un despliegue que ya tiene datos el script no corre** —así funciona
-`/docker-entrypoint-initdb.d`— y hay que crear la extensión a mano:
+La base se publica en `localhost:5434`, solo en la interfaz local. Con el volumen vacío,
+`prisma/init-db/01-extensiones.sql` crea `pg_stat_statements`. Sobre un volumen con datos el
+script no corre y la creamos a mano:
 
 ```bash
 docker exec transportedb psql -U postgres -d transportedb \
   -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
 ```
 
-### 3.4. Aplicar migraciones · paso explícito
+### 3.4. Migrar y crear el rol de aplicación
 
 ```bash
 docker compose run --rm transporte-app npx prisma migrate deploy
 ```
 
-**El arranque del contenedor no aplica migraciones**, y es deliberado: un contenedor que migra al
-arrancar aplica cambios de esquema cada vez que se reinicia, en el peor momento posible.
+El arranque del contenedor **no migra**, a propósito. Las migraciones crean el esquema y cargan
+los catálogos institucionales: nueve formularios, zonales, tipos de control, instituciones,
+ventanas, jornadas laborales y parámetros de política. **Ya no hay semilla aparte.**
 
-### 3.5. Sembrar catálogos · solo la primera vez
-
-Desde la máquina de desarrollo, con `DATABASE_URL` apuntando al puerto publicado (5434):
+Después, una vez por base, el rol `transporte_app`:
 
 ```bash
-npm install
-npx prisma generate
-# Retirado el 2026-08-19: los catálogos entran con `npx prisma migrate deploy`
+cat prisma/roles/crear-rol-aplicacion.sql \
+  | docker exec -i transportedb psql -U postgres -d transportedb -v ON_ERROR_STOP=1 -v clave="'<APP_DB_PASSWORD>'"
 ```
 
-Carga parámetros, ventanas, zonales, tipos de control, instituciones y **los nueve formularios**,
-y termina ejecutando `ANALYZE`. Imprime al final qué quedó sin cargar y qué pendiente lo bloquea.
+La clave va entre comillas simples dentro de las dobles: psql espera un literal SQL.
 
-### 3.6. Levantar todo
+### 3.5. Levantar todo
 
 ```bash
 docker compose up -d
@@ -120,21 +130,42 @@ docker compose up -d
 
 | Servicio | Puerto | Comprobación |
 |---|---|---|
-| `transportedb` | 5434 | `pg_isready` |
+| `transportedb` | 5434 (solo local) | `pg_isready` |
 | `transporte-app` | 3003 | `GET /api/v1/estado` |
 | `transporte-front` | 5180 | `GET /health` |
+
+### 3.6. Primer administrador
+
+Sin una cuenta con rol `ADMINISTRADOR_DMIP` nadie puede abrir «Cuentas del cuadro». La primera se crea
+por SQL, con el usuario de Auth de esa persona:
+
+```sql
+BEGIN;
+INSERT INTO t_usuario (usua_correo, usua_nombre, usua_identificador_ad, func_id, usua_activo)
+VALUES ('<correo>@quito.gob.ec', '<Apellidos Nombres>', '<usuario de Auth>', NULL, true);
+INSERT INTO t_usuario_rol (usua_id, usro_rol)
+SELECT usua_id, 'ADMINISTRADOR_DMIP'::e_rol_departamental
+  FROM t_usuario WHERE usua_identificador_ad = '<usuario de Auth>';
+COMMIT;
+```
+
+El resto de las cuentas se da de alta desde la pantalla, y la correspondencia entre roles de Auth
+y roles del módulo, en «Roles de Auth central».
 
 ### 3.7. Comprobar
 
 ```bash
 docker compose ps                                                              # los tres «healthy»
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3003/api/v1/estado   # 200
+curl -s http://localhost:3003/api/v1/estado          # {"estado":"operativo","baseDatos":"disponible"}
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5180/health          # 200
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5180/api/v1/estado   # 200, por el proxy
 docker exec transporte-app id                                                  # uid=1001(nestjs)
 docker exec transporte-front id                                                # uid=101(nginx)
-docker exec transporte-app sh -c 'date'                                        # debe decir -05
+docker exec transporte-app sh -c 'date'                                        # termina en -05
 ```
+
+Y entramos de verdad por `http://localhost:5180`: el portal de Auth debe devolvernos a
+`/auth/callback` y abrir la sesión.
 
 ---
 
@@ -142,60 +173,65 @@ docker exec transporte-app sh -c 'date'                                        #
 
 ### 4.1. Base de datos
 
-Levante solo el contenedor de PostgreSQL:
-
-```bash
-cd transporte-backend
-docker compose up -d transportedb
-```
+Usamos solo el contenedor de PostgreSQL (§3.3 y §3.4).
 
 ### 4.2. Backend
 
+En `transporte-backend/.env`, además de lo de §3.1:
+
 ```bash
-npm install
-npx prisma generate
-npx prisma migrate dev
-# Retirado el 2026-08-19: los catálogos entran con `npx prisma migrate deploy`
-npm run start:dev            # http://localhost:3003/api/v1
+DATABASE_URL=postgresql://transporte_app:<APP_DB_PASSWORD>@localhost:5434/transportedb?schema=public&connection_limit=10&pool_timeout=20
+DIRECT_DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@localhost:5434/transportedb?schema=public
 ```
 
-**No hay modo de desarrollo sin autenticar.** Se retiró el 2026-08-18: hasta entonces
-`MODO_IDENTIDAD_PROVISIONAL=true` permitía identificarse con una cabecera, y **cualquiera podía
-declararse `DIRECTOR`**. Para trabajar en local hace falta ingresar por el portal de Auth como con
-cualquier otro usuario, y **tener fila en `t_usuario`**.
+```bash
+npm ci
+npx prisma generate
+npx prisma migrate deploy      # o migrate dev, si estamos creando una migración
+npm run start:dev              # http://localhost:3003/api/v1
+```
+
+No hay modo de desarrollo sin autenticar: entramos por el portal de Auth como cualquier usuario y
+necesitamos fila en `t_usuario` y en `t_usuario_rol`.
 
 ### 4.3. Frontend
 
 ```bash
 cd ../transporte-frontend
-npm install
-npm run dev                  # http://localhost:5180
+cp .env.example .env.development.local    # y poner el portal real en VITE_AUTH_PORTAL_URL
+npm ci
+npm run dev                               # http://localhost:5180
 ```
+
+`npm run dev` usa `VITE_API_BASE_URL=http://localhost:3003` (sin proxy: hace falta
+`CORS_ORIGINS=http://localhost:5180` en el backend). Sin portal, la aplicación arranca pero
+muestra «Falta configurar la dirección del portal de Auth». `vite.config.ts` usa
+`strictPort: true`: si el 5180 está ocupado, falla en vez de moverse.
 
 ---
 
 ## 5. Base de las pruebas de integración
 
-`npm run test:integracion` **no usa la base de desarrollo**: usa `transportedb_pruebas`, en el
-mismo servidor.
-
-El motivo es estructural: `ck_formulario_numero` acota el número de formulario **entre 1 y 9**. Si
-el catálogo institucional ocupa los nueve casilleros, las suites no tienen dónde crear los suyos.
-
-Se prepara una vez:
+`npm run test:integracion` usa `transportedb_pruebas`, en el mismo servidor. El motivo es
+`ck_formulario_numero`, que solo admite del 1 al 9: si el catálogo institucional ocupa los nueve
+casilleros, las suites no tienen dónde crear los suyos.
 
 ```bash
 docker exec transportedb psql -U postgres -c "CREATE DATABASE transportedb_pruebas;"
 
-URL="postgresql://postgres:CLAVE@localhost:5434/transportedb_pruebas?schema=public"
-DATABASE_URL="$URL" npx prisma migrate deploy
-# Ya no hace falta: la migración puebla también la base de pruebas, omitiendo
-# a propósito los nueve formularios para no ocupar los casilleros de las suites.
+PRUEBAS="postgresql://postgres:<DB_PASSWORD>@localhost:5434/transportedb_pruebas?schema=public"
+DATABASE_URL="$PRUEBAS" DIRECT_DATABASE_URL="$PRUEBAS" npx prisma migrate deploy
 ```
 
-La semilla **detecta esa base por su nombre y no le siembra los nueve formularios**, a propósito.
+> **Hay que exportar las dos variables.** `migrate deploy` se conecta por `DIRECT_DATABASE_URL`;
+> con solo la primera, migra en silencio la base de desarrollo. La línea `Datasource "db": …` dice
+> qué base se tocó de verdad.
 
-**Tras cada migración nueva hay que repetir el `migrate deploy` sobre esa base.**
+Las migraciones detectan esta base por su nombre y omiten los nueve formularios. Cuatro
+migraciones del 27-AGO no se pueden aplicar aquí y se marcan como aplicadas; el procedimiento
+está en `transporte-backend/DESPLIEGUE.md` §4.1. Después creamos el rol con
+`crear-rol-aplicacion.sql` sobre esta base y repetimos el `migrate deploy` tras cada migración
+nueva.
 
 ---
 
@@ -203,18 +239,18 @@ La semilla **detecta esa base por su nombre y no le siembra los nueve formulario
 
 ```bash
 cd transporte-backend
-npm run prisma:verificar     # 27 tablas, 11 enums, 24 CHECK, 8 índices parciales
-npm test                     # 738 pruebas unitarias
-npm run test:integracion     # 283 pruebas
+npm run prisma:verificar     # 55 tablas, 20 enumerados, 48 restricciones, 14 índices parciales
+npm test
+npm run test:integracion
 npm run lint:check && npm run build
 
 cd ../transporte-frontend
-npm test                     # 258 pruebas
+npm test
 npm run lint && npm run build
 ```
 
-Estado esperado: **todo en verde**, con una única advertencia heredada de lint en
-`components/tabla/FilterByColumn.tsx`.
+Estado esperado: todo con código de salida 0. `prisma:verificar` corresponde a la última
+migración, `20261030120000_carga_por_operativos`.
 
 ---
 
@@ -226,7 +262,7 @@ docker compose down -v              # ELIMINA TAMBIÉN EL VOLUMEN Y TODOS LOS DA
 docker rmi transporte-backend:latest transporte-frontend:latest
 ```
 
-> `-v` borra `transporte_pgdata`. No hay vuelta atrás sin un respaldo.
+> `-v` borra `transporte_pgdata`. Sin un respaldo `pg_dump` no hay vuelta atrás.
 
 ---
 
@@ -234,13 +270,16 @@ docker rmi transporte-backend:latest transporte-frontend:latest
 
 | Síntoma | Causa | Solución |
 |---|---|---|
-| `docker compose up` se detiene al inicio | `DB_PASSWORD` vacío | Complételo en `.env` |
-| El contenedor de la base reinicia en bucle | Volumen montado en la ruta antigua | El montaje va en `/var/lib/postgresql`, no en `/data`. Ya está corregido |
-| El backend reinicia al primer acceso a datos | Motor de Prisma incompatible | La imagen instala `openssl`; reconstruya sin caché |
-| Toda petición responde `401` | No hay cookie de sesión, o `SESSION_JWT_SECRET` está vacía | Ingrese por el portal. Si persiste: `docker logs transporte-app 2>&1 | grep SESSION_JWT_SECRET` |
-| El ingreso responde `403` y no `401` | Auth le autenticó, pero **no tiene fila en `t_usuario`** o está desactivado | Dele de alta con `usua_identificador_ad` = su usuario de Auth |
-| El portal devuelve a una página que no existe | La ruta del **módulo 80** en Auth no coincide con el origen real del frontend | Corríjala en Auth. Hoy: `localhost:5180` |
-| `crypto.randomUUID is not a function` | El frontend se sirve por HTTP desde una IP: **no es contexto seguro** | Ya hay respaldo en `correlationId.ts`. Si reaparece, use `localhost` o HTTPS |
-| Una pantalla nueva no aparece | Imagen del frontend antigua | `docker compose build` reconstruye las dos |
-| «Su perfil no tiene formularios asignados» | Faltan las migraciones, o la cuenta no tiene rol | `npx prisma migrate deploy`; si persiste, compruebe que hay fila en **`t_usuario_rol`**: el rol dejó de ser una columna de `t_usuario` cuando una persona pasó a poder tener varios |
-| El desplegable de puntos está vacío | Falta la matriz zonal ↔ punto (PV-01) | Cargarla desde P-08 |
+| `docker compose up` se detiene al inicio | `DB_PASSWORD`, `APP_DB_PASSWORD` o `VITE_AUTH_PORTAL_URL` vacías | Completarlas en `.env`. En servidores, falta `--env-file .env.prod` |
+| `npm run build` del frontend falla con «Falta VITE_AUTH_PORTAL_URL» | Sin portal de Auth | Definirla en `.env.development.local` o como argumento de construcción |
+| `transporte-app` no arranca | `validar-entorno.ts` lo detiene | `docker logs transporte-app` dice qué falta: `DATABASE_URL`, `SESSION_JWT_SECRET` corta, `TRUST_PROXY` no entero, o con `NODE_ENV=production`, `CORS_ORIGINS` o la cookie `Secure` |
+| `permission denied` en ejecución | Falta el rol `transporte_app` o sus privilegios | Ejecutar `crear-rol-aplicacion.sql` sobre esa base |
+| El contenedor de la base reinicia en bucle | Volumen montado en `/var/lib/postgresql/data` | PostgreSQL 18 monta en `/var/lib/postgresql`. Los compose ya lo hacen |
+| Toda petición responde `401` | Sin cookie de sesión | Ingresar por el portal |
+| El ingreso responde `403` | Auth autenticó, pero no hay fila en `t_usuario` o en `t_usuario_rol` | Alta en «Cuentas del cuadro» con `usua_identificador_ad` = usuario de Auth |
+| `429` al ingresar | Detrás de un proxy sin `TRUST_PROXY`: todos comparten cupo | `TRUST_PROXY=1` o `2` según el ambiente |
+| El portal dice «El destino de la redirección no está permitido» | El host no está en `VITE_ALLOWED_REDIRECT_HOSTS` del portal | Lo agrega el equipo de Auth |
+| `crypto.randomUUID is not a function` | Frontend por HTTP desde una IP: no es contexto seguro | `correlationId.ts` tiene respaldo; para uso real, HTTPS |
+| Una pantalla nueva no aparece | Imagen del frontend antigua o `index.html` en caché | `docker compose build` reconstruye las dos; nginx sirve `index.html` con `no-store` |
+| El visor de PDF no carga | Recurso `.mjs` con tipo equivocado | Ya resuelto en `nginx.conf`; reconstruir la imagen si es anterior al 2026-09-22 |
+| «Su perfil no tiene formularios asignados» | Faltan migraciones o la cuenta no tiene rol | `npx prisma migrate deploy`; revisar `t_usuario_rol` |

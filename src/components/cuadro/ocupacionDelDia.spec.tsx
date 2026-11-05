@@ -26,6 +26,7 @@ import SelectorPersonal, { type PersonaAgregada } from "./SelectorPersonal.tsx";
 import FormOperativo from "./FormOperativo.tsx";
 import type { OperativoDelDia, PersonaElegible } from "../../interfaces/Personal.ts";
 import type { CatalogosFormulario } from "../../interfaces/Formulario.ts";
+import { VALORES_INICIALES } from "../../utils/valoresOperativo.util.ts";
 
 const HORAS = ["08:00", "10:00", "14:00", "16:30", "18:00", "22:00"];
 
@@ -77,17 +78,25 @@ const CANDIDATOS = [BAUTISTA, BOLANOS, ABAD];
 
 const DE_18_A_22 = { horaInicio: "18:00", horaFin: "22:00" };
 
-/** Un selector con estado propio: agregar y cambiar horarios se ven como en la página. */
+/**
+ * Un selector con estado propio: agregar y cambiar horarios se ven como en la página. Desde el
+ * 2026-11-04 el horario del operativo es controlado: lo guarda el arnés, como la captura del alta.
+ */
 const ConEstado = ({
   iniciales = [],
   onCrucesCambian,
+  horarioInicial = { horaInicio: "", horaFin: "" },
   ...props
 }: {
   iniciales?: PersonaAgregada[];
+  horarioInicial?: { horaInicio: string; horaFin: string };
 } & Partial<ComponentProps<typeof SelectorPersonal>>) => {
   const [agregadas, setAgregadas] = useState<PersonaAgregada[]>(iniciales);
+  const [horario, setHorario] = useState(horarioInicial);
   return (
     <SelectorPersonal
+      horarioOperativo={horario}
+      onCambiarHorarioOperativo={setHorario}
       candidatos={CANDIDATOS}
       cargando={false}
       agregadas={agregadas}
@@ -375,5 +384,51 @@ describe("Ocupación del día · pie del alta", () => {
     const registrar = screen.getByRole("button", { name: "Registrar operativo" });
     expect(registrar).toHaveAttribute("aria-disabled", "true");
     expect(registrar).toHaveAttribute("title", motivo);
+  });
+
+  /*
+    EL DEFECTO DEL 2026-11-04, EN EL FORMULARIO REAL. La página no remonta el alta al cambiar de
+    formulario: le cambia los valores iniciales. El horario vivía en un `useState` del selector y se
+    quedaba con el del formulario anterior; ahora sale de los valores y los sigue.
+  */
+  it("al cambiar de captura sin remontar, el horario del operativo sigue a los valores", () => {
+    const alta = (codigo: string, horario: { horaInicio: string; horaFin: string } | undefined) => (
+      <FormOperativo
+        modo="alta"
+        formularioCodigo={codigo}
+        idCaptura={`${codigo}·2026-11-05`}
+        catalogos={catalogos}
+        puntos={catalogos.puntos}
+        cargandoPuntos={false}
+        onZonalesElegidas={vi.fn()}
+        candidatos={CANDIDATOS}
+        cargandoPersonal={false}
+        personalAgregado={[]}
+        onAgregarPersona={vi.fn()}
+        onRetirarPersona={vi.fn()}
+        onCambiarHorarioPersona={vi.fn()}
+        avisoPersonal={null}
+        valoresIniciales={
+          horario
+            ? { ...VALORES_INICIALES, formularioCodigo: codigo, horarioOperativo: horario }
+            : undefined
+        }
+        bloqueado={false}
+        guardando={false}
+        onGuardar={vi.fn()}
+        onLimpiar={vi.fn()}
+      />
+    );
+    const { rerender } = render(alta("OCFIJ", { horaInicio: "08:00", horaFin: "16:30" }));
+    expect(screen.getByLabelText("Hora de inicio del operativo")).toHaveValue("08:00");
+
+    // Otro formulario sin captura: vacío, no el 08:00 del anterior.
+    rerender(alta("REACD", undefined));
+    expect(screen.getByLabelText("Hora de inicio del operativo")).toHaveValue("");
+    expect(screen.getByLabelText("Hora de fin del operativo")).toHaveValue("");
+
+    // De vuelta, con su captura: su horario.
+    rerender(alta("OCFIJ", { horaInicio: "08:00", horaFin: "16:30" }));
+    expect(screen.getByLabelText("Hora de fin del operativo")).toHaveValue("16:30");
   });
 });

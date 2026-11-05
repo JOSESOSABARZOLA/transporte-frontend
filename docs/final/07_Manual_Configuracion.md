@@ -1,293 +1,436 @@
 # 07 · Manual de Configuración
 
 **Módulo Transportes / Cuadro de Colores Operativo — Agencia Metropolitana de Control**
-7 de agosto de 2026 · **actualizado el 19 de agosto de 2026**
+7 de agosto de 2026 · **actualizado el 5 de noviembre de 2026**
+
+> Corresponde al código de la rama `base/cuadro-colores` (backend `24520af`, frontend `d13a5db`),
+> versión de imágenes **1.1.0**. Las plantillas versionadas mandan sobre este manual si difieren:
+> `transporte-backend/.env.example`, `.env.preproduccion.example`, `.env.produccion.example` y
+> `transporte-frontend/.env.example`.
 
 ---
 
 ## 1. Dónde vive cada cosa
 
-El sistema se configura en **tres sitios distintos**, y confundirlos es la causa habitual de que
-un cambio «no haga nada»:
+El sistema se configura en **tres sitios distintos**. Confundirlos es la causa habitual de que un
+cambio «no haga nada».
 
-| Dónde | Qué se configura | Requiere reinicio |
+| Dónde | Qué se configura | Cómo se aplica un cambio |
 |---|---|---|
-| `.env` del backend | Conexión, puertos, zona horaria, modo de identidad | **Sí** |
-| `.env` del frontend | Dirección de la API en tiempo de construcción | **Sí, y reconstruir** |
-| Base de datos (P-09) | Ventanas de carga y los ocho parámetros de política | **No** |
+| `.env` (desarrollo) o `.env.prod` (servidores) del backend | Conexión, red, proxy, sesión con Auth, integraciones | Recrear `transporte-app` |
+| Argumentos de construcción del frontend (`VITE_*`) | Portal de Auth, código del módulo, base de la API | **Reconstruir la imagen** del frontend (un paquete nuevo) |
+| Base de datos, pantalla «Ventanas y parámetros» | Ventanas de carga, jornadas laborales y parámetros de política | Ninguno: rige al guardar |
 
-**Regla práctica:** todo lo que gobierna el negocio —horas de cierre, umbrales de descanso— vive
-en la base y se cambia desde la pantalla. Lo que gobierna la infraestructura vive en `.env`.
+Todo lo que gobierna el negocio —horas de cierre, umbrales de descanso, carga del personal—
+vive en la base y se cambia desde la pantalla. Lo que gobierna la infraestructura vive en el
+archivo de entorno o en la imagen.
+
+### 1.1. Plantilla por ambiente
+
+| Ambiente | Plantilla | Archivo real | Compose |
+|---|---|---|---|
+| Desarrollo local | `.env.example` | `.env` | `docker-compose.yml` |
+| Preproducción, servidor sin Gateway | `.env.preproduccion.example` | `.env.prod` | `docker-compose.prod.yml` |
+| QA y producción, detrás del Gateway | `.env.produccion.example` | `.env.prod` | `docker-compose.prod.yml` + `docker-compose.gateway.yml` |
+
+Los archivos reales no se versionan y se entregan por canal seguro. En los servidores, todo
+`docker compose` lleva `--env-file .env.prod`: la interpolación `${...}` del compose no lee
+`env_file:` y, sin la opción, el primer `up` se detiene pidiendo `DB_PASSWORD`.
 
 ---
 
 ## 2. Variables del backend
 
-Plantilla versionada: `transporte-backend/.env.example`. El `.env` real **no se versiona**.
+Los valores de ejemplo usan marcadores (`<host-de-auth>`, `<IP_SERVIDOR_AUTH>`); los reales se
+piden al equipo correspondiente. «Obligatoria» significa que sin ella el sistema no arranca o
+nadie puede entrar.
+
+### 2.1. Operación, base de datos y red
+
+| Variable | Obligatoria | Ejemplo | Efecto |
+|---|---|---|---|
+| `PORT` | No | `3003` | Puerto interno del backend. Los compose lo fijan en `3003` |
+| `NODE_ENV` | Solo con HTTPS | `production` | Endurece el arranque: exige `CORS_ORIGINS` y `AUTH_COOKIE_SECURE=true`, y helmet emite HSTS. Sin TLS por delante se deja comentada |
+| `TZ` | Sí | `America/Guayaquil` | **Crítica.** Zona en que se evalúan ventanas y jornadas. Los compose la fijan en los tres contenedores |
+| `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` o `error`. Con `debug` registra además las consultas de Prisma |
+| `DB_PASSWORD` | Sí | `openssl rand -hex 32` | Clave de `postgres`. La usan el contenedor de la base y las migraciones. Sin ella `docker compose up` se detiene |
+| `APP_DB_PASSWORD` | Sí | otra, distinta | Clave del rol `transporte_app`, con el que corre la aplicación |
+| `DATABASE_URL` | Sí (solo desarrollo fuera de Docker) | ver §2.4 | Conexión del cliente en ejecución, como `transporte_app`. En contenedores la compone el compose |
+| `DIRECT_DATABASE_URL` | Sí (solo desarrollo fuera de Docker) | ver §2.4 | Conexión de `migrate deploy`/`migrate dev`, como `postgres`. En contenedores la compone el compose |
+| `CORS_ORIGINS` | Sí en producción | `https://gestion-sigoc.quito.gob.ec` | Orígenes del frontend admitidos, separados por coma, sin barra final. Con el origen fuera de la lista el navegador descarta la respuesta sin error |
+| `TRUST_PROXY` | Sí en servidores | `1` o `2` | Saltos de proxy de confianza: vacía en desarrollo, `1` sin Gateway (nginx → app), `2` con Gateway (Gateway → nginx → app). Un valor no entero detiene el arranque |
+| `LIMITE_VENTANA_MS` | No | `60000` | Ventana del límite de peticiones, por endpoint y por origen |
+| `LIMITE_MAXIMO` | No | `300` | Peticiones admitidas por ventana. El punto de salud está exento |
+| `LIMITE_MAXIMO_INGRESO` | No | `10` | Cupo del canje de sesión, más estrecho a propósito |
+| `CERTS_GATEWAY` | No | `../gateway/config/certs` | Solo detrás del Gateway. Carpeta del host con `start_quito_gob_ec_intermediate.crt`; vacía usa ese mismo valor |
+
+`NODE_EXTRA_CA_CERTS` no se escribe en el `.env.prod`: la fija `docker-compose.gateway.yml`
+apuntando a la intermedia de DigiCert montada en `/certs`. El Auth de `*.quito.gob.ec` no envía
+esa intermedia y, sin ella, el canje termina en 401 con `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Nunca
+usamos `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+
+### 2.2. Sesión con Auth central
+
+| Variable | Obligatoria | Ejemplo | Efecto |
+|---|---|---|---|
+| `AUTH_EXCHANGE_URL` | Sí | `https://<host-de-auth>/api/auth/exchange` · local: `http://<IP_SERVIDOR_AUTH>:10004/auth/exchange` | Endpoint de canje del código. Sin ella nadie entra |
+| `AUTH_API_URL` | No | `https://<host-de-auth>/api` | Base de la API de Auth, de la que cuelga `/users`. Vacía: sin directorio de personal en P-07 |
+| `AUTH_JWT_SECRET` | Sí | la entrega Auth | **Secreto compartido** con todo el ecosistema. Verifica lo que Auth firmó |
+| `AUTH_SUBSYSTEM_ID` | Sí | `11` en el Auth actual | Id de SIGOC en la base de Auth de cada ambiente. Vacío o `0` desactiva la comprobación y el arranque lo advierte |
+| `SESSION_JWT_SECRET` | Sí | `openssl rand -hex 32` | **Secreto propio**, distinto del anterior. Firma la cookie de este módulo. Vacía o de menos de 32 caracteres detiene el arranque |
+| `SESSION_EXPIRES_IN` | No | `28800` | Vigencia de la sesión en segundos (8 h) |
+| `JWT_ISSUER` | No | `transporte-backend` | Emisor del token propio |
+| `JWT_AUDIENCE` | No | `TRANSPORTE` | Destinatario del token propio. Mismo valor que `VITE_AUTH_MODULE_CODE` por omisión |
+| `AUTH_COOKIE_NAME` | No | `cuadro_colores_sesion` | Nombre de la cookie |
+| `AUTH_COOKIE_SECURE` | Sí con HTTPS | `true` | `false` sobre HTTP; `true` con HTTPS, junto con `NODE_ENV=production` |
+| `AUTH_COOKIE_SAME_SITE` | No | `lax` | `lax`, `strict` o `none`. Otro valor se toma como `lax` |
+
+`AUTH_API_URL` va aparte de `AUTH_EXCHANGE_URL` aunque apunten al mismo servidor: la segunda
+nombra un endpoint concreto, y recortarla para adivinar la base se rompería el día que Auth mueva
+una de las dos. La barra final sobra: el código la quita.
+
+### 2.3. Integraciones opcionales
+
+| Variable | Obligatoria | Ejemplo | Efecto |
+|---|---|---|---|
+| `INSPECCION_API_URL` | No | `https://inspeccion-sigoc.quito.gob.ec/api` | Base de la API de Inspección (`/operativos?fecha=`). Vacía: sin integración, el registro funciona igual |
+| `FIRMA_URL` | No | `http://<host-firma>:<puerto>/api/firmas/sign-pdf/upload` | Servicio de firma del memorando de la orden. Sin `FIRMA_URL`, `FIRMA_P12_PATH` y `FIRMA_P12_CLAVE`, el memorando sale sin firmar y el registro lo avisa |
+| `FIRMA_P12_PATH` | No | `/certs/firma.p12` | Ruta del `.p12` **dentro** del contenedor, montado como volumen de solo lectura |
+| `FIRMA_P12_CLAVE` | No | — | Clave del `.p12`. Secreto |
+| `FIRMA_TOKEN` | No | — | Bearer, si el servicio de firma lo exige |
+| `FIRMA_PAGINA` | No | vacía | Página de la firma; por omisión, la última |
+
+Con el servicio de firma configurado y caído, la emisión responde 502 con un mensaje al
+funcionario.
+
+### 2.4. `DATABASE_URL` y `DIRECT_DATABASE_URL`
+
+Solo se escriben en el `.env` de desarrollo, para trabajar con el backend fuera de Docker contra
+la base publicada en `localhost:5434`:
 
 ```bash
-cp .env.example .env      # PowerShell: Copy-Item .env.example .env
+DATABASE_URL=postgresql://transporte_app:<APP_DB_PASSWORD>@localhost:5434/transportedb?schema=public&connection_limit=10&pool_timeout=20
+DIRECT_DATABASE_URL=postgresql://postgres:<DB_PASSWORD>@localhost:5434/transportedb?schema=public
 ```
 
-| Variable | Por defecto | Para qué |
+En los tres compose el bloque `environment:` las compone con la red interna
+(`transportedb:5432`) y gana sobre el archivo de entorno. En `.env.prod` no se escriben.
+
+| Rol | Lo usa | Puede |
 |---|---|---|
-| `PORT` | `3003` | Puerto de escucha. Evita colisión con Instrucción (3002) |
-| `DB_PASSWORD` | *(vacío)* | Contraseña de `postgres`. **Sin ella `docker compose up` se detiene** |
-| `DATABASE_URL` | — | Cadena de conexión de Prisma |
-| `CORS_ORIGINS` | `http://localhost:5180` | Lista blanca de orígenes, separados por coma |
-| `TZ` | `America/Guayaquil` | **Crítico.** Zona en que se evalúan las ventanas |
-| `LOG_LEVEL` | `info` | Con `debug` activa además el registro de consultas de Prisma |
-| `AUTH_EXCHANGE_URL` | — | Canje del código con Auth central. `http://<host>:10004/auth/exchange` |
-| `AUTH_API_URL` | *(vacío)* | Base de la API de Auth, de la que cuelga `/users`. `http://<host>:10004`. **Vacía significa sin directorio de personal**, no error: P-07 lo dice y el maestro se administra a mano |
-| `AUTH_JWT_SECRET` | *(vacío)* | **Secreto.** Verifica la firma de Auth. Lo entrega ese equipo |
-| `AUTH_SUBSYSTEM_ID` | `11` | SIGOC |
-| `SESSION_JWT_SECRET` | *(vacío)* | **Secreto, y distinto del anterior.** Firma la cookie de este módulo |
-| `SESSION_EXPIRES_IN` | `28800` | Vigencia de la sesión, en segundos (8 h) |
-| `JWT_ISSUER` / `JWT_AUDIENCE` | `transporte-backend` / `TRANSPORTE` | Emisor y destinatario del token propio |
-| `AUTH_COOKIE_NAME` | `cuadro_colores_sesion` | Nombre de la cookie de sesión |
-| `AUTH_COOKIE_SECURE` | `false` | **`true` en producción con HTTPS**, o el navegador la descarta |
-| `AUTH_COOKIE_SAME_SITE` | `lax` | |
+| `transporte_app` | La aplicación en ejecución | Leer y escribir datos. No altera el esquema ni crea roles. `statement_timeout` de 30 s |
+| `postgres` | El contenedor de la base y las migraciones | Todo |
 
-> **`AUTH_API_URL` va aparte de `AUTH_EXCHANGE_URL` aunque hoy sean el mismo servidor.** La
-> segunda apunta a un endpoint concreto —`…/auth/exchange`—, y recortarle el camino para
-> adivinar la base sería una suposición que se rompe el día que Auth mueva una de las dos.
-> Ambas se declaran, y la barra final sobra: el código la quita.
+El rol se crea una vez por base con `prisma/roles/crear-rol-aplicacion.sql`, después de la primera
+migración.
 
-### 2.1. `DATABASE_URL` · dos formas según desde dónde se conecte
+> **`connection_limit=10` no es opcional.** Sin él, Prisma dimensiona su pool con
+> `num_cpus × 2 + 1`: en una máquina de 28 núcleos son 57 conexiones por instancia contra un
+> `max_connections` de 100. Si alguna vez hay más réplicas, bajamos este número.
 
-```bash
-# Desde la máquina de desarrollo, contra el contenedor publicado
-DATABASE_URL=postgresql://postgres:CLAVE@localhost:5434/transportedb?schema=public&connection_limit=10&pool_timeout=20
+### 2.5. Lo que se valida al arrancar
 
-# Desde dentro de la red de Docker
-DATABASE_URL=postgresql://postgres:CLAVE@transportedb:5432/transportedb?schema=public&connection_limit=10&pool_timeout=20
+`src/config/validar-entorno.ts` separa lo que detiene el arranque de lo que solo se advierte.
 
-> **`connection_limit` no es opcional, y el valor por defecto es peligroso.** Sin él, Prisma
-> dimensiona su pool con `num_cpus × 2 + 1`: en la máquina de despliegue son 28 núcleos, o sea
-> **57 conexiones por instancia** contra un `max_connections` de 100. **Con dos réplicas el
-> servidor se agota** y la segunda responde `too many connections`.
->
-> Diez sobran: PostgreSQL no rinde más por tener más conexiones concurrentes, y el contenedor de
-> la base comparte esas mismas CPU. Si algún día hacen falta más réplicas, **baje este número**,
-> no lo suba: el presupuesto total es `max_connections`, repartido entre todas.
-```
+| Condición | Resultado |
+|---|---|
+| `DATABASE_URL` vacía | Detiene |
+| `SESSION_JWT_SECRET` vacía o de menos de 32 caracteres | Detiene |
+| `TRUST_PROXY` con un valor que no es entero | Detiene |
+| `NODE_ENV=production` sin `CORS_ORIGINS` | Detiene |
+| `NODE_ENV=production` con `AUTH_COOKIE_SECURE=false` | Detiene |
+| `AUTH_JWT_SECRET` vacía | Advierte: el canje no podrá verificar tokens |
+| `AUTH_SUBSYSTEM_ID` vacío o `0` | Advierte: no se comprueba el subsistema |
 
-`docker-compose.yml` **sobrescribe** esta variable con la forma interna: el bloque `environment:`
-gana sobre `env_file:`. No la ajuste para Docker en el `.env`.
+`docker logs transporte-app` dice qué variable falta.
 
-### 2.2. `TZ` · por qué es crítica
+### 2.6. Las dos claves de sesión
 
-De ella dependen las ventanas de carga. Mal configurada, **los cierres ocurren a otra hora y nadie
-lo nota** hasta que un departamento pierde su ventana. Está fijada en los tres contenedores.
-
-Para comprobarla:
-
-```bash
-docker exec transporte-app sh -c 'date'     # debe terminar en -05
-```
-
-### 2.3. Las claves de sesión · lo más delicado de este archivo
-
-> **`MODO_IDENTIDAD_PROVISIONAL` ya no existe.** Se retiró el 2026-08-18 junto con la cabecera
-> `x-usuario-prueba` y el catálogo `usuarios-prueba.ts`. Mientras existió, con el modo encendido
-> **cualquiera podía declararse `DIRECTOR`** enviando un número y ver la matriz consolidada entera.
-> Si la encuentra en un `.env` heredado, sobra: no la lee nadie.
-
-**Son dos claves, y son distintas a propósito.**
-
-| Variable | Qué firma o verifica | Alcance |
+| Variable | Qué hace | Alcance |
 |---|---|---|
-| `AUTH_JWT_SECRET` | **Verifica** lo que Auth central firmó. Se usa una sola vez, en el canje | **Todo el ecosistema.** La comparten todos los módulos integrados |
-| `SESSION_JWT_SECRET` | **Firma** la cookie de sesión que emite este módulo | Solo este módulo |
+| `AUTH_JWT_SECRET` | **Verifica** lo que Auth central firmó, una vez, en el canje | Todo el ecosistema |
+| `SESSION_JWT_SECRET` | **Firma** la cookie de sesión de este módulo | Solo este módulo |
 
-Poner el mismo valor en las dos permitiría a cualquier módulo integrado emitir sesiones válidas
-aquí. **No las iguale.**
+Con el mismo valor en las dos, cualquier módulo integrado podría emitir sesiones válidas aquí.
+Rotar `SESSION_JWT_SECRET` invalida las sesiones vivas: lo hacemos en ventana de mantenimiento.
+Los compose no fijan ninguna de las dos.
 
-**Si `SESSION_JWT_SECRET` queda vacía**, el guardián no revienta: ignora la cookie, escribe una
-advertencia y toda petición responde 401. Es deliberado —antes producía un 500 por petición, con un
-mensaje genérico y sin pista del motivo—.
+### 2.7. Tiempos máximos de la base
 
-```bash
-docker logs transporte-app 2>&1 | grep -i "SESSION_JWT_SECRET"   # bien configurado: sin resultados
-```
-
-> **`docker-compose.yml` no fija ninguna de las dos**, y por dos motivos: son secretos, y escribirlos
-> en un archivo versionado publicaría `AUTH_JWT_SECRET`, **que vale para todos los módulos**; y las
-> URL cambian por ambiente, así que fijarlas obligaría a editar el compose en cada despliegue.
-
-### 2.4. Tiempos máximos · el seguro contra transacciones huérfanas
-
-Se pasan al servidor en el `command:` del contenedor de la base, junto a la precarga de métricas.
+Van en el `command:` del contenedor de la base, igual en desarrollo y en servidores.
 
 | Parámetro | Valor | Qué evita |
 |---|---|---|
-| `idle_in_transaction_session_timeout` | 60 s | Que una transacción abierta y abandonada **retenga bloqueos e impida que autovacuum limpie**, sin límite de tiempo |
-| `lock_timeout` | 10 s | Que una consulta espere indefinidamente por un bloqueo que no se libera |
+| `idle_in_transaction_session_timeout` | 60 s | Que una transacción abandonada retenga bloqueos e impida que autovacuum limpie |
+| `lock_timeout` | 10 s | Que una consulta espere indefinidamente un bloqueo |
+| `statement_timeout` | 30 s, por rol | Solo para `transporte_app`; global rompería migraciones largas |
 
-> **No son ajuste fino, son un seguro.** El primero cubre el caso en que la aplicación muera a
-> mitad de una transacción —un contenedor que se reinicia, un corte de red—. Sin él, esa sesión
-> queda abierta para siempre y la base **se degrada despacio, sin avisar**, hasta que algo se
-> bloquea. Es una de las causas clásicas de caída en producción.
+En la aplicación, `ejecutarEnTransaccion` usa `maxWait` de 5 s y `timeout` de 20 s, porque toda
+escritura multitabla lleva la auditoría dentro de la misma transacción.
 
-> **`statement_timeout` NO se fija aquí, y es deliberado.** Global rompería las migraciones si
-> alguna tarda más de la cuenta. Va por rol de aplicación:
->
-> ```sql
-> ALTER ROLE transporte_app SET statement_timeout = '30s';
-> ```
->
-> Queda pendiente hasta que ese rol exista. Hoy la aplicación se conecta como `postgres`,
-> superusuario, que es un asunto abierto por derecho propio.
+### 2.8. Valores que cambian por ambiente
 
-Y el lado de la aplicación tiene su propio tope, en `ejecutarEnTransaccion`: `maxWait` de 5 s y
-`timeout` de 20 s. Prisma aplicaría 2 s y 5 s si no se dijeran, y cinco segundos se quedan cortos
-aquí porque **toda escritura multitabla lleva la auditoría dentro** de la misma transacción.
-
----
-
-### 2.5. El origen del frontend debe coincidir con el registrado en Auth
-
-El portal devuelve al usuario a la ruta del **módulo 80** del subsistema 11, y le añade
-`/auth/callback` por su cuenta. Hoy vale `localhost:5180`.
-
-**Tres valores que deben concordar**, o el ingreso no se cierra:
-
-| Dónde | Valor |
-|---|---|
-| Auth central · módulo 80 | `localhost:5180` |
-| `CORS_ORIGINS` del backend | `http://localhost:5180,…` |
-| Puerto del frontend | `vite.config.ts` y `nginx.conf` |
-
-> **`localhost` solo sirve en la máquina que abre el navegador**, y se eligió aun así porque es
-> **contexto seguro**: sobre HTTP en una dirección IP el navegador retira parte de su API
-> —`crypto.randomUUID` entre otras— y la aplicación falla en **cada** petición. Para que entre
-> alguien desde otro equipo hace falta la IP o un nombre, y entonces **HTTPS deja de ser opcional**.
+| Variable | Desarrollo | Preproducción (sin Gateway) | QA y producción (Gateway) |
+|---|---|---|---|
+| `NODE_ENV` | sin definir | comentada | `production` |
+| `AUTH_COOKIE_SECURE` | `false` | `false` | `true` |
+| `TRUST_PROXY` | vacía | `1` | `2` |
+| `CORS_ORIGINS` | `http://localhost:5180` | `http://<IP_PREPRODUCCION>:5180,http://localhost:5180` | `https://usit-gestion.quito.gob.ec` (QA) · `https://gestion-sigoc.quito.gob.ec` (producción) |
+| `AUTH_EXCHANGE_URL` | `http://<IP_SERVIDOR_AUTH>:10004/auth/exchange` | igual | `https://usit-auth.quito.gob.ec/api/auth/exchange` (QA) · la de Auth de producción |
+| `AUTH_SUBSYSTEM_ID` | `11` | `11` | el id de SIGOC en ese Auth |
+| `CERTS_GATEWAY` | no aplica | no aplica | vacía o la ruta de los certificados del Gateway |
 
 ---
 
 ## 3. Variables del frontend
 
-Plantilla: `transporte-frontend/.env.example`.
+**Se hornean al construir la imagen; no se leen al arrancar.** Ponerlas en el `.env.prod` del
+servidor no cambia nada. Para otro portal hacemos un paquete nuevo con `scripts/empaquetar.sh`.
 
-| Variable | Por defecto | Para qué |
+| Variable | Obligatoria | Ejemplo | Efecto |
+|---|---|---|---|
+| `VITE_AUTH_PORTAL_URL` | **Sí** | `https://usit-automatizacion.quito.gob.ec/login` · local: `http://<IP_SERVIDOR_AUTH>:10006/login` | Portal al que se envía a quien llega sin sesión. Sin ella `npm run build` se detiene (`vite.config.ts`) y `npm run dev` muestra «Falta configurar la dirección del portal de Auth» |
+| `VITE_API_BASE_URL` | No | vacía en imágenes · `http://localhost:3003` en `npm run dev` | Base de la API; `httpClient` agrega `/api/v1`. Vacía o ausente en un build: pide al propio origen, y el nginx de la imagen reenvía `/api/` a `transporte-app:3003`. Nunca `/api` |
+| `VITE_AUTH_LOGOUT_URL` | No | vacía | Destino al cerrar sesión. Vacía: el mismo portal |
+| `VITE_AUTH_MODULE_CODE` | No | vacía → `TRANSPORTE` | Código del módulo que se envía al portal como `?module=`. Hoy el portal no decide nada con él |
+
+Dónde se definen:
+
+| Caso | Dónde |
+|---|---|
+| `npm run dev` | `transporte-frontend/.env.development.local` o `.env` (los dos fuera de git), copiando de `.env.example` |
+| `docker compose build` en desarrollo | `VITE_AUTH_PORTAL_URL` en el `.env` del **backend**: el compose la pasa como `args:` y se detiene si falta |
+| Paquete para un servidor | Segundo argumento de `scripts/empaquetar.sh`; `VITE_AUTH_MODULE_CODE` y `VITE_AUTH_LOGOUT_URL` como variables del entorno del script |
+
+> **Todo lo que lleva el prefijo `VITE_` llega al navegador y es público.** Nunca va un secreto.
+> El frontend no tiene variables de base de datos: las `PG*` se retiraron el 2026-08-19, y
+> `.env.dev` no se versiona.
+
+### 3.1. El nginx de la imagen
+
+`nginx.conf` sirve en el 5180 con usuario no privilegiado (uid 101) y hace cuatro cosas que
+afectan a la configuración:
+
+- Reenvía `/api/` a `transporte-app:3003` con `X-Forwarded-For` y `X-Forwarded-Proto`. Este
+  último respeta el que manda el Gateway y, si no hay Gateway, usa el esquema propio.
+- Emite `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options` y
+  `Referrer-Policy`. Por eso el Gateway no debe añadir su propia CSP.
+- Sirve `index.html` con `no-store`, para que tras cada despliegue se cargue la versión nueva
+  sin cerrar sesión, y los recursos con hash como inmutables.
+- Fuerza `text/javascript` para `.mjs`, que necesita el visor de PDF.
+
+---
+
+## 4. Regreso desde el portal de Auth
+
+El portal elige a dónde devolver al usuario en este orden:
+
+1. El `?redirectUri=` que envía la aplicación (`<origen>/auth/callback`), si su host está en
+   `VITE_ALLOWED_REDIRECT_HOSTS` del portal.
+2. El `subsystemPath` que devuelve la API de Auth.
+3. La ruta del primer módulo con `path`, por orden.
+
+Para que el ingreso se cierre deben concordar tres valores:
+
+| Dónde | Qué |
+|---|---|
+| Portal de Auth del ambiente | El host del frontend en `VITE_ALLOWED_REDIRECT_HOSTS` (lo agrega el equipo de Auth) |
+| Auth, módulo de Transporte | Su ruta: `localhost:5180` en desarrollo; `https://usit-gestion.quito.gob.ec` en QA |
+| Backend | `CORS_ORIGINS` con el mismo origen |
+
+Fuera de `localhost`, HTTPS deja de ser opcional: sobre HTTP en una dirección IP el navegador no
+es contexto seguro y retira parte de su API, y la cookie `Secure` exige TLS.
+
+---
+
+## 5. Configuración de negocio · «Ventanas y parámetros»
+
+Pantalla `/home/administracion/ventanas`. La ven quienes tienen `ventanas:administrar`,
+`parametros:administrar` o `jornadas:administrar`. Cada cambio rige al guardar y queda auditado.
+Cada parámetro muestra «Modificado» cuando difiere de su valor de siembra y ofrece «Restaurar».
+
+### 5.1. Ventanas de carga
+
+Una por rol. Tipos: `DIARIO`, `SEMANAL`, `INTERVALO`, `LABORABLE` y `SIN_RESTRICCION` (desde el
+2026-10-07, «sin restricción» es un tipo y no una ventana desactivada). El mensaje de cierre admite
+los marcadores `{apertura}` y `{cierre}`.
+
+| Rol | Tipo | Apertura | Cierre (siembra) |
+|---|---|---|---|
+| DMIP Operativos | `DIARIO` | — | 15:00 |
+| DMIP Inspecciones | `DIARIO` | — | 15:00 |
+| DMIT Instrucción | `DIARIO` | — | 15:00 |
+| DAF | `DIARIO` | 15:00 | 16:30 |
+| Dirección | `SIN_RESTRICCION` | — | — |
+| Administrador DMIP | `SIN_RESTRICCION` | — | — |
+
+Son valores de siembra en una base nueva; en cada servidor la administración los ajusta. El
+`VentanaCargaGuard` lee esta tabla y devuelve `423` fuera de la ventana.
+
+### 5.2. Jornadas laborales
+
+Desde el 2026-10-23 la jornada laboral reemplaza al tipo de contrato: define qué días y horas se
+puede convocar a una persona o a un conductor. **Sin jornada asignada no se convoca.** La
+migración siembra dos:
+
+| Jornada | Días | Horas |
 |---|---|---|
-| `VITE_API_BASE_URL` | `http://localhost:3003` | Base de la API. El prefijo `/api/v1` lo agrega `httpClient` |
+| Lunes a Viernes 8 horas | L–V | 08:00–16:00 |
+| Lunes a Domingo 24/7 | L–D | sin ventana horaria |
 
-**Se lee en tiempo de construcción**, no de ejecución: cambiarla exige reconstruir. Dentro de
-Docker se deja **vacía**: el nginx de la propia imagen hace de proxy hacia `transporte-app:3003` y
-las peticiones salen del mismo origen, con lo que no hay CORS.
+La 24/7 sigue sujeta a descanso y ausencias. El conductor puede seguir
+`MINUTOS_TOLERANCIA_FIN_CONDUCTOR` después del fin de su ventana.
 
-> **Todo lo que lleve el prefijo `VITE_` se empaqueta EN EL NAVEGADOR y es público.** Cualquiera
-> que abra la aplicación puede leerlo. Las cuatro que hay son URL, que es lo correcto: **nunca ponga
-> ahí un secreto.**
+### 5.3. Parámetros de política vigentes
 
-> **Retiradas el 2026-08-19:** `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE` y `PGPASSWORD`, que este
-> archivo declaraba y la aplicación no usa —un frontend no se conecta a PostgreSQL—. La clave estaba
-> vacía y el historial de git confirma que nunca llevó valor, así que no hubo fuga; lo que se cerró
-> es la posibilidad, porque tener la variable escrita invita a rellenarla.
->
-> Con ellas, **`.env.dev` dejó de versionarse**. Se describía a sí mismo como «modo LOCAL», así que
-> era el archivo donde alguien acabaría escribiendo una clave real, y estaba rastreado en git. Las
-> cuatro `VITE_` tienen valor por defecto en `config/env.ts`, de modo que un clon nuevo arranca sin
-> él; para personalizar, se copia `.env.example`.
+Tabla `t_parametro_politica`. Los valores son los que siembran las migraciones hasta
+`20261030120000_carga_por_operativos` (columna `para_valor_siembra`). Las políticas leen siempre
+estos valores, nunca una constante.
 
----
+**Personal: jornada, descanso y salidas**
 
-## 4. Configuración de negocio · pantalla P-09
-
-### 4.1. Ventanas de carga
-
-Seis, una por rol. Se editan desde `/home/administracion/ventanas`.
-
-| Rol | Apertura | Cierre | Activa |
+| Clave | Siembra | Unidad (rango) | Qué controla |
 |---|---|---|---|
-| DMIP Operativos | *(sin restricción)* | 15:00 | Sí |
-| DMIP Inspecciones | *(sin restricción)* | 15:00 | Sí |
-| DMIT Instrucción | *(sin restricción)* | 15:00 | Sí |
-| DAF | 15:00 | 16:30 | Sí |
-| Dirección | — | — | **No** |
-| Administrador | — | — | **No** |
+| `JORNADA_MAXIMA_HORAS` | 12 | horas (8–16) | RN-36. Horas máximas que una persona acumula en una jornada |
+| `TOPE_SALIDAS_PESADAS` | 3 | salidas (1–6) | RN-25. Salidas nocturnas o de fin de semana por persona en el período |
+| `PERIODO_COMPUTO_SALIDAS` | MENSUAL | SEMANAL · QUINCENAL · MENSUAL | RN-37. Período del tope anterior |
+| `DIAS_DESCANSO_PATRULLA` | 1 | días (1–3) | RN-24. Días sin patrulla tras salir en patrulla |
+| `FRANJA_NOCTURNA_INICIO` | 20:00 | hora | RN-43. Inicio de la franja nocturna |
+| `FRANJA_NOCTURNA_FIN` | 05:00 | hora | RN-43. Fin de la franja nocturna |
+| `HORA_LIMITE_CUADRO` | 16:30 | hora | RN-57. Hora a la que el cuadro debe estar cerrado |
+| `MIS_OPERATIVOS_RANGO_MAX_DIAS` | 31 | días (1–366) | Máximo de días del filtro Desde–Hasta en «Mis operativos» |
 
-Campos: tipo (`DIARIO`, `SEMANAL`, `INTERVALO`), horas en `HH:MM`, mensaje de cierre y estado.
+**Carga y equidad del personal**
 
-**Una hora vacía significa «sin restricción»**, no falta de dato. **Desactivar una ventana deja al
-rol sin restricción horaria.** No hay creación ni borrado: eliminar abriría la carga las
-veinticuatro horas.
-
-### 4.2. Los siete parámetros de política
-
-| Clave | Tipo | Valor | Rango | Regla |
-|---|---|---|---|---|
-| `JORNADA_MAXIMA_HORAS` | Decimal | `12` | 8–16 horas | RN-36 |
-| `TOPE_SALIDAS_PESADAS` | Entero | `3` | 1–6 salidas | RN-25 |
-| `PERIODO_COMPUTO_SALIDAS` | Texto | `MENSUAL` | SEMANAL · QUINCENAL · MENSUAL | RN-37 |
-| `HORA_LIMITE_CUADRO` | Texto | `16:30` | `HH:MM` | RN-57 |
-| `FRANJA_NOCTURNA_INICIO` | Texto | `20:00` | `HH:MM` | RN-43 |
-| `FRANJA_NOCTURNA_FIN` | Texto | `05:00` | `HH:MM` | RN-43 |
-| `DIAS_DESCANSO_PATRULLA` | Entero | `1` | 1–3 días | RN-24 |
-
-**Las políticas leen estos valores; nunca una constante literal.** Cada cambio rige desde que se
-guarda y queda auditado.
-
-> **Los siete valores son provisionales (PV-06).** Los fija la Dirección.
-
-> **`HORA_CIERRE_DEPARTAMENTAL` se retiró el 2026-08-25.** RN-59 se implementa en
-> `t_ventana_carga.vcar_hora_cierre`, **una fila por rol**, que es la que gobierna: el
-> `VentanaCargaGuard` lee esa tabla y ninguna otra, y es la que devuelve el `423`.
->
-> Mientras existió, el parámetro no decidía nada: su único consumidor era una advertencia de P-09
-> que pedía mantener los dos valores iguales. Cuando discrepaban —y discrepaban en cuanto alguien
-> guardaba la ventana sin hacer caso al aviso—, el que se leía era el de la ventana.
->
-> Y un valor único no podía expresar RF-059, «parametrizar las ventanas de carga **por rol**»: la
-> DAF cierra a las 16H30 y los tres departamentos a las 15H00. La contradicción de fuentes de PV-06
-> —14H00 en una sesión, 15H00 en otra— sigue abierta, y ahora se resuelve en el panel de ventanas.
-
----
-
-## 5. Puertos
-
-| Servicio | Puerto externo | Interno | Evita chocar con |
+| Clave | Siembra | Unidad (rango) | Qué controla |
 |---|---|---|---|
-| PostgreSQL | **5434** | 5432 | Instrucción (5433), otro despliegue (5432) |
-| Backend | **3003** | 3003 | Instrucción (3002) |
-| Frontend | **5180** | 5180 | Los demás frontales de SIGOC: Resolución 5173, Instrucción 5175, Admin Core 5176, Ejecución 5177 |
+| `CARGA_OP_MEDIA` | 2 | operativos (1–50) | Desde cuántos operativos de la semana la persona se muestra con «Carga Media» |
+| `CARGA_OP_ALTA` | 3 | operativos (1–50) | Desde cuántos, «Carga Alta»: se pide confirmación y no se marca «Sugerido» |
+| `PERIODO_EQUIDAD` | SEMANAL | SEMANAL · QUINCENAL · MENSUAL | Período sobre el que se reparte la carga |
+| `EQUIDAD_MARGEN` | 0.25 | fracción (0–1) | Banda alrededor de la cuota justa que se considera equilibrada |
+| `PESO_HORAS_DIA` | 1 | puntos/hora (0–100) | Índice de carga: peso de cada hora ya asignada en el día |
+| `PESO_CARGA_PERIODO` | 1 | puntos/hora (0–100) | Índice de carga: peso de cada hora asignada en otros días del período |
+| `PESO_SALIDAS_PESADAS` | 2 | puntos/salida (0–100) | Índice de carga: peso de cada salida pesada del período |
+| `PESO_PATRULLA_RECIENTE` | 3 | puntos (0–100) | Índice de carga: peso de haber salido en patrulla recientemente |
+| `FATIGA_UMBRAL_AMBAR` | 6 | puntos (0–100) | Índice de fatiga desde el que el semáforo pasa a ámbar (aviso) |
+| `FATIGA_UMBRAL_ROJO` | 10 | puntos (0–100) | Índice desde el que pasa a rojo (sigue asignable) |
 
-> **El 5180 no se eligió por gusto.** Auth central exige que la ruta de cada módulo sea única
-> dentro del subsistema 11, y `localhost:5176` ya la tenía «Admin Core»: el registro respondía 409.
-> Se salió además de la banda 5173–5179 porque es por la que **Vite salta solo** cuando encuentra el
-> puerto ocupado —de ahí `strictPort: true` en `vite.config.ts`, para que falle en vez de moverse
-> en silencio—.
->
-> **Si cambia este puerto, hay que cambiarlo en tres sitios**: `vite.config.ts` y `nginx.conf` del
-> frontend, `CORS_ORIGINS` del backend, y **la ruta del módulo 80 en Auth central**. Si el último
-> se olvida, el portal devuelve al usuario a una dirección donde no hay nada.
+Desde el 2026-10-30 la etiqueta de carga del **personal** sale de los operativos del período
+(`CARGA_OP_*`). El índice de horas y los umbrales `FATIGA_UMBRAL_*` siguen rigiendo para los
+conductores de la DAF y para desempatar.
+
+**Cobertura por turnos (Instrucción)**
+
+| Clave | Siembra | Unidad (rango) | Qué controla |
+|---|---|---|---|
+| `HORA_TURNO_DIURNO_INICIO` | 08:00 | hora | Inicio del turno diurno |
+| `HORA_TURNO_DIURNO_FIN` | 16:30 | hora | Fin del turno diurno |
+| `HORA_TURNO_NOCTURNO_INICIO` | 17:30 | hora | Inicio del turno nocturno |
+| `HORA_TURNO_NOCTURNO_FIN` | 02:00 | hora | Fin del turno nocturno (cruza medianoche) |
+| `COBERTURA_MAX_DIAS_SIN_DESCANSO` | 0 | días (0–31) | Días seguidos sin descanso antes de avisar. 0 = no se evalúa |
+| `COBERTURA_PERMITE_NOCTURNO_A_DIURNO` | SIN_CONFIGURAR | SI · NO · SIN_CONFIGURAR | Si se admite diurno tras nocturno. Con NO, avisa |
+
+**Transporte: traslados, compartir y jornada del conductor**
+
+| Clave | Siembra | Unidad (rango) | Qué controla |
+|---|---|---|---|
+| `TRASLADO_MISMA_ZONA_MIN` | 15 | minutos (0–600) | Traslado por defecto dentro de la misma zonal |
+| `TRASLADO_MISMO_SECTOR_MIN` | 30 | minutos (0–600) | Traslado entre zonales del mismo sector |
+| `TRASLADO_OTRO_SECTOR_MIN` | 60 | minutos (0–600) | Traslado entre sectores distintos |
+| `COMPARTIR_VENTANA_MIN` | 30 | minutos (0–180) | Diferencia máxima de inicio para que dos operativos compartan carro |
+| `INICIO_JORNADA_TRANSPORTE` | 05:00 | hora | Inicio de la línea de tiempo de la jornada de transporte |
+| `GUARDA_HORA_TARDE` | 20:00 | hora | Desde esta hora la guarda sugerida es el garaje más cercano al conductor |
+| `DAF_MAX_JORNADA_HORAS` | 14 | horas (1–24) | Jornada máxima del conductor; por encima no se asigna |
+| `DAF_JORNADA_AVISO_HORAS` | 12 | horas (1–24) | Jornada desde la que se avisa |
+| `DAF_DESCANSO_MIN_HORAS` | 9 | horas (0–24) | Descanso mínimo entre el último tramo de ayer y el primero de hoy; por debajo, avisa |
+| `MINUTOS_TOLERANCIA_FIN_CONDUCTOR` | 30 | minutos (0–240) | Tiempo que el conductor puede seguir tras el fin de su jornada laboral |
+| `DAF_DURACION_TRAMO_MIN` | 30 | minutos (5–240) | Duración de un tramo de dejar o retirar |
+| `DAF_DURACION_DEJAR_MIN` | 30 | minutos (5–240) | Duración del tramo de dejar |
+| `DAF_DURACION_RETIRAR_MIN` | 30 | minutos (5–240) | Duración del tramo de retirar |
+| `DAF_HUECO_MINIMO_MIN` | 60 | minutos (15–600) | Minutos útiles para mostrar un hueco libre de un conductor |
+| `DURACION_TAREA_TALLER_MIN` | 60 | minutos (10–480) | Duración de la tarea «Llevar a taller» |
+| `COSTO_PENALIZACION_AVISO` | 30 | minutos (0–1000) | Optimizador: penalización por cada aviso del conductor |
+| `COSTO_ACTIVAR_LIBRE` | 120 | minutos (0–1000) | Optimizador: penalización por activar a un conductor libre |
+| `COSTO_ARRANQUE_LEJOS` | 20 | minutos (0–1000) | Optimizador: penalización por arrancar lejos de donde amanece el vehículo |
+
+**Transporte: turnos de conductores y flota**
+
+| Clave | Siembra | Unidad (rango) | Qué controla |
+|---|---|---|---|
+| `HORA_TURNO_CONDUCTOR_DIA_INICIO` | 06:00 | hora | Inicio del turno DÍA |
+| `HORA_TURNO_CONDUCTOR_DIA_FIN` | 18:00 | hora | Fin del turno DÍA |
+| `HORA_TURNO_CONDUCTOR_NOCHE_INICIO` | 18:00 | hora | Inicio del turno NOCHE |
+| `HORA_TURNO_CONDUCTOR_NOCHE_FIN` | 06:00 | hora | Fin del turno NOCHE (día siguiente) |
+| `HORA_TURNO_CONDUCTOR_ECU_NOCHE_INICIO` | 20:00 | hora | Inicio del turno ECU NOCHE |
+| `HORA_TURNO_CONDUCTOR_ECU_NOCHE_FIN` | 05:00 | hora | Fin del turno ECU NOCHE (día siguiente) |
+| `DAF_MAX_DIAS_SIN_LIBRE` | 0 | días (0–31) | Días seguidos con turno sin un LIBRE. 0 = no se evalúa |
+| `DAF_PERMITE_NOCHE_A_DIA` | SIN_CONFIGURAR | SI · NO · SIN_CONFIGURAR | Si se admite DÍA tras NOCHE |
+| `DAF_MIN_CONDUCTORES_DIA` | SIN_CONFIGURAR | siete enteros L…D | Mínimo de conductores en turno DÍA por día de la semana |
+| `DAF_MIN_CONDUCTORES_NOCHE` | SIN_CONFIGURAR | siete enteros L…D | Mínimo de conductores en turno NOCHE por día de la semana |
+| `DAF_DIAS_AVISO_VENCIMIENTO` | 30 | días (1–365) | Anticipación del aviso de vencimiento de matrícula o SOAT |
+| `DAF_KM_MAXIMO` | 999999 | km (1000–9999999) | Kilometraje máximo aceptado al registrar un vehículo |
+
+**Orden de servicio (sin siembra)**
+
+| Clave | Siembra | Qué controla |
+|---|---|---|
+| `ORDEN_FIRMANTE_CARGO` | — | Cargo del firmante (Director) de las órdenes de servicio |
+| `ORDEN_FIRMANTE_DEPENDENCIA` | — | Dependencia del firmante |
+
+Estas dos no se siembran: `ck_parametro_valor` prohíbe valores vacíos, así que «sin configurar»
+es la ausencia de la fila. Mientras falten, la orden queda en Borrador. La fila se crea al
+guardar el valor desde la pantalla.
+
+Los valores marcados como supuestos en la descripción de la pantalla (turnos de conductor y
+costos del optimizador) los confirma la DAF. `HORA_CIERRE_DEPARTAMENTAL` se retiró el
+2026-08-25: el cierre por rol vive en la ventana de carga. Las claves `HORA_NOMBRAMIENTO_*` se
+retiraron el 2026-10-23 con la jornada laboral.
 
 ---
 
-## 6. Registro
+## 6. Puertos
+
+| Servicio | Desarrollo | Preproducción (sin Gateway) | QA y producción (Gateway) |
+|---|---|---|---|
+| `transportedb` | `5434` solo en la interfaz local | no se publica | no se publica |
+| `transporte-app` | `3003` | `3005` → `3003` | no se publica |
+| `transporte-front` | `5180` | `5180` | no se publica; el Gateway llega a `transporte-front:5180` por la red `amc` |
+
+El 5180 está fuera de la banda 5173–5179 que usan los demás frontales de SIGOC y Vite usa
+`strictPort: true`, para que falle en vez de moverse a otro puerto. Si cambiamos este puerto hay
+que cambiar `vite.config.ts`, `nginx.conf`, `CORS_ORIGINS` y la ruta del módulo en Auth.
+
+---
+
+## 7. Registro
 
 `LOG_LEVEL` admite `debug`, `info`, `warn` y `error`. Toda la aplicación emite el mismo formato
-estructurado en JSON, incluidos los mensajes internos de NestJS.
+JSON, incluidos los mensajes internos de NestJS:
 
 ```json
 {"momento":"2026-08-07T09:34:10.513-05:00","nivel":"info","modulo":"transporte",
  "mensaje":"Historial de jornada consolidado","fecha":"2026-08-08","personas":2}
 ```
 
-> **`LOG_LEVEL=debug` activa el registro de consultas de Prisma. Debe permanecer desactivado en
-> producción**: imprime los parámetros de cada consulta, incluidos datos personales.
+> `LOG_LEVEL=debug` imprime los parámetros de cada consulta, con datos personales. En servidores
+> queda en `info`.
 
 ---
 
-## 7. Comprobación de la configuración
+## 8. Comprobación de la configuración
+
+En desarrollo:
 
 ```bash
-docker compose ps                                     # los tres «healthy»
-docker exec transporte-app sh -c 'date'               # -05
-docker exec transporte-app id                         # uid=1001(nestjs), NO root
-docker exec transporte-front id                       # uid=101(nginx),  NO root
-docker logs transporte-app 2>&1 | grep -i PROVISIONAL # producción: vacío
-curl -s http://localhost:3003/api/v1/estado           # {"estado":"operativo"}
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5180/api/v1/estado   # 200
+docker compose ps                                                              # los tres «healthy»
+docker exec transporte-app sh -c 'date'                                        # termina en -05
+docker exec transporte-app id                                                  # uid=1001(nestjs)
+docker exec transporte-front id                                                # uid=101(nginx)
+docker logs transporte-app 2>&1 | grep -iE "SESSION_JWT_SECRET|AUTH_SUBSYSTEM"  # sin advertencias
+curl -s http://localhost:3003/api/v1/estado              # {"estado":"operativo","baseDatos":"disponible"}
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5180/api/v1/estado    # 200, por el proxy
 ```
+
+En los servidores detrás del Gateway, la verificación completa —incluida la intermedia de
+DigiCert, el portal horneado en el bundle y la cabecera CSP única— está en la sección G de
+`transporte-backend/INSTALACION-PRODUCCION.md`.

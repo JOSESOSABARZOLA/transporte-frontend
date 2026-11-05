@@ -628,11 +628,59 @@ describe("Paso 2 · Asignar", () => {
     );
 
     const tarjeta = screen.getByTestId("sin-conductor-1");
-    expect(within(tarjeta).getByText("IG-030 a IG-043")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("IG-030 a IG-043-28-OCT-2026")).toBeInTheDocument();
     expect(
       within(tarjeta).getByText("También atiende: Calderón (AMC Calderón)"),
     ).toBeInTheDocument();
     expect(screen.getAllByTestId(/^sin-conductor-/)).toHaveLength(1);
+  });
+
+  it("la patrulla 5/6 es UNA tarjeta con sus códigos, la fecha una vez y sus personas (2026-11-04)", () => {
+    pasoAsignar(
+      resumen({
+        operativos: [
+          operativo({
+            identificador: "IGECU-001-05-NOV-2026",
+            personas: 2,
+            registro: {
+              grupoRegistro: "63fc0e1c-0000-4000-8000-000000000000",
+              identificadores: ["IGECU-001-05-NOV-2026", "ITECU-001-05-NOV-2026"],
+              tambienAtiende: [],
+              personas: 2,
+              avisos: [],
+            },
+          }),
+        ],
+      }),
+    );
+
+    const tarjeta = screen.getByTestId("sin-conductor-1");
+    expect(within(tarjeta).getByText("IGECU-001 · ITECU-001-05-NOV-2026")).toBeInTheDocument();
+    expect(within(tarjeta).getByText("2 personas")).toBeInTheDocument();
+    expect(tarjeta).not.toHaveTextContent("63fc0e1c");
+  });
+
+  it("los avisos del registro llegan a la DAF en la tabla (2026-11-04)", () => {
+    pasoAsignar(
+      resumen({
+        operativos: [
+          operativo({
+            identificador: "IGECU-001-05-NOV-2026",
+            registro: {
+              grupoRegistro: "g",
+              identificadores: ["IGECU-001-05-NOV-2026", "ITECU-001-05-NOV-2026"],
+              tambienAtiende: [],
+              personas: 3,
+              avisos: ["No caben: el registro tiene 3 personas y la PMA-7895 tiene 2 asientos."],
+            },
+          }),
+        ],
+      }),
+      { vista: "tabla" },
+    );
+    expect(screen.getByTestId("aviso-registro-1")).toHaveTextContent(
+      "No caben: el registro tiene 3 personas y la PMA-7895 tiene 2 asientos.",
+    );
   });
 
   it("los avisos del conductor van como chips bajo su nombre en la línea de tiempo", async () => {

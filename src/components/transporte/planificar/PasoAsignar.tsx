@@ -48,7 +48,12 @@ import { TrasladosService } from "../../../services/traslados.service.ts";
 import { descargarArchivo } from "../../../utils/banner.util.ts";
 import { presentarError } from "../../../utils/errorApi.util.ts";
 import { mensaje, toast } from "../../../utils/mensaje.ts";
-import { identificadorParaDaf, tambienAtiende } from "../../../utils/registroDaf.util.ts";
+import {
+  avisosDelRegistro,
+  identificadorParaDaf,
+  personasDelRegistro,
+  tambienAtiende,
+} from "../../../utils/registroDaf.util.ts";
 import {
   operativosExclusivos,
   visibleEnLinea,
@@ -472,6 +477,17 @@ const PasoAsignar: FC<PasoAsignarProps> = ({
                 </div>
                 <span className="text-xs text-app-strong">{operativo.formulario}</span>
                 <span className="text-xs text-app-muted">{detalleOperativo(operativo)}</span>
+                {/* Registro agrupado (2026-11-04): las personas de TODOS sus códigos y sus avisos. */}
+                {personasDelRegistro(operativo.registro) && (
+                  <span className="text-xs text-app-strong">
+                    {personasDelRegistro(operativo.registro)}
+                  </span>
+                )}
+                {avisosDelRegistro(operativo.registro).map((aviso) => (
+                  <span key={aviso} className="text-xs font-semibold text-app-strong">
+                    Aviso: {aviso}
+                  </span>
+                ))}
                 {/* Registro por zonas (2026-10-28): las demás zonas, dentro de la misma solicitud. */}
                 {tambienAtiende(operativo.registro) && (
                   <span className="text-xs text-app-strong">{tambienAtiende(operativo.registro)}</span>
@@ -603,7 +619,27 @@ const PasoAsignar: FC<PasoAsignarProps> = ({
                 <tbody>
                   {resumen.operativos.map((operativo) => (
                     <tr key={operativo.id} className="hover:bg-primary/5">
-                      <td className="font-mono font-semibold">{identificadorParaDaf(operativo)}</td>
+                      <td>
+                        <span className="flex flex-col gap-0.5">
+                          <span className="font-mono font-semibold">
+                            {identificadorParaDaf(operativo)}
+                          </span>
+                          {personasDelRegistro(operativo.registro) && (
+                            <span className="text-xs text-app-muted">
+                              {personasDelRegistro(operativo.registro)}
+                            </span>
+                          )}
+                          {avisosDelRegistro(operativo.registro).map((aviso) => (
+                            <span
+                              key={aviso}
+                              className="text-xs font-semibold text-app-strong"
+                              data-testid={`aviso-registro-${operativo.id}`}
+                            >
+                              Aviso: {aviso}
+                            </span>
+                          ))}
+                        </span>
+                      </td>
                       <td>{franja(operativo.horaInicio, operativo.horaFin)}</td>
                       <td>
                         <span className="flex flex-col gap-0.5">

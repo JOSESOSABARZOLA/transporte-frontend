@@ -269,7 +269,7 @@ const PanelPersonalJornada: FC<PanelPersonalJornadaProps> = ({
               listaCompacta
               horarioInline
               // El horario del operativo, fijo: contra él se ve quién está ocupado ese día.
-              horarioInicial={{ horaInicio: operativo.horaInicio, horaFin: operativo.horaFin }}
+              horarioOperativo={{ horaInicio: operativo.horaInicio, horaFin: operativo.horaFin }}
               horarioFijo
               onCrucesCambian={setCruces}
               /* El reparto, como vista de este mismo cajón. */

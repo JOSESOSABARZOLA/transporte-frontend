@@ -177,6 +177,50 @@ describe("aislamiento entre FECHAS (2026-09-21)", () => {
   });
 });
 
+describe("el horario del operativo viaja con la captura (2026-11-04)", () => {
+  const DE_8_A_1630 = { horaInicio: "08:00", horaFin: "16:30" };
+  const DE_18_A_22 = { horaInicio: "18:00", horaFin: "22:00" };
+  const conHorario = (codigo: string, horario: { horaInicio: string; horaFin: string }) => ({
+    personal: [],
+    valores: { ...VALORES_INICIALES, formularioCodigo: codigo, horarioOperativo: horario },
+  });
+
+  it("cada (formulario, fecha) guarda el suyo y no se ve en otro", () => {
+    const OTRA_FECHA = "2026-09-12";
+    guardarBorrador(USUARIO, FORM_A, FECHA, conHorario(FORM_A, DE_8_A_1630));
+    guardarBorrador(USUARIO, FORM_B, FECHA, conHorario(FORM_B, DE_18_A_22));
+
+    expect(leerBorrador(USUARIO, FORM_A, FECHA)?.valores.horarioOperativo).toEqual(DE_8_A_1630);
+    expect(leerBorrador(USUARIO, FORM_B, FECHA)?.valores.horarioOperativo).toEqual(DE_18_A_22);
+    expect(leerBorrador(USUARIO, FORM_A, OTRA_FECHA)).toBeNull();
+  });
+
+  it("un borrador anterior, sin horario, abre con el horario vacío y sin errores", () => {
+    // La misma versión de clave (v6): no se sube, para no borrar las capturas en curso.
+    const valoresViejos: Partial<ValoresOperativo> = { ...conDatos };
+    delete valoresViejos.horarioOperativo;
+    window.sessionStorage.setItem(
+      CLAVE_A,
+      JSON.stringify({ v: 6, valores: valoresViejos, personal: [persona] }),
+    );
+
+    const leido = leerBorrador(USUARIO, FORM_A, FECHA);
+    expect(leido?.valores.horarioOperativo).toEqual({ horaInicio: "", horaFin: "" });
+    expect(leido?.valores.zonalesIds).toEqual([3]);
+    expect(leido?.personal).toEqual([persona]);
+  });
+
+  it("un horario escrito, aunque no haya nada más, es captura que se conserva", () => {
+    expect(esBorradorVacio(conHorario(FORM_A, DE_8_A_1630).valores, [])).toBe(false);
+    expect(
+      esBorradorVacio(conHorario(FORM_A, { horaInicio: "08:00", horaFin: "" }).valores, []),
+    ).toBe(false);
+    expect(esBorradorVacio(conHorario(FORM_A, { horaInicio: "", horaFin: "" }).valores, [])).toBe(
+      true,
+    );
+  });
+});
+
 describe("puntero de sesión", () => {
   it("guarda y recupera fecha y último formulario", () => {
     guardarPuntero(USUARIO, { fecha: "2026-09-11", codigoElegido: FORM_A });

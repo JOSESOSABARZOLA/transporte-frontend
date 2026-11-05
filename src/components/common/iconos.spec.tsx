@@ -78,8 +78,9 @@ describe("el menú lateral", () => {
     // 20 desde el 2026-10-06: «Jornada de los conductores» y «Capacidad de flota» pasaron a
     // «Planificar el día» (−2) y el grupo «Transporte · DAF» trajo su figura (+1).
     // 21 desde la versión consolidada (2026-10-06): «Carga inicial» (+1). 20 desde el 2026-10-20:
-    // «Mantenimiento» salió del menú (se programa desde Flota).
-    expect(dibujos).toHaveLength(20);
+    // «Mantenimiento» salió del menú (se programa desde Flota). 21 desde el 2026-11-05: «Zonas de
+    // la ciudad» (+1).
+    expect(dibujos).toHaveLength(21);
   });
 });
 

@@ -25,3 +25,21 @@ describe("rangos de identificadores (2026-10-28)", () => {
     expect(identificadorCorto(ig(30))).toBe("IG-030");
   });
 });
+
+describe("rangos de un registro agrupado (2026-11-04)", () => {
+  it("prefijos distintos de la patrulla van con punto medio", () => {
+    expect(
+      compactarIdentificadores(["ITECU-001-05-NOV-2026", "IGECU-001-05-NOV-2026"]),
+    ).toBe("IGECU-001 · ITECU-001");
+  });
+
+  it("dentro de un prefijo el hueco sigue con coma", () => {
+    expect(
+      compactarIdentificadores([
+        "IGECU-001-05-NOV-2026",
+        "IGECU-003-05-NOV-2026",
+        "ITECU-001-05-NOV-2026",
+      ]),
+    ).toBe("IGECU-001, IGECU-003 · ITECU-001");
+  });
+});

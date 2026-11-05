@@ -101,7 +101,23 @@ export type ValoresOperativo = {
   compartirConOperativoId?: number | null;
   /** Identificador de ese operativo, para decirlo en el pie y en el aviso. Solo de la interfaz. */
   compartirConIdentificador?: string | null;
+  /**
+   * «HORARIO DEL OPERATIVO» (2026-11-04). Lo hereda quien se agrega y con él se ve quién está libre.
+   * Vive aquí, con la captura, y no dentro de `SelectorPersonal`: así cada (formulario, fecha) guarda
+   * el suyo en el borrador y no se arrastra al cambiar de formulario. Solo de la interfaz: NO viaja al
+   * servidor (RN-66: viajan los horarios por persona). Opcional: un borrador anterior no lo trae y
+   * se lee vacío. No es `horaInicio`/`horaFin`, que son el horario clásico del operativo.
+   */
+  horarioOperativo?: { horaInicio: string; horaFin: string };
 };
+
+/** El horario del operativo de una captura; vacío si un borrador anterior no lo trae. */
+export const horarioDeLaCaptura = (
+  valores: Pick<ValoresOperativo, "horarioOperativo"> | null | undefined,
+): { horaInicio: string; horaFin: string } => ({
+  horaInicio: valores?.horarioOperativo?.horaInicio ?? "",
+  horaFin: valores?.horarioOperativo?.horaFin ?? "",
+});
 
 /**
  * La respuesta a «¿Desea solicitar esta movilización en la misma unidad?»: solo «COMPARTIR». Las
@@ -125,6 +141,7 @@ export const VALORES_INICIALES: ValoresOperativo = {
   observaciones: [],
   tipoTransporte: "COMPLETO",
   esMacrooperativo: false,
+  horarioOperativo: { horaInicio: "", horaFin: "" },
 };
 
 /**

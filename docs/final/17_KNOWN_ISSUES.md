@@ -1,9 +1,62 @@
 # 17 · Problemas conocidos
 
 **Módulo Transportes / Cuadro de Colores Operativo — Agencia Metropolitana de Control**
-13 de agosto de 2026 · **actualizado el 19 de agosto de 2026**
+13 de agosto de 2026 · **actualizado el 5 de noviembre de 2026**
 
-Lo que no funciona, por qué, y de quién depende. Verificado contra el sistema en marcha.
+Lo que no funciona, por qué, y de quién depende. Hasta el 19 de agosto lo verificamos contra el
+sistema en marcha; la revisión del 5 de noviembre la hicimos contra el código de
+`base/cuadro-colores` (backend `24520af`, frontend `d13a5db`) y las guías de los paquetes de QA.
+
+---
+
+## Lo que cambió entre el 19 de agosto y el 5 de noviembre de 2026
+
+La versión **1.1.0** se instaló en producción el **21-OCT-2026**, detrás del Gateway con HTTPS, y QA
+preproducción pasó a un servidor nuevo detrás del mismo Gateway. Desde entonces se armaron seis
+paquetes de actualización para QA (22-OCT, 23-OCT, 23-OCT «b», 26-OCT, 29-OCT y 4-NOV).
+
+### Lo que el código ya resolvió
+
+| Entrada | Estado | Cómo lo comprobamos |
+|---|---|---|
+| **F-01** · el rol «Funcionario» no existe en Auth | ✅ **Cerrada por retiro.** `FUNCIONARIO` se retiró el 10-SEP: el personal de campo ya no inicia sesión y P-06 desapareció | `common/roles/catalogo-roles.ts` lo marca «rol retirado» y no asignable |
+| **F-03** · cinco formularios sin prefijo predeterminado | ⬇️ **Reducida a uno.** El 8, el 5 y el 6 eligen prefijo por el área del personal; el 2 usa `OCPMO`. Queda el **7** | Comentario PV-27 de `generador-identificador.service.ts`. No lo contrastamos con la base |
+| **F-04** · la DAF no puede listar la flota | ✅ **Resuelta el 15-OCT.** «Cambiar vehículo» evalúa cada placa activa del día | `POST /transporte/evaluar/vehiculos` |
+| **F-06** · la capacidad no se declara desde ninguna pantalla | ✅ **Resuelta.** P-15 el 31-AGO; desde el 8-OCT, paso 1 de «Planificar el día» | `GET`/`PUT /transporte/vehiculos-jornada/:fecha` |
+| **F-07** · un catálogo desactivado no se puede reactivar | ✅ **Resuelta el 12-OCT.** Catálogos tiene filtro Activos \| Inactivos \| Todos y «Reactivar» | `GET /administracion/catalogos/:codigo/zonales` y siguientes |
+| **L-03** · una zonal por operativo | ✅ **Resuelta el 21-SEP.** El operativo lleva `zonalesIds` | `operativo.dto.ts`, `valoresOperativo.util.ts` |
+| **L-04 / L-05** · ausencias por página, sin listado global | ✅ **Resueltas el 8-OCT.** Una consulta para todo el maestro | `GET /administracion/personal/ausencias` |
+| **L-06 / PV-30** · el PDF no lleva logotipo | ✅ **Resuelta el 25-AGO.** `src/assets/logo-amc.png` pesa 103 kB y lo usan la matriz y el memorando | `identidad-institucional.ts`, `exportador-matriz.ts`, `motor-documento.ts` |
+| **L-07** · un catálogo no se re-delimita a otro formulario | ⚪ **Obsoleta.** Desde el 13-OCT cada formulario tiene su configuración propia y no hay copias | `t_zonal_formulario` |
+| **L-10** · sin pantalla para reabrir la jornada | ✅ **Resuelta el 8-OCT.** «Reabrir cuadro» en la Matriz | `cuadroDiario.service.ts` → `POST /cuadros/:fecha/reabrir` |
+| **L-16** · sin HTTPS | ✅ **Resuelta en QA y producción** por el Gateway desde el 21-OCT. En local sigue sin TLS | Guías `PASOS-*.md` del 21-OCT |
+| **D-02** · `Table` genérico sin consumidores | ✅ **Retirado el 15-OCT** | `components/tabla/` ya no existe |
+| **D-03 / D-04** · `pdf-lib`, `pdfmake` y `react-pdf` sin usar | ✅ **Ya se usan.** `pdf-lib` y `pdfmake` en el memorando, la firma y la hoja de ruta; `react-pdf` en el visor de órdenes | `import` en `documentos/` y `transporte/`; `components/ordenes/` |
+| **D-05** · variables `PG*` en el `.env.example` del frontend | ✅ **Retiradas** | El archivo solo declara `VITE_*` |
+| **D-09** · la jornada del nombramiento se cita y no se aplica | ✅ **Cerrada.** El 22-SEP se aplicó entera; el 23-OCT la jornada laboral reemplazó al nombramiento | `admiteJornada`, `talento-operativo/domain/jornada-laboral.ts` |
+
+### Lo que empeoró o sigue igual
+
+| Entrada | Estado |
+|---|---|
+| **D-08** · specs con errores de tipo | ⚠️ **Creció**: de 5 archivos a **17** y **71 errores** (`npx tsc --noEmit -p tsconfig.json`, 5-NOV). 5 de los 17 son suites de integración; no comprobamos si coinciden con las que fallan en D-10 |
+| **F-05** · la solicitud de apoyo no tiene flujo | Sin cambios: `solicitudes-apoyo.controller.ts` solo tiene un `POST` y dos `GET` |
+| **L-01** · emitir órdenes con el cuadro abierto | Sin cambios comprobados: `orden-servicio.service.ts` exige personal y rol `DIRECTOR`, pero no encontramos la comprobación del estado del cuadro |
+| **D-06 / D-07** · documentación duplicada | Cambió de forma: ver D-13 |
+
+### Lo que abrimos hoy
+
+| # | Qué | Marca |
+|---|---|---|
+| **F-09** | COMPARTIDO entre dos «completo» no compara el punto | 🟠 |
+| **F-10** | Datos sospechosos en los catálogos | 🟡 |
+| **F-11** | Tras la migración de jornada laboral nadie tiene jornada | 🟠 |
+| **D-10** | 8 suites de integración con fixtures desactualizados | ⚪ |
+| **D-11** | Paquetes de QA marcados «ENSAYO» | ⚪ |
+| **D-12** | Tramos heredados en los códigos que no representan al registro | 🟡 |
+| **D-13** | Los contratos de API solo existen en el respaldo | ⚪ |
+
+El detalle de cada una está en su sección, más abajo.
 
 ---
 
@@ -185,7 +238,12 @@ trabajo de distinguir lo acordado de lo supuesto.
 
 ## 🟠 Funcionalidades bloqueadas
 
-### F-01 · El rol «Funcionario de campo» no existe **en Auth central** · sigue abierto
+### ~~F-01 · El rol «Funcionario de campo» no existe **en Auth central**~~ · ✅ **CERRADA POR RETIRO el 10 de septiembre de 2026**
+
+> El negocio decidió que el personal de campo no inicie sesión: sus órdenes las emite la Dirección y
+> se entregan por otro canal. `FUNCIONARIO` quedó en el enumerado, sin accesos y fuera de los roles
+> asignables (`NO_ASIGNABLES` en `common/roles/catalogo-roles.ts`), y P-06 «Mis órdenes» se retiró.
+> Ya no hace falta crear el rol en Auth. Lo que sigue es la historia de la entrada.
 
 **Resuelto de nuestro lado el 17-AGO.** `FUNCIONARIO` se agregó al enumerado `RolDepartamental`, y
 **exigió migración** aunque parezca una línea: es un enumerado de PostgreSQL. El backend lo acepta y
@@ -233,7 +291,13 @@ faltarles el usuario de Auth. Lo que sigue siendo cierto, y la pantalla lo dice:
 
 ---
 
-### F-03 · No se puede registrar en cinco de los nueve formularios · PV-27
+### F-03 · No se puede registrar en cinco de los nueve formularios · PV-27 · ⬇️ **reducida al formulario 7**
+
+> **Al 5-NOV-2026.** El 8 (`IG`/`IT`), el 5 (`IGECU`/`ITECU`) y el 6 (`IGNECU`/`ITNECU`/`INECU`)
+> eligen el prefijo por el **área del personal** desde el 8 y 9 de septiembre; el 2 usa `OCPMO` como
+> predeterminado. Según el comentario PV-27 de `generador-identificador.service.ts`, el **7** sigue
+> sin `areaAplica` ni predeterminado, y registrar en él se detiene con el aviso. No lo contrastamos
+> con la base desplegada.
 
 **Comprobado:** los formularios **2, 5, 6, 7 y 8** tienen varios prefijos de identificador y
 **ninguno marcado como predeterminado**, porque falta el criterio de selección por área.
@@ -248,7 +312,11 @@ significa lo que aparenta**, y ese código va en la matriz y en las órdenes.
 
 ---
 
-### F-04 · La DAF no puede listar la flota · PV-33
+### ~~F-04 · La DAF no puede listar la flota · PV-33~~ · ✅ **RESUELTA el 15 de octubre de 2026**
+
+> En el cajón de candidatos de «Planificar el día», «Cambiar vehículo» pide
+> `POST /transporte/evaluar/vehiculos` y ofrece **toda la flota activa del día**, con las placas que
+> darían 409 deshabilitadas y su motivo. Un vehículo sin conductor habitual ya se puede asignar.
 
 `PATCH /transporte/operativos/:id` exige `vehiculoId`, pero el único endpoint que enumera vehículos
 —`GET /administracion/vehiculos`— es del `ADMINISTRADOR_DMIP`.
@@ -272,7 +340,11 @@ toda actualización con sentido es una transición de estado.
 
 ---
 
-### F-06 · La capacidad de flota no se declara desde ninguna pantalla
+### ~~F-06 · La capacidad de flota no se declara desde ninguna pantalla~~ · ✅ **RESUELTA**
+
+> P-15 «Capacidad de flota» la declaró desde el 31-AGO. Desde el 8-OCT es el paso 1 de «Planificar
+> el día» («vehículos que salen», `GET`/`PUT /transporte/vehiculos-jornada/:fecha`) y la ruta
+> `/cuadro/capacidad` redirige ahí.
 
 `PUT /transporte/capacidad/:fecha` existe y el servicio del frontend lo consume, pero **ni P-03 ni
 P-09 lo ofrecen**.
@@ -285,7 +357,11 @@ la jornada.
 
 ---
 
-### F-07 · Un catálogo desactivado no se puede reactivar · PV-36
+### ~~F-07 · Un catálogo desactivado no se puede reactivar · PV-36~~ · ✅ **RESUELTA en octubre de 2026**
+
+> «Catálogos del cuadro» lee por las rutas de administración del formulario
+> (`/administracion/catalogos/:codigo/…`), que incluyen los inactivos; la barra filtra Activos |
+> Inactivos | Todos y la fila ofrece «Reactivar».
 
 `AdministracionCatalogosController` expone **nueve operaciones de escritura y ningún `GET`**. P-08
 lee por el endpoint operativo, que filtra `activo: true`.
@@ -328,32 +404,86 @@ explicación obliga a levantar el teléfono, que es el canal que este sistema ex
 
 ---
 
+### F-09 · COMPARTIDO entre dos «completo» no compara el punto · abierta el 5-NOV-2026
+
+**Lo que pasa.** Dos operativos del mismo tipo de traslado se comparten si coinciden en hora y están
+en la **misma zonal o el mismo sector** (`mismaZonaOSector`, `transporte/application/politicas/compartir-tramo.ts`).
+El punto de encuentro solo lo mira la clase CONTENIDO (`mismoSitio`), que exige misma zonal y, si los
+dos lo traen, el mismo punto. Dos «completo» caen en COMPARTIDO, así que la regla no mira el punto.
+
+**Efecto.** Una unidad que acompaña un operativo todo el día no se mueve de su punto, pero el sistema
+le ofrece otro «completo» de la misma zonal en un punto distinto. Con la zonal **DMQ**, que es la
+ciudad entera, la coincidencia es casi segura.
+
+**Lo que hay.** Una propuesta: que entre dos «completo» rija el mismo criterio estricto de
+`mismoSitio`. **Pendiente de decisión del negocio**; no la implementamos.
+
+---
+
+### F-10 · Datos sospechosos en los catálogos · abierta el 5-NOV-2026
+
+Detectamos el punto **«PMO Centro Histórico»** colgado de la zonal **Calderón**, al norte de la
+ciudad y lejos del centro. El punto lo sembró la migración
+`20260902160000_la_matriz_de_puntos_de_encuentro` para el formulario 2; la zonal a la que quedó
+asociado no consta en ese archivo, así que la asociación salió de la carga posterior.
+
+**Efecto.** El traslado se calcula por la zonal, no por el punto: un operativo en ese punto se
+planifica como si estuviera en Calderón.
+
+**Qué hacer.** Revisar con el Product Owner la matriz zonal ↔ punto de cada formulario. El script
+`limpieza-catalogos` no lo detecta: corrige formato y duplicados, no la geografía. No lo verificamos
+contra la base de producción.
+
+---
+
+### F-11 · Tras la migración de jornada laboral nadie tiene jornada · abierta el 23-OCT-2026
+
+`20261023100000_jornada_laboral` retira el tipo de contrato y siembra dos jornadas, pero **no asigna
+ninguna**. Hasta que el administrador ponga una a cada ficha de personal (Personal y disponibilidad)
+y a cada conductor (Flota y garajes), nadie se puede convocar: el servidor responde
+`JORNADA_NO_ADMITE_TURNO` para el personal y `SIN_JORNADA` para el conductor, y las dos pantallas
+dicen «⚠ Sin jornada».
+
+**Es irreversible.** Volver atrás exige restaurar el respaldo previo. Las guías de QA del 23-OCT
+guardan además un CSV con el contrato que tenía cada persona, para ayudar a asignar.
+
+**De quién depende.** Del negocio: decidir quién asigna las jornadas y cuándo, en cada ambiente donde
+se aplique la migración. En producción, que arrancó con la base vacía el 21-OCT, aplica en cuanto se
+actualice a una versión posterior a la 1.1.0.
+
+---
+
 ## 🟡 Limitaciones
 
 | # | Limitación | Efecto | Pendiente |
 |---|---|---|---|
 | L-01 | La emisión de órdenes con el cuadro abierto **solo la bloquea la interfaz** | Una petición directa la esquiva. **Una regla que vive solo en el cliente no es una regla** | PV-34 |
 | L-02 | La composición de patrulla se **informa, no bloquea** | RN-31 y RN-32 no impiden nada | PV-29 |
-| L-03 | Una zonal por operativo en la interfaz | El contrato admite varias (RN-19) | PV-31 |
-| L-04 | Las ausencias se consultan **por página** | 10 peticiones extra por página del maestro | PV-35 |
-| L-05 | No hay listado global de ausencias | El contrato las entrega por persona | PV-35 |
-| L-06 | El PDF **no lleva logotipo** | Imprime la identificación en texto | PV-30 |
-| L-07 | Un catálogo **no se puede re-delimitar** a otro formulario | `ActualizarPuntoDto` no acepta `formularioIds` | — |
+| ~~L-03~~ | ~~Una zonal por operativo en la interfaz~~ | **CERRADA el 21-SEP-2026**: `zonalesIds` | — |
+| ~~L-04~~ | ~~Las ausencias se consultan **por página**~~ | **CERRADA el 8-OCT-2026**: `GET /administracion/personal/ausencias`, una consulta | — |
+| ~~L-05~~ | ~~No hay listado global de ausencias~~ | **CERRADA el 8-OCT-2026**: la misma consulta | — |
+| ~~L-06~~ | ~~El PDF **no lleva logotipo**~~ | **CERRADA el 25-AGO-2026**: `logo-amc.png` | — |
+| ~~L-07~~ | ~~Un catálogo **no se puede re-delimitar** a otro formulario~~ | **OBSOLETA el 13-OCT-2026**: cada formulario tiene su configuración propia | — |
 | L-08 | El cupo del rol compartido es **una persona**, provisional | Formulario 6 | PV-09 |
 | L-09 | Los ocho parámetros llevan **valores provisionales** | El más urgente: la hora de cierre, con dos valores en las fuentes | PV-06 |
-| L-10 | Sin pantalla para **reabrir** la jornada | Solo por API. **Abrirla ya no hace falta**: el primer registro del día la abre solo, desde el 2026-08-11 | — |
+| ~~L-10~~ | ~~Sin pantalla para **reabrir** la jornada~~ | **CERRADA el 8-OCT-2026**: «Reabrir cuadro» en la Matriz. Abrirla la hace el primer registro del día | — |
 | ~~L-11~~ | ~~Sin pantalla para **conductores y vehículos**~~ | **CERRADA el 20-AGO-2026** · P-12 | — |
 | L-12 | Sin pantalla del **historial de auditoría** | Vive en `t_auditoria` | — |
 | L-13 | Sin purga de auditoría e histórico | Crecen sin límite | PV-18 |
 | L-14 | Sin política de respaldo | El volumen contiene todo | PV-19 |
 | L-15 | **Contraste de los nueve banners sin verificar** | El texto contrasta por construcción; los fondos no se han medido | PV-23 |
-| L-16 | Sin HTTPS | Tráfico en claro | — |
+| ~~L-16~~ | ~~Sin HTTPS~~ | **CERRADA en QA y producción el 21-OCT-2026**: TLS y HSTS los pone el Gateway. En local sigue sin TLS | — |
 
 ---
 
-## 🟠 El logotipo institucional · PV-30
+## ~~🟠 El logotipo institucional · PV-30~~ · ✅ **RESUELTO el 25 de agosto de 2026**
 
-Merece su propia entrada porque **es peor que una ausencia**.
+> El píxel de 70 bytes se reemplazó: hoy `transporte-backend/src/assets/` solo contiene
+> `logo-amc.png`, de 103 kB, y lo cargan `identidad-institucional.ts`, `exportador-matriz.ts` y
+> `motor-documento.ts`. La matriz y el memorando imprimen el membrete. Se conserva el texto de abajo
+> como historia.
+
+Merecía su propia entrada porque **era peor que una ausencia**.
 
 `transporte-backend/src/assets/LogoAmc.jpeg` **existe** desde la línea base. Pero son **70 bytes:
 un PNG transparente de 1×1 con extensión `.jpeg`**. El logotipo real vive en el frontend y pesa
@@ -371,18 +501,85 @@ Hoy la matriz imprime la identificación institucional **en texto**.
 | # | Qué | Dónde |
 |---|---|---|
 | D-01 | Advertencia de lint por dependencias de `useEffect` | `components/tabla/FilterByColumn.tsx`. **Única del repositorio** |
-| D-02 | `Table` genérico sin consumidores | Filtra contra el servidor, y ningún endpoint acepta filtros por columna. Trae **dos botones de exportación que no hacen nada** |
-| D-03 | `pdf-lib` y `pdfmake` instalados y sin usar | Van dentro de la imagen |
-| D-04 | `react-pdf` instalado y sin usar | El PDF lo genera el servidor |
-| D-05 | Variables `PG*` en el `.env.example` del frontend | Un frontend no se conecta a PostgreSQL |
-| D-06 | `docs/` triplicado | `IMPLEMENTATION_GUIDE.md` ya divergió |
-| D-07 | `PENDIENTES-VALIDACION.md` con **dos versiones** | La de `docs/` va 6 pendientes por detrás |
-| D-08 | **Cinco** archivos de spec con errores de tipo | No afectan al `build`, que los excluye. Eran cuatro hasta el 2026-08-07: `operativos.service.spec.ts` se sumó con la baja física de PV-10 |
-| D-09 | La jornada del `NOMBRAMIENTO` se cita pero no se aplica | El mensaje de rechazo nombra «08H00 a 16H30», y la validación implementada —VAL-13— solo comprueba **turno nocturno o fin de semana**. Ver §8.1 de `M12_POLITICAS_DESCANSO.md`. Decisión pendiente de la Dirección |
+| ~~D-02~~ | ~~`Table` genérico sin consumidores~~ | **CERRADA el 15-OCT-2026**: `components/tabla/` se retiró |
+| ~~D-03~~ | ~~`pdf-lib` y `pdfmake` instalados y sin usar~~ | **CERRADA**: los dos se importan en `documentos/` (memorando, firma) y `transporte/` (hoja de ruta, turnos) |
+| ~~D-04~~ | ~~`react-pdf` instalado y sin usar~~ | **CERRADA el 22-SEP-2026**: es el visor de las órdenes |
+| ~~D-05~~ | ~~Variables `PG*` en el `.env.example` del frontend~~ | **CERRADA**: solo quedan las `VITE_*` |
+| D-06 | `docs/` duplicado | Cambió de forma el 5-NOV: el backend ya no versiona `docs/` (ver D-13). Quedan dos copias de `IMPLEMENTATION_GUIDE.md`, en `docs/implementacion/` de la raíz y en `transporte-frontend/docs/implementacion/`, y no coinciden |
+| D-07 | `PENDIENTES-VALIDACION.md` con **dos versiones** | Las mismas dos carpetas: 666 líneas en la raíz y 657 en el frontend |
+| D-08 | **Diecisiete** archivos de spec con **71** errores de tipo | `npx tsc --noEmit -p tsconfig.json` en el backend, 5-NOV-2026. No afectan al `build`, que los excluye. Eran cinco el 19-AGO. Los que más acumulan: `operativos.service.spec.ts` (36) y `test/operativos.integracion-spec.ts` (8) |
+| ~~D-09~~ | ~~La jornada del `NOMBRAMIENTO` se cita pero no se aplica~~ | **CERRADA**: aplicada entera el 22-SEP-2026 y reemplazada por la jornada laboral el 23-OCT-2026 |
+| D-10 | **8 suites de integración fallan** por fixtures desactualizados | Ver la sección siguiente |
+| D-11 | Paquetes de QA marcados **«ENSAYO»** | Ver la sección siguiente |
+| D-12 | Tramos heredados en los códigos que no representan al registro | Ver la sección siguiente |
+| D-13 | Los contratos de API **solo existen en el respaldo** | Ver la sección siguiente |
+
+### D-10 · Ocho suites de integración con fixtures desactualizados
+
+`test/` tiene 22 suites. La última, `registro-agrupado-patrulla.integracion-spec.ts`, pasa **7/7**.
+En la corrida completa **8 suites fallan** por fixtures desactualizados: datos de prueba que no
+siguieron a los cambios de modelo de octubre (id de registro obligatorio, jornada laboral en lugar
+del contrato, una persona por operativo en el 8, registro agrupado para la DAF). **No verificamos
+una regresión detrás**, pero tampoco la descartamos suite por suite, y este documento no lista
+cuáles son las ocho.
+
+**Qué hacer.** Actualizar los fixtures antes del próximo paquete, empezando por las cinco suites que
+además tienen errores de tipo (D-08). Mientras tanto, una suite roja de integración no distingue un
+defecto de un dato viejo, que es justamente lo que esa red tiene que distinguir.
+
+### D-11 · Paquetes de QA marcados «ENSAYO»
+
+`scripts/empaquetar.sh` marca «ENSAYO» todo paquete que no sale de `main`. Los del 29-OCT y el 4-NOV
+lo están: el del 4-NOV salió de `base/cuadro-colores` y el del 29-OCT de dos ramas de trabajo
+(`feat/ventanas-parametros-rediseno` y `feat/plantilla-visual`, según su guía), hoy integradas en
+`base/cuadro-colores`. Las instalaciones del 21-OCT sí salieron de `main`.
+
+**Qué implica.** Si `main` avanza por avance rápido a los commits del paquete (`24520af` y
+`d13a5db`), el paquete corresponde exactamente a `main`. Si el merge crea otros commits, hay que
+volver a empaquetar desde `main` antes de llevarlo a producción.
+
+### D-12 · Tramos heredados en los registros agrupados
+
+Desde la 1.1.6 la patrulla 5/6 tiene un solo conductor para todo el registro. Las patrullas
+asignadas antes conservan tramos en los códigos que ya no representan al registro.
+
+```bash
+docker exec transporte-app node dist/scripts/tramos-registro-agrupado.js                         # reporte
+docker exec transporte-app node dist/scripts/tramos-registro-agrupado.js --aplicar --usuario=<id> # borra los sin conductor
+```
+
+Los tramos **con conductor** no se tocan: quedan en el reporte para que la DAF los reasigne a mano.
+En QA hay que correr el reporte tras aplicar el paquete del 4-NOV; no conocemos su resultado.
+
+### D-13 · Los contratos de API solo existen en el respaldo
+
+Los dos `CLAUDE.md` citan diecisiete contratos `transporte-backend/docs/CONTRATO-*.md`, entre ellos
+`CONTRATO-planificar-dia.md`, que es el contrato de «Planificar el día». El `.gitignore` del backend ignora `docs/*` salvo las fases y la guía,
+y en la copia de trabajo de `docs/` solo está `CONTRATO-personal-por-lote.md`, también ignorado. Los
+otros dieciséis existen únicamente en la carpeta `transporte-backend-respaldo/docs/`. Ninguno de
+los diecisiete está versionado.
+
+**Qué hacer.** Decidir si los contratos se versionan (agregar `!docs/CONTRATO-*.md` al `.gitignore`
+y copiarlos) o si se citan desde otro sitio. Detalle en `DOCUMENTACION_INCONSISTENCIAS.md`, I-17.
 
 ---
 
 ## Qué hacer primero
+
+### Al 5 de noviembre de 2026
+
+| # | Acción | Desbloquea | Quién |
+|---|---|---|---|
+| 1 | **F-11** · asignar la jornada laboral a cada persona y conductor | Convocar a alguien en cualquier ambiente donde corra la migración del 23-OCT | Negocio, con el administrador |
+| 2 | **D-11** · llevar `24520af` y `d13a5db` a `main` por avance rápido, o reempaquetar desde `main` | Que el paquete del 4-NOV pueda ir a producción | Desarrollo |
+| 3 | **D-10** · actualizar los fixtures de las 8 suites de integración | Que la integración vuelva a ser una señal | Desarrollo |
+| 4 | **D-12** · correr el reporte de tramos heredados en QA | Que la DAF no vea conductores sueltos en códigos que no representan | Desarrollo y DAF |
+| 5 | **F-09** · decidir si dos «completo» exigen el mismo punto | Que no se ofrezca compartir entre puntos distintos de la misma zonal | Negocio |
+| 6 | **F-10** · revisar la matriz zonal ↔ punto | Traslados calculados con la zonal correcta | Product Owner |
+| 7 | **D-13** · versionar los contratos de API | Que la documentación citada exista en el repositorio | Desarrollo |
+| 8 | **F-03** · criterio de prefijo del formulario 7 | Registrar en el 7 | Product Owner |
+
+### Al 19 de agosto de 2026
 
 Ordenado por lo que desbloquea:
 

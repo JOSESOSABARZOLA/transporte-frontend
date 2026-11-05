@@ -39,13 +39,17 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import type { ValoresOperativo } from "./valoresOperativo.util.ts";
+import { horarioDeLaCaptura, type ValoresOperativo } from "./valoresOperativo.util.ts";
 import type { PersonaAgregada } from "../components/cuadro/SelectorPersonal.tsx";
 
 /**
  * VERSIÓN DEL ESQUEMA. Si la forma del borrador cambia, se sube este número y los
  * borradores viejos se descartan al leerlos en lugar de restaurar una forma que el
  * código ya no entiende.
+ *
+ * UN CAMPO NUEVO Y OPCIONAL NO LA SUBE (2026-11-04, `horarioOperativo`). Subirla borraría las
+ * capturas en curso de todos —`leerBorrador` retira las de otra versión—. Se lee con tolerancia: el
+ * borrador que no lo trae abre con el horario vacío.
  */
 const VERSION = 6;
 
@@ -102,7 +106,10 @@ export const esBorradorVacio = (
   valores.tipoLibre === "" &&
   valores.institucionesIds.length === 0 &&
   valores.observaciones.length === 0 &&
-  (valores.notaPendiente ?? "").trim() === "";
+  (valores.notaPendiente ?? "").trim() === "" &&
+  // Un horario del operativo escrito también es captura (2026-11-04).
+  horarioDeLaCaptura(valores).horaInicio === "" &&
+  horarioDeLaCaptura(valores).horaFin === "";
 
 /** Guarda el puntero de sesión. Silencioso ante un fallo de `sessionStorage`. */
 export const guardarPuntero = (
@@ -177,7 +184,11 @@ export const leerBorrador = (
       window.sessionStorage.removeItem(claveBorrador(usuarioId, codigo, fecha));
       return null;
     }
-    return { valores: dato.valores, personal: dato.personal ?? [] };
+    // Un borrador de antes del 2026-11-04 no trae el horario del operativo: abre vacío.
+    return {
+      valores: { ...dato.valores, horarioOperativo: horarioDeLaCaptura(dato.valores) },
+      personal: dato.personal ?? [],
+    };
   } catch {
     return null;
   }

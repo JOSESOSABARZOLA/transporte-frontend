@@ -1,7 +1,120 @@
 # Inconsistencias entre la documentación y el código
 
 **Módulo Transportes / Cuadro de Colores Operativo — Agencia Metropolitana de Control**
-Fase 10 · 7 de agosto de 2026 · **actualizado el 19 de agosto de 2026**
+Fase 10 · 7 de agosto de 2026 · **actualizado el 5 de noviembre de 2026**
+
+---
+
+## Revisión del 5 de noviembre de 2026
+
+Revisamos cada entrada contra el código de `base/cuadro-colores` (backend `24520af`, frontend
+`d13a5db`) y contra los dos `CLAUDE.md`. Damos por cerradas seis, tres cambiaron de forma, una
+creció y abrimos cinco.
+
+| # | Antes | Ahora | Cómo lo comprobamos |
+|---|---|---|---|
+| I-01 | No existe `CHANGELOG.md` | **Sigue igual.** El documento 18 llega a la 1.1.6 | `find` sin resultados fuera de `node_modules` |
+| I-02 | No hay Swagger | **Sigue igual** | `@nestjs/swagger` no está en `package.json` |
+| I-03 | Perfil de funcionario ausente | ✅ **Cerrada por retiro.** `FUNCIONARIO` se retiró el 10-SEP y P-06 desapareció | `common/roles/catalogo-roles.ts` |
+| I-04 | `PENDIENTES-VALIDACION.md` en dos versiones | **Cambió de forma.** El backend ya no lo tiene; quedan `docs/implementacion/` de la raíz (666 líneas) y `transporte-frontend/docs/implementacion/` (657) | `find` y conteo de líneas |
+| I-05 | `IMPLEMENTATION_GUIDE.md` divergió | **Cambió de forma.** Dos copias de 1119 líneas con contenido distinto, en las mismas dos carpetas; la del respaldo del frontend coincide con la de la raíz | `md5sum` |
+| I-08 | El logotipo era un píxel | ✅ **Cerrada.** `src/assets/logo-amc.png`, 103 kB, en uso | `ls`, `grep logo-amc` |
+| I-09 | Tres dependencias sin usar | ✅ **Cerrada.** `pdf-lib`, `pdfmake` y `react-pdf` se importan | `grep` de `import` |
+| I-10 | Variables `PG*` en el frontend | ✅ **Cerrada.** `.env.example` solo declara `VITE_*` | Lectura del archivo |
+| I-11 | El plan atribuye a `Table` un papel no cumplido | ✅ **Cerrada.** `components/tabla/` se retiró el 15-OCT | El directorio no existe |
+| I-12 | Cinco spec con errores de tipo | ⚠️ **Creció**: 17 archivos, 71 errores | `npx tsc --noEmit -p tsconfig.json` en el backend |
+| I-13 | Endpoints sin enumerar | **Cifra nueva**: **215** manejadores de ruta (216 endpoints); el documento 06 ya los enumera | `grep` de decoradores en `*.controller.ts` |
+| I-14 | Funciones sin pantalla | **Se redujo a una**: solo la auditoría sigue sin endpoint ni pantalla (ver abajo) | Rutas del frontend |
+| I-16 | El mensaje del nombramiento cita un horario que no aplica | ✅ **Cerrada.** El 22-SEP se aplicó entera; el 23-OCT la jornada laboral reemplazó al nombramiento | `admiteJornada` |
+| I-17 | — | 🟠 **Nueva.** Los contratos de API citados solo existen en el respaldo | Ver abajo |
+| I-18 | — | 🟡 **Nueva.** Cifras congeladas en el `CLAUDE.md` del backend | Ver abajo |
+| I-19 | — | 🔴 **Nueva.** El `CLAUDE.md` del backend limita `ck_formulario_numero` a 1–9 | Ver abajo |
+| I-20 | — | 🟡 **Nueva.** El `CLAUDE.md` del frontend lista una pantalla retirada | Ver abajo |
+| I-21 | — | 🟡 **Nueva.** Tres números de versión que no coinciden | Ver abajo |
+
+### I-14, al 5 de noviembre
+
+| Función | Hoy |
+|---|---|
+| Abrir la jornada | La abre el primer registro del día (desde el 11-AGO) |
+| Reabrir la jornada | «Reabrir cuadro» en la Matriz (8-OCT) |
+| Conductores y vehículos | «Flota y garajes» (20-AGO, rediseñada el 14-OCT) |
+| Capacidad de flota | Paso 1 de «Planificar el día» (8-OCT) |
+| Usuarios y su enlace con personal | «Cuentas del cuadro» (19-AGO) |
+| **Consultar la auditoría** | **Sigue sin endpoint ni pantalla.** Vive en `t_auditoria` |
+
+### 🟠 I-17 · Los contratos de API solo existen en el respaldo
+
+**La documentación dice.** El `CLAUDE.md` del backend (§3 y §8) y el del frontend (§5) remiten a
+diecisiete contratos `transporte-backend/docs/CONTRATO-*.md`: `planificar-dia`, `personal-rediseno`,
+`catalogos-rediseno`, `catalogos-ajustes`, `zonal-por-formulario`, `formularios-rediseno`,
+`mis-operativos-rango`, `ocupacion-por-tramos`, `huecos-libres`, `conteo-formularios`,
+`compartir-unidad`, `ausencias-conductor`, `notas-operativo`, `traslados`, `sustitucion-flota`,
+`flota-y-garajes` y `personal-por-lote`. El §8 del backend remite además a
+`docs/IMPLEMENTATION_GUIDE.md` y a las `FASE*`.
+
+**El sistema.** El `.gitignore` del backend ignora `docs/*` salvo las fases y la guía, y aun esas no
+están en la copia de trabajo. En `transporte-backend/docs/` solo hay `CONTRATO-personal-por-lote.md`,
+ignorado. Los otros dieciséis contratos existen únicamente en `transporte-backend-respaldo/docs/`.
+Las fases y la guía están en `docs/` de la raíz y en `transporte-frontend/docs/`.
+
+**Efecto.** Quien clone el backend no tiene ninguno de los contratos que su propia guía cita, y la
+única copia está en una carpeta de respaldo que nadie mantiene.
+
+**Acción.** Versionar los contratos (`!docs/CONTRATO-*.md` en el `.gitignore`) o mover las citas a
+donde estén. Registrado como D-13 en `17_KNOWN_ISSUES.md`.
+
+### 🟡 I-18 · Cifras congeladas en el `CLAUDE.md` del backend
+
+| Dónde | Dice | El código |
+|---|---|---|
+| §3, `npm run prisma:verificar` | «53 tablas, 21 enums» | `prisma/verificar-objetos.ts` espera **55** tablas y **20** enumerados; `schema.prisma` tiene 55 modelos y 20 `enum` |
+| §5, título | «Los siete roles» | `RolDepartamental` tiene **diez** valores, uno retirado (`FUNCIONARIO`) |
+| §5, RBAC | «la integración (319 pruebas)» | Cifra del 16-SEP; la integración tiene hoy 22 suites (ver `17_KNOWN_ISSUES.md`, D-10) |
+| §6, regla 2 | «Ocho valores viven en `t_parametro_politica`» | Las migraciones posteriores sumaron muchos más: `CARGA_OP_*`, `DAF_*`, `TRASLADO_*`, entre otros |
+
+**Acción.** Corregir las cifras o quitarlas: una cifra escrita a mano en una guía envejece con cada
+migración, y nadie la revisa porque nada falla.
+
+### 🔴 I-19 · El `CLAUDE.md` del backend limita el número de formulario a 1–9
+
+**La documentación dice** (§3): «`ck_formulario_numero` solo admite del 1 al 9: si el catálogo
+institucional ocupa los nueve casilleros, las suites no tienen dónde crear los suyos».
+
+**El sistema.** La migración `20260929120000_amplia_el_rango_de_numero_de_formulario` cambió la
+restricción a `BETWEEN 1 AND 99` el 29-SEP, y desde entonces existe un formulario 10 de prueba.
+
+**Efecto.** El párrafo justifica una base de pruebas separada por un motivo que ya no existe. Quien
+lo lea puede descartar crear un formulario nuevo creyendo que no cabe.
+
+**Acción.** Reescribir el párrafo: la base `transportedb_pruebas` puede seguir teniendo sentido, pero
+por otro motivo.
+
+### 🟡 I-20 · El `CLAUDE.md` del frontend lista una pantalla retirada
+
+**La documentación dice** (§5, tabla de rutas): `/mis-ordenes` · Mis órdenes · Funcionario. Y bajo
+el título «Las diecisiete pantallas»: «**Las nueve están construidas desde M-29.**».
+
+**El sistema.** `config/routes.tsx` no tiene `mis-ordenes`: P-06 se retiró con `FUNCIONARIO` el
+10-SEP. Órdenes de servicio es solo de la Dirección (`ROLES_QUE_EMITEN_ORDENES`).
+
+**Acción.** Quitar la fila y actualizar la frase de las nueve pantallas.
+
+### 🟡 I-21 · Tres números de versión que no coinciden
+
+| Dónde | Valor |
+|---|---|
+| Imágenes de los paquetes del 21-OCT al 4-NOV | `1.1.0` en todos |
+| `transporte-frontend/package.json` | `1.1.0` desde el 1-OCT |
+| `transporte-backend/package.json` | `0.1.0` |
+| `18_CHANGELOG_FINAL.md` | `1.1.6` |
+
+**Efecto.** La etiqueta `1.1.0` no identifica un estado del código: QA recibió seis paquetes
+distintos con la misma etiqueta, cada uno reemplazando la imagen anterior. Lo único que identifica un
+paquete es el par de commits de su guía `PASOS-*.md`.
+
+**Acción.** Subir la etiqueta de la imagen con cada paquete y alinear los dos `package.json`. El
+documento 18 explica el criterio con que numeramos mientras tanto.
 
 ---
 
@@ -455,27 +568,43 @@ entre ellas**; se ejecutan por API o por base de datos.
 |---|---|---|---|
 | I-01 | No existe `CHANGELOG.md` | 🔴 | Consolidado en el documento 18 |
 | I-02 | No hay Swagger/OpenAPI | 🔴 | Documentado en el documento 06 |
-| I-03 | Perfil de funcionario ausente en el backend | 🔴 | **Abierto.** Bloquea P-06 |
+| I-03 | Perfil de funcionario ausente en el backend | 🔴 | **Cerrado por retiro** el 10-SEP: P-06 ya no existe |
 | I-03b | El frontend esperaba `acceso: "DUENO"`, que no existe | 🔴 | **Corregido** el 07-AGO. Inutilizaba P-01 |
 | I-03c | El frontend inventó la forma de `/personal/elegible` | 🔴 | **Corregido** el 07-AGO. Rompía P-01 con una excepción |
 | I-03d | `Formulario` sin `id` y con `condicionanteNoct` | 🔴 | **Corregido** el 07-AGO. Inutilizaba P-08, y con ella PV-01 |
-| I-04 | `PENDIENTES-VALIDACION.md` en dos versiones | 🔴 | **Abierto.** Usar la de la raíz |
-| I-05 | `IMPLEMENTATION_GUIDE.md` divergió | 🟠 | **Abierto** |
+| I-04 | `PENDIENTES-VALIDACION.md` en dos versiones | 🔴 | **Abierto.** Quedan dos: `docs/implementacion/` de la raíz y del frontend |
+| I-05 | `IMPLEMENTATION_GUIDE.md` divergió | 🟠 | **Abierto.** Dos copias distintas, mismas carpetas |
 | I-06 | FASE5 dibuja elementos inexistentes | 🟠 | Documentado |
 | I-07 | El plan describe E12, no ejecutada | 🟠 | Aclarado en la ficha de M-30 |
 | I-08 | El logotipo no era lo que decía la documentación | 🟠 | **Corregido** el 06-AGO |
-| I-09 | Tres dependencias sin usar | 🟡 | **Abierto**, es decisión del dueño |
-| I-10 | Variables `PG*` en el frontend | 🟡 | **Abierto** |
-| I-11 | El plan atribuye a `Table` un papel no cumplido | 🟡 | Documentado |
-| I-12 | **Cinco** spec con errores de tipo | 🟡 | **Abierto**, y creció el 07-AGO |
+| I-09 | Tres dependencias sin usar | 🟡 | **Cerrado**: las tres se usan |
+| I-10 | Variables `PG*` en el frontend | 🟡 | **Cerrado** |
+| I-11 | El plan atribuye a `Table` un papel no cumplido | 🟡 | **Cerrado**: `Table` se retiró el 15-OCT |
+| I-12 | **Diecisiete** spec con errores de tipo | 🟡 | **Abierto**, y creció: 71 errores al 5-NOV |
 | I-15 | `ADICIONALES` se ofrecía donde ningún catálogo lo prevé | 🔴 | **Corregido** el 11-AGO, en el modelo y en la pantalla |
-| I-16 | El mensaje del `NOMBRAMIENTO` cita un horario que no se aplica | 🟡 | **Abierto.** Decisión de la Dirección |
-| I-13 | Endpoints sin enumerar | 🟡 | Resuelto en el documento 06 |
-| I-14 | Funciones sin pantalla | 🟡 | Documentado |
+| I-16 | El mensaje del `NOMBRAMIENTO` cita un horario que no se aplica | 🟡 | **Cerrado**: lo reemplazó la jornada laboral el 23-OCT |
+| I-13 | Endpoints sin enumerar | 🟡 | 215 manejadores al 5-NOV |
+| I-14 | Funciones sin pantalla | 🟡 | Solo queda la auditoría |
+| I-17 | Contratos de API solo en el respaldo | 🟠 | **Abierto** |
+| I-18 | Cifras congeladas en el `CLAUDE.md` del backend | 🟡 | **Abierto** |
+| I-19 | `ck_formulario_numero` descrito como 1–9 | 🔴 | **Abierto** |
+| I-20 | `/mis-ordenes` en el `CLAUDE.md` del frontend | 🟡 | **Abierto** |
+| I-21 | Tres números de versión | 🟡 | **Abierto** |
 
 ---
 
 ## Lo que conviene hacer primero
+
+**Al 5 de noviembre de 2026:**
+
+1. **I-17** · versionar los contratos de API o mover las citas. Hoy la guía del backend remite a
+   archivos que su repositorio no tiene.
+2. **I-19** · corregir el párrafo de `ck_formulario_numero`: induce a una decisión equivocada.
+3. **I-04 / I-05** · dejar una sola copia de `PENDIENTES-VALIDACION.md` y de `IMPLEMENTATION_GUIDE.md`.
+4. **I-18, I-20 y I-21** · cifras, ruta retirada y versión: corrección de texto.
+5. **I-12** · los errores de tipo, junto con los fixtures de integración (D-10 de `17_KNOWN_ISSUES.md`).
+
+**Al 19 de agosto de 2026:**
 
 1. **I-04** · dejar una sola versión de `PENDIENTES-VALIDACION.md`. Es barato y evita replantear al
    Product Owner preguntas ya contestadas.
@@ -495,7 +624,9 @@ contrastar `Transporte.ts`, `Documento.ts`, `CuadroDiario.ts`, `Alerta.ts` y la 
 
 ## Lo que se comprobó y **sí** coincide
 
-Conviene decirlo, porque es la mayor parte:
+Conviene decirlo, porque es la mayor parte. **Es la comprobación del 7 de agosto**: desde entonces el
+esquema creció a 55 modelos, 20 enumerados y 104 migraciones, y `prisma/verificar-objetos.ts` espera
+esas cifras (55 tablas, 20 enumerados). La lista de abajo no se rehízo el 5 de noviembre.
 
 - Las **27 tablas**, los **11 enumerados**, las **24 `CHECK`** y los **7 índices parciales**
   coinciden con FASE4.

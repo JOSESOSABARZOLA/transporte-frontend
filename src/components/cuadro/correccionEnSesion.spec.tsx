@@ -43,7 +43,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -205,6 +205,32 @@ vi.mock("../../components/cuadro/FormOperativo.tsx", () => ({
             }}
           >
             {`teclear ${nota}`}
+          </button>
+        ))}
+        {/*
+          EL HORARIO DEL OPERATIVO (2026-11-04) viaja en los valores, como cualquier campo de la
+          captura: se teclea por aquí y se ve con qué horario quedó cargado el formulario.
+        */}
+        <p>
+          {`horario cargado: ${
+            valoresIniciales?.horarioOperativo?.horaInicio
+              ? `${valoresIniciales.horarioOperativo.horaInicio} a ${valoresIniciales.horarioOperativo.horaFin}`
+              : "(vacío)"
+          }`}
+        </p>
+        {[
+          { horaInicio: "08:00", horaFin: "16:30" },
+          { horaInicio: "18:00", horaFin: "22:00" },
+        ].map((horario) => (
+          <button
+            key={horario.horaInicio}
+            type="button"
+            onClick={() => {
+              Object.assign(TECLEADO, { horarioOperativo: horario });
+              onValoresCambian?.({ ...TECLEADO });
+            }}
+          >
+            {`teclear horario ${horario.horaInicio} a ${horario.horaFin}`}
           </button>
         ))}
         {onLimpiar && (
@@ -1033,6 +1059,84 @@ describe("P-01 · corregir lo que se acaba de registrar", () => {
     expect(await screen.findByText("cargado con: nota del PMO")).toBeInTheDocument();
     await elegirFormulario(/Operativos de Control Fijos/);
     expect(screen.getByText("cargado con: (formulario en blanco)")).toBeInTheDocument();
+  });
+
+  /*
+    EL HORARIO DEL OPERATIVO ES DE CADA CAPTURA (2026-11-04). Vivía en un `useState` del selector que
+    nacía una sola vez: el horario escrito en un formulario aparecía en el otro. Ahora viaja en los
+    valores, así que se aparta y se carga con el formulario y la fecha. El OCF y el OCPMO hacen aquí
+    de «el 1» y «el 5» del caso de prueba: lo que se fija es el cableado de la página, no el número.
+  */
+  describe("el horario del operativo se aparta con la captura", () => {
+    const montarConHorarioEnOcf = async () => {
+      render(
+        <MemoryRouter>
+          <CuadroRegistroPage />
+        </MemoryRouter>,
+      );
+      await elegirFormulario(/Operativos de Control Fijos/);
+      await userEvent.click(screen.getByRole("button", { name: "teclear horario 08:00 a 16:30" }));
+    };
+
+    it("el 1 con 08H00 a 16H30, cambio al otro: vacío; vuelvo al 1: 08H00 a 16H30", async () => {
+      await montarConHorarioEnOcf();
+
+      await elegirFormulario(/Puestos de Mando Operativo/);
+      expect(screen.getByText("horario cargado: (vacío)")).toBeInTheDocument();
+
+      await elegirFormulario(/Operativos de Control Fijos/);
+      expect(await screen.findByText("horario cargado: 08:00 a 16:30")).toBeInTheDocument();
+    });
+
+    it("con horario y personal, salir de la pantalla y volver los deja intactos", async () => {
+      vi.mocked(OperativoService.registrar).mockResolvedValue(operativo());
+      await montarConHorarioEnOcf();
+      await userEvent.click(screen.getByRole("button", { name: "teclear horario 18:00 a 22:00" }));
+      await userEvent.click(screen.getByRole("button", { name: "agregar-persona" }));
+
+      // Ir a Mis operativos desmonta la página (React Router); al volver se monta de nuevo.
+      cleanup();
+      render(
+        <MemoryRouter>
+          <CuadroRegistroPage />
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByText("horario cargado: 18:00 a 22:00")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Registrar operativo" }));
+      await waitFor(() =>
+        expect(OperativoService.registrar).toHaveBeenCalledWith(
+          expect.objectContaining({
+            personal: [expect.objectContaining({ funcionarioId: PERSONA.id })],
+          }),
+        ),
+      );
+    });
+
+    it("«Limpiar» en el otro formulario no toca el horario del 1", async () => {
+      await montarConHorarioEnOcf();
+
+      await elegirFormulario(/Puestos de Mando Operativo/);
+      await userEvent.click(screen.getByRole("button", { name: "teclear horario 18:00 a 22:00" }));
+      await userEvent.click(screen.getByRole("button", { name: "Limpiar" }));
+
+      await elegirFormulario(/Operativos de Control Fijos/);
+      expect(await screen.findByText("horario cargado: 08:00 a 16:30")).toBeInTheDocument();
+      await elegirFormulario(/Puestos de Mando Operativo/);
+      expect(screen.getByText("horario cargado: (vacío)")).toBeInTheDocument();
+    });
+
+    it("cambiar la fecha y volver restaura el horario de ese día", async () => {
+      await montarConHorarioEnOcf();
+      const campoFecha = screen.getByLabelText("Fecha de la jornada");
+      const original = (campoFecha as HTMLInputElement).value;
+
+      fireEvent.change(campoFecha, { target: { value: "2030-01-15" } });
+      expect(await screen.findByText("horario cargado: (vacío)")).toBeInTheDocument();
+
+      fireEvent.change(campoFecha, { target: { value: original } });
+      expect(await screen.findByText("horario cargado: 08:00 a 16:30")).toBeInTheDocument();
+    });
   });
 
   it("la captura apartada sobrevive a recargar la pantalla (sessionStorage)", async () => {

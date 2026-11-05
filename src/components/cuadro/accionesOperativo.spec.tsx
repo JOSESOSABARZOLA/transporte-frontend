@@ -253,7 +253,7 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
       "Es un operativo adicional: los adicionales no se encadenan.",
     );
 
-    const deLaPatrulla = boton(filaDe("IGECU-001"), "Agregar adicional", "IGECU-001, ITECU-001");
+    const deLaPatrulla = boton(filaDe("IGECU-001"), "Agregar adicional", "IGECU-001 · ITECU-001");
     expect(deLaPatrulla).toHaveAttribute("aria-disabled", "true");
     expect(deLaPatrulla).toHaveAccessibleDescription(
       "Este formulario no admite operativos adicionales.",
@@ -295,7 +295,7 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
       { ...it_, personal: [{ ...it_.personal[0], nombre: "ALVAREZ CASAS RENE ALIRIO" }] },
     ] as Operativo[]);
 
-    await usuario.click(screen.getByRole("button", { name: "Eliminar IGECU-001, ITECU-001" }));
+    await usuario.click(screen.getByRole("button", { name: "Eliminar IGECU-001 · ITECU-001" }));
     const modal = screen.getByRole("alertdialog", { name: "¿Eliminar el operativo completo?" });
     expect(
       within(modal).getByText(
@@ -331,8 +331,8 @@ describe("Mis operativos · acciones con icono (2026-10-19)", () => {
     })) as Operativo[];
     await pintar(ajena);
 
-    expect(screen.getByRole("button", { name: "Agregar personal IGECU-001, ITECU-001" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ver detalle IGECU-001, ITECU-001" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agregar personal IGECU-001 · ITECU-001" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ver detalle IGECU-001 · ITECU-001" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Eliminar / })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Editar / })).toBeNull();
   });

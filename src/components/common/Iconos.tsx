@@ -83,6 +83,7 @@ import {
   faListUl,
   faLocationDot,
   faMap,
+  faMapLocationDot,
   faLock,
   faMagnifyingGlass,
   faMoon,
@@ -147,6 +148,8 @@ const NAVEGACION = {
   administracion: faGear,
   personal: faUsers,
   catalogos: faListUl,
+  /** Zonas de la ciudad (2026-11-05): la tabla maestra de las zonales, sitios sobre el mapa. */
+  zonasCiudad: faMapLocationDot,
   /** Administración de formularios: un documento con renglones, distinto de la lista de catálogos. */
   formularios: faFileLines,
   /** P-09 son ventanas horarias: lo que gobierna es el reloj, no el parámetro. */

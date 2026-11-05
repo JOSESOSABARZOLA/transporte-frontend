@@ -124,6 +124,7 @@ import {
   OPCION_ADICIONALES,
   OPCION_PUNTO_NUEVO,
   VALORES_INICIALES,
+  horarioDeLaCaptura,
   type ValoresOperativo,
 } from "../../utils/valoresOperativo.util.ts";
 import {
@@ -540,9 +541,15 @@ type FormOperativoProps = {
   personalBloqueado?: boolean;
   /**
    * El horario del operativo, FIJO (el aporte, 2026-10-31): quien se agrega lo hereda y no se edita.
-   * Sin él, en el alta arranca con la primera persona y al editar con el más común del personal.
+   * Sin él, en el alta es el de la captura (`values.horarioOperativo`, vacío si no hay) y al editar
+   * arranca con el más común del personal.
    */
   horarioFijo?: HorarioDelOperativo | null;
+  /**
+   * De quién es la captura del alta: «<código>·<fecha>» (2026-11-04). Al cambiar, el selector de
+   * personal vuelve a su primera pestaña y suelta la búsqueda; el horario ya viaja con los valores.
+   */
+  idCaptura?: string;
   /** Al asignar una persona, propone su zonal (2026-09-24). Solo el alta. */
   proponerZonalDePersona?: boolean;
   /**
@@ -618,6 +625,7 @@ const FormOperativo: FC<FormOperativoProps> = ({
   tramitePorLote = false,
   personalBloqueado = false,
   horarioFijo = null,
+  idCaptura,
   proponerZonalDePersona = false,
   idForm,
   onEstadoEnvio,
@@ -660,12 +668,20 @@ const FormOperativo: FC<FormOperativoProps> = ({
   const [verReparto, setVerReparto] = useState(false);
 
   /*
-    HORARIO DEL OPERATIVO Y CRUCES (2026-10-31). El horario con que arranca se fija al montar: el del
-    aporte o, al editar, el más común del personal. El selector avisa cuántas personas elegidas se
+    HORARIO DEL OPERATIVO Y CRUCES (2026-10-31; controlado desde el 2026-11-04). En el ALTA es parte
+    de la captura (`values.horarioOperativo`): se aparta y se carga con el formulario y la fecha, y
+    viaja en el borrador. En los CAJONES no se persiste: nace con cada apertura —el del aporte, fijo,
+    o al editar el más común del personal— y vive aquí, fuera de Formik, para que cambiarlo no cuente
+    como «Cambios sin guardar» (no viaja al servidor). El selector avisa cuántas personas elegidas se
     cruzan con otro operativo del día; mientras haya alguna, el pie lo dice y no se guarda.
   */
-  const [horarioInicial] = useState<HorarioDelOperativo | null>(() =>
-    horarioFijo ?? (modo === "edicion" ? horarioMasComun(personalAgregado) : null),
+  const [horarioDelCajon, setHorarioDelCajon] = useState<HorarioDelOperativo>(
+    () =>
+      horarioFijo ??
+      (modo === "edicion" ? horarioMasComun(personalAgregado) : null) ?? {
+        horaInicio: "",
+        horaFin: "",
+      },
   );
   const [cruces, setCruces] = useState(0);
   const motivoCruce = motivoCruces(cruces);
@@ -890,7 +906,13 @@ const FormOperativo: FC<FormOperativoProps> = ({
                 listaCompacta
                 // El horario de cada persona, con sus dos campos a la vista (regla 14, RN-66).
                 horarioInline
-                horarioInicial={horarioInicial}
+                horarioOperativo={modo === "alta" ? horarioDeLaCaptura(values) : horarioDelCajon}
+                onCambiarHorarioOperativo={
+                  modo === "alta"
+                    ? (horario) => void setFieldValue("horarioOperativo", horario)
+                    : setHorarioDelCajon
+                }
+                idCaptura={idCaptura}
                 horarioFijo={horarioFijo !== null}
                 onCrucesCambian={setCruces}
                 conGuardarCambios={modo === "edicion"}

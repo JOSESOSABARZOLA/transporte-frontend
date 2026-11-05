@@ -353,9 +353,19 @@ const DrawerValorCatalogo: FC<DrawerValorCatalogoProps> = ({
               etiqueta="Zona de la ciudad"
               requerido
               ayuda={
-                zonasDisponibles.length === 0
-                  ? "Este formulario ya tiene todas las zonas de la ciudad."
-                  : "La que usa Transporte para los traslados."
+                <>
+                  {zonasDisponibles.length === 0
+                    ? "Este formulario ya tiene todas las zonas de la ciudad."
+                    : "La que usa Transporte para los traslados."}{" "}
+                  {/* Las zonas se crean en su propia pantalla (2026-11-05). Un `<a>` y no un `Link`:
+                      el cajón también se monta fuera del enrutador. */}
+                  <a
+                    href="/administracion/zonas-ciudad"
+                    className="link link-primary"
+                  >
+                    ¿No está? Créela en Zonas de la ciudad
+                  </a>
+                </>
               }
               error={intentado ? (errores.zonaId ?? null) : null}
             >

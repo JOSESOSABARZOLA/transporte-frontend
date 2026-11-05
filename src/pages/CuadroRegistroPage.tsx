@@ -2490,6 +2490,9 @@ const CuadroRegistroPage = () => {
                     */
                     onValoresCambian={alCambiarValores}
                     formularioCodigo={formularioElegido.codigo}
+                    // La captura es por (formulario, fecha): con otra, el selector de personal vuelve
+                    // a su primera pestaña. El horario del operativo viaja con los valores (2026-11-04).
+                    idCaptura={`${formularioElegido.codigo}·${fecha}`}
                     // El «Transporte» que propone el formulario (PMO: «Dejar y retirar»), editable.
                     tipoTransportePorDefecto={formularioElegido.tipoTransportePorDefecto}
                     catalogos={catalogos.catalogos}

@@ -37,11 +37,14 @@ export function compactarIdentificadores(identificadores: readonly string[]): st
   }
   validos.sort((a, b) => a.prefijo.localeCompare(b.prefijo) || a.numero - b.numero);
 
-  const rangos: string[] = [];
+  const rangos: { prefijo: string; texto: string }[] = [];
   let inicio = validos[0];
   let fin = validos[0];
   const cerrar = () => {
-    rangos.push(inicio === fin ? inicio.texto : `${inicio.texto} a ${fin.texto}`);
+    rangos.push({
+      prefijo: inicio.prefijo,
+      texto: inicio === fin ? inicio.texto : `${inicio.texto} a ${fin.texto}`,
+    });
   };
   for (const actual of validos.slice(1)) {
     if (actual.prefijo === fin.prefijo && actual.numero === fin.numero + 1) {
@@ -54,5 +57,19 @@ export function compactarIdentificadores(identificadores: readonly string[]): st
     fin = actual;
   }
   if (inicio) cerrar();
-  return [...rangos, ...sueltos].join(", ");
+  return [unirRangos(rangos), ...sueltos].filter(Boolean).join(", ");
+}
+
+/**
+ * Los huecos de un mismo prefijo van con coma («IG-030 a IG-035, IG-037»); los prefijos distintos
+ * de un registro agrupado, con punto medio («IGECU-001 · ITECU-001», 2026-11-04).
+ */
+function unirRangos(rangos: readonly { prefijo: string; texto: string }[]): string {
+  return rangos
+    .map((rango, indice) =>
+      indice === 0
+        ? rango.texto
+        : `${rango.prefijo === rangos[indice - 1].prefijo ? ", " : " · "}${rango.texto}`,
+    )
+    .join("");
 }

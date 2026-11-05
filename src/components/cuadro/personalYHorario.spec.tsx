@@ -261,14 +261,80 @@ describe("Personal y horario · seleccionados y contador", () => {
     expect(contador).toHaveTextContent("agregue al menos una persona");
   });
 
-  it("el horario del operativo arranca con el de la primera persona", () => {
+  /*
+    CONTROLADO DESDE ARRIBA (2026-11-04). Antes el horario nacía UNA vez, copiando el de la primera
+    persona, y por eso se arrastraba al cambiar de formulario. Ahora el selector muestra el de la
+    captura y escribe hacia arriba: con personal pero sin horario guardado (un borrador anterior),
+    queda vacío.
+  */
+  it("el horario del operativo es el de la captura y se escribe hacia arriba", async () => {
+    const onCambiarHorarioOperativo = vi.fn();
+    pintar({
+      horarioOperativo: { horaInicio: "08:00", horaFin: "16:30" },
+      onCambiarHorarioOperativo,
+    });
+    expect(screen.getByLabelText("Hora de inicio del operativo")).toHaveValue("08:00");
+    expect(screen.getByLabelText("Hora de fin del operativo")).toHaveValue("16:30");
+
+    await userEvent.type(screen.getByLabelText("Hora de fin del operativo"), "9");
+    expect(onCambiarHorarioOperativo).toHaveBeenLastCalledWith({
+      horaInicio: "08:00",
+      horaFin: "16:309",
+    });
+  });
+
+  it("con personal pero sin horario en la captura, el horario queda vacío (no copia a nadie)", () => {
     pintar({
       agregadas: [
         { funcionarioId: 1, nombre: "PERSONA01 PRUEBA", telefono: null, horaInicio: "08:00", horaFin: "16:30" },
       ],
     });
-    expect(screen.getByLabelText("Hora de inicio del operativo")).toHaveValue("08:00");
-    expect(screen.getByLabelText("Hora de fin del operativo")).toHaveValue("16:30");
+    expect(screen.getByLabelText("Hora de inicio del operativo")).toHaveValue("");
+    expect(screen.getByLabelText("Hora de fin del operativo")).toHaveValue("");
+  });
+
+  it("con otra captura vuelve a la primera pestaña de área y suelta la búsqueda", async () => {
+    const candidatos = [
+      { ...crear(1)[0], id: 1, area: "GENERAL" as const },
+      { ...crear(2)[1], id: 2, area: "TECNICO" as const },
+    ];
+    const porArea = { areas: ["GENERAL", "TECNICO"] as const, faltan: [], prefijos: new Map() };
+    const { rerender } = pintar({
+      candidatos,
+      porArea: { ...porArea, areas: [...porArea.areas] },
+      idCaptura: "REACD·2026-11-05",
+    });
+
+    await userEvent.click(screen.getByRole("tab", { name: /^Inspector Técnico/ }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Buscar personal" }), "zz");
+    expect(screen.getByRole("tab", { name: /^Inspector Técnico/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    rerender(
+      <SelectorPersonal
+        candidatos={candidatos}
+        cargando={false}
+        agregadas={[]}
+        onAgregar={vi.fn()}
+        onRetirar={vi.fn()}
+        deshabilitado={false}
+        avisoRechazo={null}
+        listaCompacta
+        horarioInline
+        onCambiarHorario={vi.fn()}
+        horasHorario={HORAS}
+        porArea={{ ...porArea, areas: [...porArea.areas] }}
+        idCaptura="REACN·2026-11-05"
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: /^Inspector General/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("searchbox", { name: "Buscar personal" })).toHaveValue("");
   });
 
   it("un horario mal escrito se explica bajo esa persona; cruzar la medianoche es válido", () => {

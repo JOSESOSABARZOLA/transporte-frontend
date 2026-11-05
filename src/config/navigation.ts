@@ -165,6 +165,13 @@ export const shellNavigationItems: NavigationItem[] = [
         requiredPermissions: ["catalogos:administrar"],
       },
       {
+        id: "administracion-zonas-ciudad",
+        label: "Zonas de la ciudad",
+        path: "administracion/zonas-ciudad",
+        icon: "zonasCiudad",
+        requiredPermissions: ["catalogos:administrar"],
+      },
+      {
         id: "administracion-formularios",
         label: "Formularios del cuadro",
         path: "administracion/formularios-cuadro",

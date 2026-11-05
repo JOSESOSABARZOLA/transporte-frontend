@@ -196,6 +196,7 @@ src/
 | `/mis-ordenes` | Mis órdenes | Funcionario |
 | `/administracion/personal` | Personal y disponibilidad | **Administrador DMIP y Administrador DMIT**, y cada uno ve **solo sus áreas**: el DMIP «Unidad de Operativos», «Inspector General» e «Inspector Técnico»; el DMIT «Personal de Instrucción». Lo acota el servidor por `func_direccion`, no el menú. **Rediseñada el 2026-10-08**: ver la nota de abajo |
 | `/administracion/catalogos-cuadro` | Catálogos del cuadro | Administrador. **Rediseñada el 2026-10-12; configuración propia por formulario desde el 2026-10-13**: ver la nota de abajo |
+| `/administracion/zonas-ciudad` | **Zonas de la ciudad** | Permiso `catalogos:administrar`. **Desde el 2026-11-05**: ver la nota de abajo |
 | `/administracion/ventanas` | Ventanas y parámetros | Administrador |
 | `/administracion/roles-auth` | Roles de Auth central | Administrador |
 | `/administracion/usuarios` | Cuentas del cuadro | Administrador |
@@ -326,6 +327,17 @@ src/
 > despliega el mismo cuerpo de chips). Ya no hay panel azul de áreas.
 > Acepta `?formulario=<código o id>&areas=abierto` (2026-10-13): abre con ese formulario y la barra
 > de áreas desplegada. Es el ÚNICO sitio donde se editan las áreas de un formulario.
+
+> **«Zonas de la ciudad» (2026-11-05): la tabla maestra de las zonales.** `pages/AdminZonasCiudadPage.tsx`, en el
+> menú tras Catálogos (icono `zonasCiudad`), con el mismo permiso. Administra `t_zonal` por `/administracion/zonas`
+> (`services/zonasCiudad.service.ts`): tabla Zona (nombre y código) · Sector · Uso («2 formularios · 8 operativos…» y
+> «Activa en los formularios 1, 4») · Estado · Acciones (`AccionesFila` texto: Editar, Desactivar | Reactivar,
+> Eliminar). Desactivar y Eliminar llegan apagados con el motivo del servidor (`puedeDesactivar`, `puedeEliminar`); el
+> DMQ no se edita. Alta y edición en `administracion/DrawerZonaCiudad.tsx` (`md`): nombre (repetido en vivo, espejo
+> del 409), sector y orden; cambiar el sector con `paresSinTiempo` > 0 lo advierte. Reglas puras en
+> `utils/zonaCiudad.util.ts`. Una zona nueva aparece sola en personal, flota y traslados; en cada formulario se agrega
+> en Catálogos, cuyo alta de zonal enlaza a esta pantalla («¿No está? Créela en Zonas de la ciudad», un `<a>` porque
+> el cajón también se monta fuera del enrutador). Contrato: `transporte-backend/docs/CONTRATO-zonas-ciudad.md`.
 
 > **«Flota y garajes» (P-12), rediseñada el 2026-10-14.** Cuatro indicadores clicables
 > (`TarjetaIndicador`, de `GET /administracion/flota/resumen`: vehículos activos, documentos por
@@ -786,6 +798,7 @@ pantalla, TypeScript lo dirá. Cada una va en su propio fragmento diferido.
     | **Quien no puede, lo ve apagado y con el motivo** | Regla 6, y el mensaje nombra al departamento al que hay que pedírselo. Ocultar la acción en una fila y no en la de al lado se lee como una avería |
     | **Salir a otra pantalla y volver tampoco pierde la captura** | Añadido el 2026-09-04. React Router **desmonta** P-01 al navegar —a la Jornada del día, por ejemplo—, así que el borrador que ya sobrevivía a «Editar» no sobrevivía a esto: al volver, el formulario nacía vacío. Se conserva en `sessionStorage`, **no `localStorage`**, y es decisión de seguridad: lleva datos personales del personal (RN-34), es por pestaña y se borra al cerrarla; `UserProvider` ya declara que aquí no se persiste nada sensible en disco. Vive en `utils/borradorOperativo.util.ts`, se guarda en cada cambio —`FormOperativo` lo avisa por `onValoresCambian`, y no por `refFormik`, que al desmontar queda a `null`—, y **se retira al cerrar sesión** (`limpiarTodosLosBorradores`, desde `UserProvider`) y **al registrar con éxito**. Solo en alta: una corrección no se persiste, su captura ya está a salvo en `borrador` |
     | **Cada formulario guarda SU captura, y el otro no la ve** | Añadido el 2026-09-10, a petición del negocio: «si cambio de formulario, el otro no debe ver lo que estoy editando». El borrador dejó de ser uno por usuario a ser uno por **(usuario, formulario, FECHA)** —clave `…v6.form.<usuario>.<fecha>.<codigo>` desde el 2026-09-21—; aparte va un **puntero de sesión** (`…v6.ptr.<usuario>`) con la fecha y el último formulario, para reabrir donde iba. Al cambiar de pestaña —o de **fecha de la jornada**— se guarda lo capturado bajo el (formulario, fecha) que se abandona y se carga —o se vacía— lo del que entra; `codigoActivoRef` **y `fechaActivaRef`** son el formulario y el día dueños de lo que hay en memoria y solo se mueven tras guardar, para que `persistirBorrador` nunca escriba bajo la clave equivocada durante el cambio. **Cambiar la fecha de la jornada YA NO borra** (2026-09-21): cada día conserva su captura bajo su clave (RN-66: cada captura queda con su día), así que volver a una fecha la restaura; solo se vacía el listado de operativos y se cierra la corrección abierta. Cambiar de formulario **cambia directo y no pierde nada**: volver al formulario devuelve su captura tal cual —personal con sus horarios, lugar, control, transporte, notas de la lista y lo escrito sin «Agregar»—. El rediseño del 2026-10-16 (R10) llegó a preguntar «¿Cambiar de formulario?» y descartar; **se revirtió el mismo día a pedido del usuario**. Solo «Limpiar» (que pregunta) y registrar con éxito vacían la captura, y solo la del formulario actual |
+    | **El «Horario del operativo» es parte de la captura** | Desde el 2026-11-04. Vivía en un `useState` de `SelectorPersonal` que nacía una sola vez, y el horario escrito en un formulario aparecía en el otro. Ahora es `ValoresOperativo.horarioOperativo` (Formik), así que se aparta y se carga con el (formulario, fecha), viaja en el borrador y Limpiar o registrar lo vacían solo en el formulario actual. `SelectorPersonal` lo recibe por `horarioOperativo` / `onCambiarHorarioOperativo` y no guarda copia; el «anterior» de «¿Aplicar el nuevo horario?» se toma al entrar al grupo de horas. Con otra `idCaptura` (`<código>·<fecha>`) vuelve a la primera pestaña de área y suelta la búsqueda, sin `key`. **La clave sigue en `v6`**: el campo es opcional y un borrador anterior abre con el horario vacío (subirla borraría las capturas en curso). En los cajones (edición, adicional) no se persiste: nace con cada apertura, al editar con el más común del personal, y vive en `FormOperativo` fuera de Formik para no contar como «Cambios sin guardar». En el aporte y la Jornada sigue fijo. No viaja al servidor |
 
 16. **Responsivo y móvil-first.** El sistema ya es móvil-first y su especificación es
     `docs/FASE5-diseno-interfaz.md §9`. Los puntos de corte son los del proyecto —`sm/md/lg/xl` de

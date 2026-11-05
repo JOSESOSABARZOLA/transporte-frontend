@@ -98,7 +98,6 @@ import {
   cuantosCompletar,
   hayCargaCalculada,
   NOMBRE_AREA,
-  turnoDePrimera,
   avisoCruceSeleccionado,
   cierreOcupacion,
   etiquetaOcupacion,
@@ -357,14 +356,25 @@ type SelectorPersonalProps = {
    * siempre), y con él cada disponible dice «Ocupado» o «Se cruza» con sus otros operativos del día
    * (`operativosDelDia`). No viaja al servidor: siguen viajando los horarios por persona.
    *
-   * `horarioInicial`: el del alta (la primera persona) o, al editar, el más común del personal.
+   * CONTROLADO DESDE ARRIBA (2026-11-04). El selector no guarda copia: el horario es parte de la
+   * captura (`ValoresOperativo.horarioOperativo`), así cada (formulario, fecha) conserva el suyo y no
+   * se arrastra al cambiar de formulario. Antes era un `useState` que nacía una sola vez.
+   *
+   * `horarioOperativo`: el valor; `onCambiarHorarioOperativo`, cómo se escribe.
    * `horarioFijo`: el aporte lo toma del operativo y no se edita.
    * `onCrucesCambian`: cuántas personas ELEGIDAS se cruzan con otro operativo, para el pie.
    * ═══════════════════════════════════════════════════════════════════════════════
    */
-  horarioInicial?: HorarioDelOperativo | null;
+  horarioOperativo?: HorarioDelOperativo | null;
+  onCambiarHorarioOperativo?: (horario: HorarioDelOperativo) => void;
   horarioFijo?: boolean;
   onCrucesCambian?: (cuantas: number) => void;
+  /**
+   * DE QUIÉN ES LA CAPTURA QUE SE MIRA (2026-11-04): «<código>·<fecha>». Al cambiar, el selector
+   * vuelve a la primera pestaña de área y suelta la búsqueda, las páginas, el tipo marcado y las
+   * preguntas pendientes. Sin `key`: el resto de su estado se conserva.
+   */
+  idCaptura?: string;
 };
 
 /** Configuración del modo «un solo tipo de personal» (2026-10-28). */
@@ -420,9 +430,11 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
   tipoUnico,
   porArea = null,
   onReemplazar,
-  horarioInicial = null,
+  horarioOperativo = null,
+  onCambiarHorarioOperativo,
   horarioFijo = false,
   onCrucesCambian,
+  idCaptura,
 }) => {
   // El verbo de las acciones de asignación: «Agregar» en el borrador del alta, «Asignar» al editar.
   const verboAsignar = horarioInline ? "Agregar" : "Asignar";
@@ -530,15 +542,25 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     quienes tenían el anterior. El servidor sigue decidiendo el cruce al guardar.
     ═══════════════════════════════════════════════════════════════════════════════
   */
-  const [horario, setHorario] = useState<{ horaInicio: string; horaFin: string }>(() => {
-    const base = horarioInicial ?? turnoDePrimera(agregadas);
-    return { horaInicio: base.horaInicio ?? "", horaFin: base.horaFin ?? "" };
-  });
-  const horarioValido: HorarioDelOperativo | null = horarioCompleto(horario) ? horario : null;
-  // El último horario completo: contra él se pregunta si aplicar el nuevo a los ya agregados.
-  const [horarioConfirmado, setHorarioConfirmado] = useState<HorarioDelOperativo | null>(
-    () => (horarioCompleto(horario) ? horario : null),
+  // Controlado (2026-11-04): el valor llega de la captura; aquí no se guarda copia.
+  const horaInicioOperativo = horarioOperativo?.horaInicio ?? "";
+  const horaFinOperativo = horarioOperativo?.horaFin ?? "";
+  const horario = useMemo(
+    () => ({ horaInicio: horaInicioOperativo, horaFin: horaFinOperativo }),
+    [horaInicioOperativo, horaFinOperativo],
   );
+  const horarioValido: HorarioDelOperativo | null = useMemo(
+    () => (horarioCompleto(horario) ? horario : null),
+    [horario],
+  );
+  const cambiarHorarioOperativo = (cambio: Partial<HorarioDelOperativo>) =>
+    onCambiarHorarioOperativo?.({ ...horario, ...cambio });
+  /**
+   * El horario completo que había al ENTRAR al grupo de horas: contra él se pregunta, al salir, si
+   * aplicar el nuevo a quienes tenían el anterior. Se toma al entrar en vez de guardarse con la
+   * captura: así no hay un segundo horario que conservar ni que se cruce entre formularios.
+   */
+  const horarioAlEntrar = useRef<HorarioDelOperativo | null>(null);
   const [porAplicar, setPorAplicar] = useState<{
     anterior: HorarioDelOperativo;
     nuevo: HorarioDelOperativo;
@@ -564,11 +586,11 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     }
   };
 
-  /** Al salir del campo: si el horario completo cambió, ¿se aplica a quienes tenían el anterior? */
+  /** Al salir del grupo: si el horario completo cambió, ¿se aplica a quienes tenían el anterior? */
   const confirmarHorario = () => {
+    const anterior = horarioAlEntrar.current;
+    horarioAlEntrar.current = null;
     if (!horarioValido || horarioFijo) return;
-    const anterior = horarioConfirmado;
-    setHorarioConfirmado(horarioValido);
     if (
       !anterior ||
       (anterior.horaInicio === horarioValido.horaInicio && anterior.horaFin === horarioValido.horaFin)
@@ -719,6 +741,26 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
     persona: PersonaElegible;
     via: "agregar" | "elegir";
   } | null>(null);
+  /*
+    OTRA CAPTURA, OTRA VISTA (2026-11-04). Al cambiar de formulario o de fecha la página no remonta el
+    selector: se ajusta aquí, durante el render (el patrón de React para derivar estado de una prop),
+    y no con `key`, que perdería el resto. Vuelve a la primera pestaña de área y suelta la búsqueda,
+    las páginas, el tipo marcado del 8 y las preguntas pendientes, que eran de la captura anterior.
+  */
+  const [capturaVista, setCapturaVista] = useState(idCaptura);
+  if (capturaVista !== idCaptura) {
+    setCapturaVista(idCaptura);
+    setArea(null);
+    setBusqueda("");
+    setPaginaCandidatos(0);
+    setPaginaNoDisponibles(0);
+    setVerNoDisponibles(false);
+    setTipoMarcado(null);
+    setTipoPorConfirmar(null);
+    setPorAplicar(null);
+    setPendienteCarga(null);
+  }
+
   const aplicar = (persona: PersonaElegible, via: "agregar" | "elegir") => {
     if (via === "elegir") aplicarEleccion(persona);
     else agregarConHorario(persona);
@@ -1362,7 +1404,12 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
               role="group"
               aria-label="Horario del operativo"
               className="flex flex-wrap items-center gap-2"
-              // Se pregunta al salir del grupo, no al pasar del inicio al fin.
+              // Se toma el anterior al ENTRAR al grupo y se pregunta al salir, no al pasar del
+              // inicio al fin.
+              onFocus={(evento) => {
+                if (evento.currentTarget.contains(evento.relatedTarget as Node | null)) return;
+                horarioAlEntrar.current = horarioValido;
+              }}
               onBlur={(evento) => {
                 if (evento.currentTarget.contains(evento.relatedTarget as Node | null)) return;
                 confirmarHorario();
@@ -1379,9 +1426,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                 placeholder="Inicio…"
                 value={horario.horaInicio}
                 disabled={deshabilitado}
-                onChange={(evento) =>
-                  setHorario((antes) => ({ ...antes, horaInicio: evento.target.value }))
-                }
+                onChange={(evento) => cambiarHorarioOperativo({ horaInicio: evento.target.value })}
               />
               <span aria-hidden="true" className="text-sm text-app-muted">
                 a
@@ -1394,9 +1439,7 @@ const SelectorPersonal: FC<SelectorPersonalProps> = ({
                 placeholder="Fin…"
                 value={horario.horaFin}
                 disabled={deshabilitado}
-                onChange={(evento) =>
-                  setHorario((antes) => ({ ...antes, horaFin: evento.target.value }))
-                }
+                onChange={(evento) => cambiarHorarioOperativo({ horaFin: evento.target.value })}
               />
               <span className="text-xs text-app-muted">
                 Se copia a cada persona que agregue; puede cambiarlo en cada una.

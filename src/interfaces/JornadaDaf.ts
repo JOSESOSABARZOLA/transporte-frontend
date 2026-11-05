@@ -39,11 +39,18 @@ export interface Requisito {
 
 export type FaltaConductor = "sector" | "jornada" | "parqueadero";
 
-/** Un registro por zonas visto por la DAF: un solo operativo con todos sus identificadores. */
+/** Un registro agrupado (patrulla 5/6 y registro por zonas del 8) visto por la DAF: un solo operativo con todos sus identificadores. */
 export interface RegistroDaf {
   grupoRegistro: string;
   identificadores: string[];
   tambienAtiende: { zonal: string; punto: string | null }[];
+  /**
+   * Registro agrupado (2026-11-04, también la patrulla 5/6): las personas distintas de todos sus
+   * códigos y los avisos para la DAF (asientos que ya no alcanzan, horario que ya no coincide).
+   * Opcionales: un servidor anterior no los envía.
+   */
+  personas?: number;
+  avisos?: string[];
 }
 
 export interface OperativoJornada {
